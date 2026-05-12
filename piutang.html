@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Piutang - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .aging-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      box-shadow: var(--shadow);
+      border-left: 4px solid transparent;
+    }
+    .aging-card.current  { border-left-color: #2563eb; }
+    .aging-card.due30    { border-left-color: #d97706; }
+    .aging-card.due60    { border-left-color: #ea580c; }
+    .aging-card.due90    { border-left-color: #dc2626; }
+    .aging-card.due90p   { border-left-color: #7f1d1d; }
+    .aging-card .label   { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+    .aging-card .value   { font-size:20px; font-weight:800; line-height:1.2; }
+    .aging-card .sub     { font-size:12px; color:var(--text-muted); margin-top:2px; }
+    .aging-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin-bottom:20px; }
+
+    .aging-badge {
+      display:inline-block; padding:3px 10px; border-radius:20px;
+      font-size:11px; font-weight:700;
+    }
+    .aging-current { background:#dbeafe; color:#1e40af; }
+    .aging-30      { background:#fef9c3; color:#92400e; }
+    .aging-60      { background:#ffedd5; color:#9a3412; }
+    .aging-90      { background:#fee2e2; color:#991b1b; }
+    .aging-90p     { background:#7f1d1d; color:#fff; }
+
+    /* Payment modal */
+    .pay-method-group { display:flex; gap:10px; }
+    .pay-method-btn {
+      flex:1; padding:12px; border:2px solid var(--border); border-radius:8px;
+      background:var(--surface); cursor:pointer; font-size:13px; font-weight:600;
+      color:var(--text-muted); text-align:center; transition:all .15s;
+    }
+    .pay-method-btn.active { border-color:var(--primary); background:var(--primary-light); color:var(--primary); }
+    .pay-method-btn .method-icon { font-size:22px; display:block; margin-bottom:4px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item active"><span class="nav-icon">💰</span> Piutang</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer" id="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Piutang</h1>
+        <p>Faktur belum lunas & aging receivables</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost btn-sm" onclick="exportXls()">⬇️ Export XLS</button>
+        <div class="user-avatar" id="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <!-- SUMMARY CARDS -->
+      <div class="aging-grid" id="aging-cards">
+        <div class="aging-card current"><div class="label">Total Piutang</div><div class="value" id="c-total">—</div><div class="sub" id="c-total-sub">—</div></div>
+        <div class="aging-card current"><div class="label">Belum Jatuh Tempo</div><div class="value" id="c-current">—</div><div class="sub" id="c-current-sub">—</div></div>
+        <div class="aging-card due30"><div class="label">Lewat 1–30 Hari</div><div class="value" id="c-30">—</div><div class="sub" id="c-30-sub">—</div></div>
+        <div class="aging-card due60"><div class="label">Lewat 31–60 Hari</div><div class="value" id="c-60">—</div><div class="sub" id="c-60-sub">—</div></div>
+        <div class="aging-card due90p"><div class="label">Lewat >60 Hari</div><div class="value" id="c-90p">—</div><div class="sub" id="c-90p-sub">—</div></div>
+      </div>
+
+      <!-- FILTER -->
+      <div class="filter-bar">
+        <div class="search-input-wrap" style="flex:1;max-width:360px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="Cari customer, no. faktur..." oninput="handleSearch()">
+        </div>
+        <select id="filter-aging" onchange="renderTable()">
+          <option value="">Semua Aging</option>
+          <option value="current">Belum Jatuh Tempo</option>
+          <option value="30">1–30 Hari</option>
+          <option value="60">31–60 Hari</option>
+          <option value="90p">>60 Hari</option>
+        </select>
+        <select id="filter-customer" onchange="renderTable()">
+          <option value="">Semua Customer</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadData()">🔄 Refresh</button>
+      </div>
+
+      <!-- TABLE -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Faktur Belum Lunas <span id="inv-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+          <span id="filtered-total" class="text-muted" style="font-size:13px"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>No. Faktur</th>
+                <th>Customer</th>
+                <th>Sales</th>
+                <th>Tgl Faktur</th>
+                <th>Jatuh Tempo</th>
+                <th>Termin</th>
+                <th class="text-right">Total</th>
+                <th>Aging</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="piutang-table">
+              <tr><td colspan="9" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- PER CUSTOMER SUMMARY -->
+      <div class="card" style="margin-top: 20px;">
+        <div class="card-header"><h3>📊 Ringkasan per Customer</h3></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Customer</th>
+                <th class="text-right">Jml Faktur</th>
+                <th class="text-right">Total Piutang</th>
+                <th class="text-right">Terlama (hari)</th>
+                <th>Status Aging</th>
+              </tr>
+            </thead>
+            <tbody id="customer-summary-table">
+              <tr><td colspan="6" class="text-center text-muted" style="padding:20px">Memuat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- MODAL: LUNASI -->
+<div class="modal-overlay" id="modal-pay">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h3>💳 Lunasi Faktur</h3>
+      <button class="modal-close" onclick="closeModal('modal-pay')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="pay-inv-info" style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px"></div>
+      <div class="form-group">
+        <label>Metode Pembayaran</label>
+        <div class="pay-method-group">
+          <button class="pay-method-btn active" data-method="cash" onclick="setPayMethod('cash')">
+            <span class="method-icon">💵</span>Cash
+          </button>
+          <button class="pay-method-btn" data-method="transfer" onclick="setPayMethod('transfer')">
+            <span class="method-icon">🏦</span>Transfer Bank
+          </button>
+        </div>
+      </div>
+      <div class="form-group mb-0">
+        <label>Catatan (opsional)</label>
+        <input type="text" id="pay-notes" placeholder="Catatan pembayaran...">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-pay')">Batal</button>
+      <button class="btn btn-success" id="btn-confirm-pay" onclick="confirmPay()">✅ Konfirmasi Lunas</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let allInvoices = [];
+  let currentPayId = null;
+  let currentPayMethod = 'cash';
+  const handleSearch = debounce(() => renderTable(), 300);
+
+  // ── HELPERS ───────────────────────────────────────────────
+  function termDays(term) {
+    if (!term || term === 'cod') return 0;
+    return parseInt(term) || 0;
+  }
+
+  function dueDate(inv) {
+    const d = new Date(inv.invoice_date);
+    d.setDate(d.getDate() + termDays(inv.payment_term));
+    return d;
+  }
+
+  function daysOverdue(inv) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const due = dueDate(inv); due.setHours(0,0,0,0);
+    return Math.floor((today - due) / 86400000);
+  }
+
+  function agingBucket(days) {
+    if (days <= 0)  return 'current';
+    if (days <= 30) return '30';
+    if (days <= 60) return '60';
+    return '90p';
+  }
+
+  function agingBadge(days) {
+    const b = agingBucket(days);
+    if (b === 'current') return `<span class="aging-badge aging-current">Belum JT</span>`;
+    if (b === '30')      return `<span class="aging-badge aging-30">${days} hari</span>`;
+    if (b === '60')      return `<span class="aging-badge aging-60">${days} hari</span>`;
+    return `<span class="aging-badge aging-90p">${days} hari</span>`;
+  }
+
+  // ── LOAD ──────────────────────────────────────────────────
+  async function loadData() {
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('id,invoice_number,invoice_date,customer_id,customer_name,store_name,total,status,payment_term,verification_status,sales_name,notes,payment_date,payment_method')
+      .eq('status', 'pending')
+      .or('verification_status.is.null,verification_status.eq.approved')
+      .order('invoice_date', { ascending: true });
+
+    if (error) { showToast('Gagal memuat: ' + error.message, 'error'); return; }
+    allInvoices = (data || []).map(inv => ({
+      ...inv,
+      _daysOverdue: daysOverdue(inv),
+      _dueDate: dueDate(inv).toISOString().split('T')[0],
+    }));
+
+    // Populate customer filter
+    const customers = [...new Map(allInvoices.map(i => [i.customer_id, i.store_name || i.customer_name])).entries()];
+    const selCust = document.getElementById('filter-customer');
+    const prevCust = selCust.value;
+    selCust.innerHTML = '<option value="">Semua Customer</option>' +
+      customers.sort((a,b) => (a[1]||'').localeCompare(b[1]||'')).map(([id, name]) =>
+        `<option value="${id}"${id===prevCust?' selected':''}>${escapeHtml(name||'—')}</option>`).join('');
+
+    renderCards();
+    renderTable();
+    renderCustomerSummary();
+  }
+
+  // ── RENDER CARDS ──────────────────────────────────────────
+  function renderCards() {
+    const total   = allInvoices.reduce((s,i) => s + Number(i.total), 0);
+    const current = allInvoices.filter(i => i._daysOverdue <= 0);
+    const b30     = allInvoices.filter(i => i._daysOverdue > 0 && i._daysOverdue <= 30);
+    const b60     = allInvoices.filter(i => i._daysOverdue > 30 && i._daysOverdue <= 60);
+    const b90p    = allInvoices.filter(i => i._daysOverdue > 60);
+    const sum = arr => arr.reduce((s,i) => s + Number(i.total), 0);
+
+    document.getElementById('c-total').textContent      = formatCurrency(total);
+    document.getElementById('c-total-sub').textContent  = `${allInvoices.length} faktur`;
+    document.getElementById('c-current').textContent    = formatCurrency(sum(current));
+    document.getElementById('c-current-sub').textContent= `${current.length} faktur`;
+    document.getElementById('c-30').textContent         = formatCurrency(sum(b30));
+    document.getElementById('c-30-sub').textContent     = `${b30.length} faktur`;
+    document.getElementById('c-60').textContent         = formatCurrency(sum(b60));
+    document.getElementById('c-60-sub').textContent     = `${b60.length} faktur`;
+    document.getElementById('c-90p').textContent        = formatCurrency(sum(b90p));
+    document.getElementById('c-90p-sub').textContent    = `${b90p.length} faktur`;
+
+    // Color total based on urgency
+    document.getElementById('c-90p').style.color = b90p.length ? 'var(--danger)' : 'var(--text)';
+  }
+
+  // ── RENDER TABLE ──────────────────────────────────────────
+  function renderTable() {
+    const search      = document.getElementById('search-input').value.toLowerCase();
+    const agingFilter = document.getElementById('filter-aging').value;
+    const custFilter  = document.getElementById('filter-customer').value;
+
+    let filtered = allInvoices.filter(inv => {
+      if (search && !(inv.invoice_number||'').toLowerCase().includes(search) &&
+          !(inv.store_name||'').toLowerCase().includes(search) &&
+          !(inv.customer_name||'').toLowerCase().includes(search)) return false;
+      if (agingFilter && agingBucket(inv._daysOverdue) !== agingFilter) return false;
+      if (custFilter && inv.customer_id !== custFilter) return false;
+      return true;
+    });
+
+    // Sort: most overdue first
+    filtered.sort((a,b) => b._daysOverdue - a._daysOverdue);
+
+    document.getElementById('inv-count').textContent = filtered.length;
+    const tot = filtered.reduce((s,i) => s + Number(i.total), 0);
+    document.getElementById('filtered-total').textContent = filtered.length < allInvoices.length
+      ? `Total filter: ${formatCurrency(tot)}` : `Total: ${formatCurrency(tot)}`;
+
+    const tbody = document.getElementById('piutang-table');
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">🎉</div><h4>Tidak ada piutang</h4><p>Semua faktur sudah lunas</p></div></td></tr>`;
+      return;
+    }
+
+    const terminMap = { cod:'COD', '7':'7 Hari', '14':'14 Hari', '15':'15 Hari', '30':'30 Hari', '45':'45 Hari', '60':'60 Hari' };
+    tbody.innerHTML = filtered.map(inv => `
+      <tr>
+        <td><strong>${escapeHtml(inv.invoice_number||'—')}</strong></td>
+        <td>
+          <strong>${escapeHtml(inv.store_name||inv.customer_name||'—')}</strong>
+          ${inv.store_name && inv.customer_name !== inv.store_name ? `<br><small class="text-muted">${escapeHtml(inv.customer_name)}</small>` : ''}
+        </td>
+        <td>${inv.sales_name ? `<span style="background:#ede9fe;color:#6d28d9;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700">👤 ${escapeHtml(inv.sales_name)}</span>` : '<span class="text-muted">—</span>'}</td>
+        <td class="text-muted">${formatDate(inv.invoice_date)}</td>
+        <td class="${inv._daysOverdue > 0 ? 'font-bold' : 'text-muted'}" style="${inv._daysOverdue > 30 ? 'color:var(--danger)' : ''}">${formatDate(inv._dueDate)}</td>
+        <td>${terminMap[inv.payment_term]||inv.payment_term||'—'}</td>
+        <td class="text-right font-bold">${formatCurrency(inv.total)}</td>
+        <td>${agingBadge(inv._daysOverdue)}</td>
+        <td>
+          <button class="btn btn-success btn-sm" onclick="openPay('${inv.id}')">💳 Lunasi</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  // ── RENDER CUSTOMER SUMMARY ───────────────────────────────
+  function renderCustomerSummary() {
+    const map = {};
+    allInvoices.forEach(inv => {
+      const key = inv.customer_id || inv.customer_name;
+      if (!map[key]) map[key] = { name: inv.store_name||inv.customer_name||'—', count:0, total:0, maxDays:0 };
+      map[key].count++;
+      map[key].total += Number(inv.total);
+      map[key].maxDays = Math.max(map[key].maxDays, inv._daysOverdue);
+    });
+
+    const rows = Object.values(map).sort((a,b) => b.maxDays - a.maxDays);
+    const tbody = document.getElementById('customer-summary-table');
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted" style="padding:20px">Tidak ada data</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((r, i) => `
+      <tr>
+        <td class="text-muted">${i+1}</td>
+        <td><strong>${escapeHtml(r.name)}</strong></td>
+        <td class="text-right">${r.count} faktur</td>
+        <td class="text-right font-bold">${formatCurrency(r.total)}</td>
+        <td class="text-right ${r.maxDays > 0 ? 'font-bold' : 'text-muted'}" style="${r.maxDays > 30 ? 'color:var(--danger)' : ''}">${r.maxDays > 0 ? r.maxDays : '—'}</td>
+        <td>${agingBadge(r.maxDays)}</td>
+      </tr>`).join('');
+  }
+
+  // ── PAYMENT ───────────────────────────────────────────────
+  function setPayMethod(method) {
+    currentPayMethod = method;
+    document.querySelectorAll('.pay-method-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.method === method));
+  }
+
+  function openPay(id) {
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv) return;
+    currentPayId = id;
+    currentPayMethod = 'cash';
+    setPayMethod('cash');
+    document.getElementById('pay-notes').value = '';
+    document.getElementById('pay-inv-info').innerHTML = `
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span class="text-muted">Faktur</span><strong>${escapeHtml(inv.invoice_number)}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span class="text-muted">Customer</span><strong>${escapeHtml(inv.store_name||inv.customer_name||'—')}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:16px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+        <span class="text-muted">Total</span><strong style="color:var(--primary)">${formatCurrency(inv.total)}</strong>
+      </div>`;
+    openModal('modal-pay');
+  }
+
+  async function confirmPay() {
+    const btn = document.getElementById('btn-confirm-pay');
+    setLoading(btn, true);
+    const notes = document.getElementById('pay-notes').value.trim();
+    const { error } = await supabase.from('invoices').update({
+      status: 'paid',
+      payment_method: currentPayMethod,
+      payment_date: new Date().toISOString().split('T')[0],
+      payment_notes: notes || null,
+    }).eq('id', currentPayId);
+    setLoading(btn, false);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('✅ Faktur berhasil dilunasi');
+    closeModal('modal-pay');
+    loadData();
+  }
+
+  // ── EXPORT ────────────────────────────────────────────────
+  function exportXls() {
+    if (!allInvoices.length) { showToast('Tidak ada data untuk diekspor', 'error'); return; }
+    const terminMap = { cod:'COD', '7':'7 Hari', '14':'14 Hari', '15':'15 Hari', '30':'30 Hari', '45':'45 Hari', '60':'60 Hari' };
+    const bucketLabel = { current:'Belum Jatuh Tempo', '30':'1-30 Hari', '60':'31-60 Hari', '90p':'>60 Hari' };
+    const rows = [...allInvoices].sort((a,b) => b._daysOverdue - a._daysOverdue).map(inv => ({
+      'No. Faktur':    inv.invoice_number,
+      'Customer':      inv.store_name || inv.customer_name,
+      'Sales':         inv.sales_name || '',
+      'Tgl Faktur':    inv.invoice_date,
+      'Jatuh Tempo':   inv._dueDate,
+      'Termin':        terminMap[inv.payment_term] || inv.payment_term,
+      'Total':         Number(inv.total),
+      'Hari Lewat':    inv._daysOverdue > 0 ? inv._daysOverdue : 0,
+      'Aging':         bucketLabel[agingBucket(inv._daysOverdue)],
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [14,25,15,12,12,8,14,10,18].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Piutang');
+    const stamp = new Date().toISOString().split('T')[0].replace(/-/g,'');
+    XLSX.writeFile(wb, `piutang_uddiana_${stamp}.xlsx`);
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  (async () => { const auth = await requireAdmin(); if (!auth) return; await loadData(); })();
+</script>
+</body>
+</html>

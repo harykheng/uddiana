@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verifikasi Faktur - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+  <style>
+    .ts-wrapper .ts-control { border:1.5px solid var(--border); border-radius:6px; padding:5px 8px; box-shadow:none; min-height:unset; font-size:13px; }
+    .ts-wrapper.focus .ts-control,.ts-wrapper.single.input-active .ts-control { border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.1); }
+    .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; }
+    .ts-dropdown .option { padding:8px 12px; }
+    .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
+    .ts-dropdown-content { max-height:220px; }
+    .ts-dropdown { z-index:9999 !important; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item active"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Verifikasi Faktur</h1>
+        <p>Review faktur dari sales sebelum disetujui</p>
+      </div>
+      <div class="topbar-right">
+        <div class="user-avatar" id="user-avatar-initial">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="filter-bar">
+        <div class="search-input-wrap" style="flex:1;max-width:360px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="Cari nomor / sales / customer..." oninput="handleSearch()">
+        </div>
+        <select id="filter-status" onchange="loadInvoices()" style="padding:8px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none">
+          <option value="pending">Menunggu Verifikasi</option>
+          <option value="approved">Disetujui</option>
+          <option value="rejected">Ditolak</option>
+          <option value="">Semua</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadInvoices()">🔄 Refresh</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Faktur <span id="inv-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>No. Faktur</th>
+                <th>Tanggal</th>
+                <th>Sales</th>
+                <th>Customer</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="inv-table">
+              <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- MODAL: DETAIL & AKSI -->
+<div class="modal-overlay" id="modal-detail">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <h3 id="modal-detail-title">Detail Faktur</h3>
+      <button class="modal-close" onclick="closeModal('modal-detail')">×</button>
+    </div>
+    <div class="modal-body" id="modal-detail-body"></div>
+    <div class="modal-footer" id="modal-detail-footer"></div>
+  </div>
+</div>
+
+<!-- MODAL: REJECT -->
+<div class="modal-overlay" id="modal-reject">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h3>Tolak Faktur</h3>
+      <button class="modal-close" onclick="closeModal('modal-reject')">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:#64748b;margin-bottom:12px">Masukkan alasan penolakan. Stok akan dikembalikan secara otomatis.</p>
+      <div class="form-group mb-0">
+        <label>Alasan Penolakan *</label>
+        <textarea id="reject-reason" placeholder="Contoh: Harga tidak sesuai, customer tidak valid, dll." style="min-height:80px"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-reject')">Batal</button>
+      <button class="btn btn-danger" id="btn-confirm-reject" onclick="confirmReject()">Tolak Faktur</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDIT ITEM -->
+<div class="modal-overlay" id="modal-edit">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <h3>Edit Faktur</h3>
+      <button class="modal-close" onclick="closeModal('modal-edit')">×</button>
+    </div>
+    <div class="modal-body" id="modal-edit-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-edit" onclick="saveEdit()">Simpan & Setujui</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let allInvoices = [];
+  let currentInvoiceId = null;
+  let allProducts = [];
+
+  const handleSearch = debounce(() => renderTable(), 300);
+
+  async function init() {
+    const auth = await requireAdmin();
+    if (!auth) return;
+    await Promise.all([loadProducts(), loadInvoices()]);
+  }
+
+  async function loadProducts() {
+    const { data } = await supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit').eq('is_active', true).order('name');
+    allProducts = data || [];
+  }
+
+  async function loadInvoices() {
+    const status = document.getElementById('filter-status').value;
+    let query = supabase
+      .from('invoices')
+      .select('id,invoice_number,invoice_date,store_name,sales_name,total,status,verification_status,reject_reason,notes,payment_term,price_mode,created_by_id,invoice_items(id,product_id,quantity,price,subtotal,cost_price,products(name,sku))')
+      .order('created_at', { ascending: false });
+
+    if (status) query = query.eq('verification_status', status);
+    else query = query.not('verification_status', 'is', null);
+
+    const { data, error } = await query;
+    if (error) { showToast('Gagal memuat: ' + error.message, 'error'); return; }
+    allInvoices = data || [];
+    renderTable();
+  }
+
+  function renderTable() {
+    const search = document.getElementById('search-input').value.toLowerCase();
+    const filtered = allInvoices.filter(inv =>
+      !search ||
+      (inv.invoice_number || '').toLowerCase().includes(search) ||
+      (inv.sales_name || '').toLowerCase().includes(search) ||
+      (inv.store_name || '').toLowerCase().includes(search)
+    );
+
+    document.getElementById('inv-count').textContent = filtered.length;
+    const tbody = document.getElementById('inv-table');
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">✅</div><h4>Tidak ada faktur</h4><p>Tidak ada faktur yang perlu diverifikasi</p></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(inv => {
+      const vs = inv.verification_status;
+      const vbadge = vs === 'pending'
+        ? `<span class="badge badge-warning">Menunggu</span>`
+        : vs === 'approved'
+        ? `<span class="badge badge-success">Disetujui</span>`
+        : `<span class="badge badge-danger">Ditolak</span>`;
+
+      const actions = vs === 'pending'
+        ? `<div class="table-actions">
+            <button class="btn btn-ghost btn-sm" onclick="openDetail('${inv.id}')">👁 Detail</button>
+            <button class="btn btn-success btn-sm" onclick="approveInvoice('${inv.id}')">✅ Setuju</button>
+            <button class="btn btn-ghost btn-sm" onclick="openEdit('${inv.id}')">✏️ Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="openReject('${inv.id}')">❌ Tolak</button>
+           </div>`
+        : `<button class="btn btn-ghost btn-sm" onclick="openDetail('${inv.id}')">👁 Detail</button>`;
+
+      return `<tr>
+        <td><strong>${escapeHtml(inv.invoice_number || '—')}</strong></td>
+        <td class="text-muted">${formatDate(inv.invoice_date)}</td>
+        <td><span style="display:inline-flex;align-items:center;gap:5px;background:#ede9fe;color:#6d28d9;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700">👤 ${escapeHtml(inv.sales_name || '—')}</span></td>
+        <td>${escapeHtml(inv.store_name || '—')}</td>
+        <td><strong>${formatCurrency(inv.total)}</strong></td>
+        <td>${vbadge}</td>
+        <td>${actions}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function openDetail(id) {
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv) return;
+    currentInvoiceId = id;
+    document.getElementById('modal-detail-title').textContent = inv.invoice_number || 'Detail Faktur';
+
+    const items = inv.invoice_items || [];
+    const isPending = inv.verification_status === 'pending';
+
+    document.getElementById('modal-detail-body').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;font-size:13px">
+        <div><span class="text-muted">Sales:</span> <strong>${escapeHtml(inv.sales_name || '—')}</strong></div>
+        <div><span class="text-muted">Customer:</span> <strong>${escapeHtml(inv.store_name || '—')}</strong></div>
+        <div><span class="text-muted">Tanggal:</span> ${formatDate(inv.invoice_date)}</div>
+        <div><span class="text-muted">Termin:</span> ${inv.payment_term || '—'}</div>
+        <div><span class="text-muted">Mode Harga:</span> ${inv.price_mode || '—'}</div>
+        ${inv.notes ? `<div style="grid-column:1/-1"><span class="text-muted">Catatan:</span> ${escapeHtml(inv.notes)}</div>` : ''}
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="border-bottom:2px solid #e2e8f0;text-align:left">
+          <th style="padding:8px 6px">Produk</th>
+          <th style="padding:8px 6px;text-align:right">Qty</th>
+          <th style="padding:8px 6px;text-align:right">Harga</th>
+          <th style="padding:8px 6px;text-align:right">Modal</th>
+          <th style="padding:8px 6px;text-align:right">Subtotal</th>
+        </tr></thead>
+        <tbody>
+          ${items.map(it => `<tr style="border-bottom:1px solid #f1f5f9">
+            <td style="padding:8px 6px">${escapeHtml(it.products?.name || '—')}<br><small class="text-muted">${escapeHtml(it.products?.sku || '')}</small></td>
+            <td style="padding:8px 6px;text-align:right">${it.quantity}</td>
+            <td style="padding:8px 6px;text-align:right">${formatCurrency(it.price)}</td>
+            <td style="padding:8px 6px;text-align:right;color:#64748b">${formatCurrency(it.cost_price || 0)}</td>
+            <td style="padding:8px 6px;text-align:right;font-weight:600">${formatCurrency(it.subtotal)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="text-align:right;font-size:18px;font-weight:700;color:#2563eb;margin-top:12px">${formatCurrency(inv.total)}</div>
+      ${inv.reject_reason ? `<div style="margin-top:12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:13px;color:#b91c1c">❌ Alasan ditolak: ${escapeHtml(inv.reject_reason)}</div>` : ''}
+    `;
+
+    document.getElementById('modal-detail-footer').innerHTML = isPending
+      ? `<button class="btn btn-ghost" onclick="closeModal('modal-detail')">Tutup</button>
+         <button class="btn btn-ghost" onclick="closeModal('modal-detail');openEdit('${id}')">✏️ Edit</button>
+         <button class="btn btn-danger" onclick="closeModal('modal-detail');openReject('${id}')">❌ Tolak</button>
+         <button class="btn btn-success" onclick="closeModal('modal-detail');approveInvoice('${id}')">✅ Setujui</button>`
+      : `<button class="btn btn-ghost" onclick="closeModal('modal-detail')">Tutup</button>`;
+
+    openModal('modal-detail');
+  }
+
+  async function approveInvoice(id) {
+    if (!showConfirm('Setujui faktur ini? Stok sudah terpotong saat faktur dibuat.')) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const { error } = await supabase.from('invoices').update({
+      verification_status: 'approved',
+      verified_by_id: session.user.id,
+      verified_at: new Date().toISOString()
+    }).eq('id', id);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Faktur disetujui');
+    closeModal('modal-detail');
+    loadInvoices();
+  }
+
+  function openReject(id) {
+    currentInvoiceId = id;
+    document.getElementById('reject-reason').value = '';
+    closeModal('modal-detail');
+    openModal('modal-reject');
+  }
+
+  async function confirmReject() {
+    const reason = document.getElementById('reject-reason').value.trim();
+    if (!reason) { showToast('Isi alasan penolakan', 'error'); return; }
+
+    const btn = document.getElementById('btn-confirm-reject');
+    setLoading(btn, true);
+
+    const inv = allInvoices.find(x => x.id === currentInvoiceId);
+    if (!inv) { showToast('Faktur tidak ditemukan', 'error'); setLoading(btn, false); return; }
+
+    // Kembalikan stok tiap item langsung (tanpa RPC)
+    for (const item of (inv.invoice_items || [])) {
+      const { data: prod } = await supabase
+        .from('products')
+        .select('stock_quantity')
+        .eq('id', item.product_id)
+        .single();
+      if (prod) {
+        await supabase.from('products')
+          .update({ stock_quantity: prod.stock_quantity + item.quantity })
+          .eq('id', item.product_id);
+      }
+    }
+
+    const { error } = await supabase.from('invoices').update({
+      verification_status: 'rejected',
+      reject_reason: reason,
+      status: 'cancelled'
+    }).eq('id', currentInvoiceId);
+
+    setLoading(btn, false);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Faktur ditolak dan stok dikembalikan');
+    closeModal('modal-reject');
+    loadInvoices();
+  }
+
+  function openEdit(id) {
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv) return;
+    currentInvoiceId = id;
+    closeModal('modal-detail');
+
+    const items = inv.invoice_items || [];
+    document.getElementById('modal-edit-body').innerHTML = `
+      <div style="font-size:13px;color:#64748b;margin-bottom:12px">
+        Faktur: <strong style="color:#1e293b">${escapeHtml(inv.invoice_number || '—')}</strong> | Sales: <strong style="color:#1e293b">${escapeHtml(inv.sales_name || '—')}</strong>
+      </div>
+      <div id="edit-items-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+        ${items.map((it, idx) => `
+          <div class="edit-item-row" data-item-id="${it.id}" data-original-qty="${it.quantity}" style="display:grid;grid-template-columns:2fr 80px 120px auto;gap:8px;align-items:end;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px">
+            <div>
+              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Produk</label>
+              <select class="edit-product-sel" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
+                ${allProducts.map(p => `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}"${p.id===it.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Qty</label>
+              <input type="number" class="edit-qty" value="${it.quantity}" min="1" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga</label>
+              <input type="number" class="edit-price" value="${it.price}" min="0" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
+            </div>
+            <div style="text-align:right">
+              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Sub</label>
+              <span class="edit-sub" style="font-size:13px;font-weight:600;color:#2563eb">${formatCurrency(it.subtotal)}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div style="text-align:right;font-size:16px;font-weight:700;color:#2563eb">
+        Total: <span id="edit-total">${formatCurrency(inv.total)}</span>
+      </div>
+    `;
+    // Init Tom Select on each product select in edit modal
+    document.querySelectorAll('#modal-edit-body .edit-product-sel').forEach((sel, idx) => {
+      if (sel.tomselect) sel.tomselect.destroy();
+      new TomSelect(sel, {
+        placeholder: '— Cari produk —',
+        maxOptions: 200,
+        dropdownParent: 'body',
+        onChange: () => updateEditProduct(sel, idx)
+      });
+    });
+
+    openModal('modal-edit');
+  }
+
+  function updateEditProduct(sel, idx) {
+    const row = sel.closest('.edit-item-row');
+    const opt = sel.options[sel.selectedIndex];
+    row.querySelector('.edit-price').value = opt.dataset.price || 0;
+    recalcEditRow(row.querySelector('.edit-qty'));
+  }
+
+  function recalcEditRow(input) {
+    const row = input.closest('.edit-item-row');
+    const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
+    const price = parseFloat(row.querySelector('.edit-price').value) || 0;
+    row.querySelector('.edit-sub').textContent = formatCurrency(qty * price);
+    recalcEditTotal();
+  }
+
+  function recalcEditTotal() {
+    let total = 0;
+    document.querySelectorAll('.edit-item-row').forEach(row => {
+      const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
+      const price = parseFloat(row.querySelector('.edit-price').value) || 0;
+      total += qty * price;
+    });
+    document.getElementById('edit-total').textContent = formatCurrency(total);
+  }
+
+  async function saveEdit() {
+    const btn = document.getElementById('btn-save-edit');
+    setLoading(btn, true);
+
+    const inv = allInvoices.find(x => x.id === currentInvoiceId);
+    const rows = document.querySelectorAll('.edit-item-row');
+    let total = 0;
+
+    for (const row of rows) {
+      const itemId = row.dataset.itemId;
+      const originalQty = parseFloat(row.dataset.originalQty) || 0;
+      const productId = row.querySelector('.edit-product-sel').value;
+      const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
+      const price = parseFloat(row.querySelector('.edit-price').value) || 0;
+      const sub = qty * price;
+      const opt = row.querySelector('.edit-product-sel').options[row.querySelector('.edit-product-sel').selectedIndex];
+      const cost = parseFloat(opt.dataset.cost) || 0;
+      const productName = opt.text || '';
+
+      if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); setLoading(btn, false); return; }
+
+      // adjust stock difference
+      const qtyDiff = qty - originalQty;
+      if (qtyDiff !== 0) {
+        const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
+        if (prod) {
+          const newStock = prod.stock_quantity - qtyDiff;
+          if (newStock < 0) { showToast('Stok tidak cukup untuk qty yang diubah', 'error'); setLoading(btn, false); return; }
+          await supabase.from('products').update({ stock_quantity: newStock }).eq('id', productId);
+        }
+      }
+
+      await supabase.from('invoice_items').update({ product_id: productId, product_name: productName, quantity: qty, price: price, subtotal: sub, cost_price: cost }).eq('id', itemId);
+      total += sub;
+    }
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const { error } = await supabase.from('invoices').update({
+      total: total,
+      verification_status: 'approved',
+      verified_by_id: session.user.id,
+      verified_at: new Date().toISOString()
+    }).eq('id', currentInvoiceId);
+
+    setLoading(btn, false);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Faktur diedit dan disetujui');
+    closeModal('modal-edit');
+    loadInvoices();
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>

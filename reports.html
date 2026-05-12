@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laporan Stok - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    .week-nav {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .week-nav button {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 7px; padding: 6px 12px; cursor: pointer;
+      font-size: 15px; color: var(--text-muted);
+      transition: all .15s;
+    }
+    .week-nav button:hover { border-color: var(--primary); color: var(--primary); }
+    .week-label {
+      font-size: 13px; font-weight: 600; color: var(--text);
+      min-width: 200px; text-align: center;
+    }
+    .summary-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 5px 14px; font-size: 13px; font-weight: 600;
+    }
+    .top-product-bar {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    }
+    .top-product-bar .bar-bg {
+      flex: 1; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden;
+    }
+    .top-product-bar .bar-fill {
+      height: 100%; background: var(--primary); border-radius: 4px; transition: width .5s;
+    }
+    .top-product-bar .bar-label { font-size: 13px; font-weight: 600; min-width: 40px; text-align: right; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>StokManager</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item active"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Laporan Stok Mingguan</h1>
+        <p>Analisis pergerakan stok dan penjualan</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost btn-sm no-print" onclick="window.print()">🖨 Cetak Laporan</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <!-- WEEK NAVIGATOR -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+        <div class="week-nav">
+          <button onclick="changeWeek(-1)">◀</button>
+          <div class="week-label" id="week-label">Memuat...</div>
+          <button onclick="changeWeek(1)" id="btn-next-week">▶</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap" id="week-summary-chips">
+        </div>
+      </div>
+
+      <!-- STAT CARDS -->
+      <div class="stats-grid" style="margin-bottom:20px">
+        <div class="stat-card">
+          <div class="stat-icon green">📈</div>
+          <div class="stat-info">
+            <p>Total Penjualan</p>
+            <h3 id="rep-total-sales" style="font-size:16px">—</h3>
+            <small id="rep-invoice-count">0 faktur</small>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue">📦</div>
+          <div class="stat-info">
+            <p>Item Terjual</p>
+            <h3 id="rep-items-sold">—</h3>
+            <small>unit/pcs total</small>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon red">📉</div>
+          <div class="stat-info">
+            <p>Stok Keluar</p>
+            <h3 id="rep-stock-out">—</h3>
+            <small>total unit keluar</small>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon yellow">💹</div>
+          <div class="stat-info">
+            <p>Rata-rata/Hari</p>
+            <h3 id="rep-avg-daily" style="font-size:16px">—</h3>
+            <small>pendapatan harian</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHARTS ROW -->
+      <div class="report-grid">
+        <!-- Daily Sales Chart -->
+        <div class="card">
+          <div class="card-header">
+            <h3>📊 Penjualan Harian</h3>
+          </div>
+          <div class="card-body">
+            <div class="chart-container">
+              <canvas id="chart-daily-sales"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Top Products -->
+        <div class="card">
+          <div class="card-header">
+            <h3>🏆 Produk Terlaris Minggu Ini</h3>
+          </div>
+          <div class="card-body">
+            <div id="top-products-list">
+              <p class="text-muted text-center" style="padding:20px">Memuat...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHARTS ROW 2 -->
+      <div class="report-grid">
+        <!-- Stock Movement Chart -->
+        <div class="card">
+          <div class="card-header">
+            <h3>📦 Pergerakan Stok per Kategori</h3>
+          </div>
+          <div class="card-body">
+            <div class="chart-container">
+              <canvas id="chart-category"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stock Status Summary -->
+        <div class="card">
+          <div class="card-header">
+            <h3>🔴 Kondisi Stok Saat Ini</h3>
+          </div>
+          <div class="card-body">
+            <div class="chart-container" style="height:200px;margin-bottom:16px">
+              <canvas id="chart-stock-status"></canvas>
+            </div>
+            <div id="stock-status-legend"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DETAIL TABLE -->
+      <div class="card" style="margin-top:20px">
+        <div class="card-header">
+          <h3>📋 Detail Pergerakan Stok Minggu Ini</h3>
+          <div style="display:flex;gap:8px">
+            <select id="filter-movement-type" onchange="renderMovementsTable()" style="width:auto">
+              <option value="">Semua Tipe</option>
+              <option value="out">Stok Keluar</option>
+              <option value="in">Stok Masuk</option>
+              <option value="adjustment">Penyesuaian</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Produk</th>
+                <th>Tipe</th>
+                <th>Jumlah</th>
+                <th>Stok Sebelum</th>
+                <th>Stok Sesudah</th>
+                <th>Referensi</th>
+                <th>Tanggal</th>
+              </tr>
+            </thead>
+            <tbody id="movements-table">
+              <tr><td colspan="7" class="text-center text-muted" style="padding:30px">Memuat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let weekOffset = 0;
+  let weekMovements = [];
+  let dailyChart = null;
+  let categoryChart = null;
+  let stockStatusChart = null;
+
+  function getWeekRange(offset = 0) {
+    const now = new Date();
+    const day = now.getDay();
+    const diffToMon = (day === 0 ? -6 : 1 - day);
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMon + (offset * 7));
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+    return { start: monday, end: sunday };
+  }
+
+  function formatWeekLabel(start, end) {
+    const opts = { day: '2-digit', month: 'short' };
+    const s = new Intl.DateTimeFormat('id-ID', opts).format(start);
+    const e = new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(end);
+    return `${s} – ${e}`;
+  }
+
+  function changeWeek(dir) {
+    weekOffset += dir;
+    const btnNext = document.getElementById('btn-next-week');
+    btnNext.disabled = weekOffset >= 0;
+    loadReport();
+  }
+
+  async function loadReport() {
+    const { start, end } = getWeekRange(weekOffset);
+    document.getElementById('week-label').textContent = formatWeekLabel(start, end);
+    document.getElementById('btn-next-week').disabled = weekOffset >= 0;
+
+    const startISO = start.toISOString();
+    const endISO = end.toISOString();
+
+    await Promise.all([
+      loadWeekInvoices(startISO, endISO),
+      loadWeekMovements(startISO, endISO),
+      loadStockStatusChart(),
+    ]);
+  }
+
+  async function loadWeekInvoices(startISO, endISO) {
+    const { data: invoices } = await supabase
+      .from('invoices').select('*, invoice_items(*)')
+      .gte('created_at', startISO).lte('created_at', endISO)
+      .neq('status', 'cancelled');
+
+    const totalSales = (invoices || []).reduce((s, i) => s + Number(i.total), 0);
+    const itemsSold  = (invoices || []).reduce((s, i) =>
+      s + (i.invoice_items || []).reduce((ss, it) => ss + it.quantity, 0), 0);
+
+    document.getElementById('rep-total-sales').textContent = formatCurrency(totalSales);
+    document.getElementById('rep-invoice-count').textContent = `${(invoices || []).length} faktur`;
+    document.getElementById('rep-items-sold').textContent = itemsSold;
+    document.getElementById('rep-avg-daily').textContent = formatCurrency(totalSales / 7);
+
+    renderDailySalesChart(invoices || []);
+    renderTopProducts(invoices || []);
+  }
+
+  async function loadWeekMovements(startISO, endISO) {
+    const { data } = await supabase
+      .from('stock_movements').select('*')
+      .gte('created_at', startISO).lte('created_at', endISO)
+      .order('created_at', { ascending: false });
+
+    weekMovements = data || [];
+
+    const stockOut = weekMovements.filter(m => m.type === 'out').reduce((s, m) => s + m.quantity, 0);
+    document.getElementById('rep-stock-out').textContent = stockOut;
+
+    renderMovementsTable();
+    await renderCategoryChart(startISO, endISO);
+  }
+
+  function renderDailySalesChart(invoices) {
+    const { start } = getWeekRange(weekOffset);
+    const days = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+    const totals = Array(7).fill(0);
+
+    invoices.forEach(inv => {
+      const d = new Date(inv.created_at);
+      const dayIdx = (d.getDay() + 6) % 7;
+      totals[dayIdx] += Number(inv.total);
+    });
+
+    if (dailyChart) dailyChart.destroy();
+    const ctx = document.getElementById('chart-daily-sales').getContext('2d');
+    dailyChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: days,
+        datasets: [{
+          label: 'Penjualan (Rp)',
+          data: totals,
+          backgroundColor: 'rgba(37,99,235,0.15)',
+          borderColor: '#2563eb',
+          borderWidth: 2,
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: {
+            ticks: { callback: v => 'Rp ' + (v >= 1000000 ? (v/1000000).toFixed(1)+'jt' : (v/1000).toFixed(0)+'rb') },
+            grid: { color: '#f1f5f9' }
+          },
+          x: { grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  function renderTopProducts(invoices) {
+    const productSales = {};
+    invoices.forEach(inv => {
+      (inv.invoice_items || []).forEach(item => {
+        if (!productSales[item.product_name]) productSales[item.product_name] = { qty: 0, revenue: 0 };
+        productSales[item.product_name].qty += item.quantity;
+        productSales[item.product_name].revenue += Number(item.subtotal);
+      });
+    });
+
+    const sorted = Object.entries(productSales).sort((a, b) => b[1].qty - a[1].qty).slice(0, 8);
+    const maxQty = sorted[0]?.[1]?.qty || 1;
+
+    const container = document.getElementById('top-products-list');
+    if (!sorted.length) {
+      container.innerHTML = `<div class="empty-state" style="padding:30px"><div class="empty-icon">📦</div><h4>Tidak ada penjualan</h4></div>`;
+      return;
+    }
+
+    const medals = ['🥇','🥈','🥉'];
+    container.innerHTML = sorted.map(([name, data], i) => `
+      <div class="top-product-bar">
+        <span style="font-size:16px;width:24px">${medals[i] || (i+1)+'.'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(name)}</div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${(data.qty/maxQty*100).toFixed(1)}%"></div></div>
+        </div>
+        <div class="bar-label">${data.qty}x</div>
+      </div>
+    `).join('');
+  }
+
+  async function renderCategoryChart(startISO, endISO) {
+    const { data: items } = await supabase
+      .from('invoice_items').select('quantity, subtotal, products(categories(name))')
+      .gte('created_at', startISO).lte('created_at', endISO);
+
+    const catData = {};
+    (items || []).forEach(item => {
+      const cat = item.products?.categories?.name || 'Lainnya';
+      if (!catData[cat]) catData[cat] = 0;
+      catData[cat] += item.quantity;
+    });
+
+    const labels = Object.keys(catData);
+    const values = Object.values(catData);
+    const colors = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#be185d','#059669'];
+
+    if (categoryChart) categoryChart.destroy();
+    const ctx = document.getElementById('chart-category').getContext('2d');
+
+    if (!labels.length) {
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '14px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('Tidak ada data minggu ini', ctx.canvas.width/2, ctx.canvas.height/2);
+      return;
+    }
+
+    categoryChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{ data: values, backgroundColor: colors.slice(0, labels.length), borderWidth: 2 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { font: { size: 12 }, padding: 12 } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw} unit` } }
+        }
+      }
+    });
+  }
+
+  async function loadStockStatusChart() {
+    const { data: prods } = await supabase.from('products')
+      .select('stock_quantity, min_stock').eq('is_active', true);
+
+    let normal = 0, low = 0, out = 0;
+    (prods || []).forEach(p => {
+      if (p.stock_quantity <= 0) out++;
+      else if (p.stock_quantity <= p.min_stock) low++;
+      else normal++;
+    });
+
+    const total = normal + low + out;
+
+    if (stockStatusChart) stockStatusChart.destroy();
+    const ctx = document.getElementById('chart-stock-status').getContext('2d');
+    stockStatusChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Normal', 'Menipis', 'Habis'],
+        datasets: [{
+          data: [normal, low, out],
+          backgroundColor: ['#16a34a', '#d97706', '#dc2626'],
+          borderWidth: 2,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw} produk` } }
+        },
+        cutout: '65%',
+      }
+    });
+
+    document.getElementById('stock-status-legend').innerHTML = `
+      <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+          <span style="width:12px;height:12px;background:#16a34a;border-radius:3px;display:inline-block"></span>
+          <strong>${normal}</strong> Normal
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+          <span style="width:12px;height:12px;background:#d97706;border-radius:3px;display:inline-block"></span>
+          <strong>${low}</strong> Menipis
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:13px">
+          <span style="width:12px;height:12px;background:#dc2626;border-radius:3px;display:inline-block"></span>
+          <strong>${out}</strong> Habis
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted)">
+          Total: ${total} produk
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMovementsTable() {
+    const typeFilter = document.getElementById('filter-movement-type').value;
+    const filtered = typeFilter ? weekMovements.filter(m => m.type === typeFilter) : weekMovements;
+
+    const tbody = document.getElementById('movements-table');
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state" style="padding:30px"><div class="empty-icon">📋</div><h4>Tidak ada pergerakan stok</h4></div></td></tr>`;
+      return;
+    }
+
+    const typeMap = { out: ['Keluar','danger'], in: ['Masuk','success'], adjustment: ['Adj.','info'] };
+    tbody.innerHTML = filtered.map(m => {
+      const [label, color] = typeMap[m.type] || ['—','gray'];
+      return `<tr>
+        <td><strong>${escapeHtml(m.product_name)}</strong></td>
+        <td><span class="badge badge-${color}">${label}</span></td>
+        <td class="font-bold ${m.type === 'out' ? 'stock-low' : 'stock-ok'}">${m.type === 'out' ? '-' : '+'}${m.quantity}</td>
+        <td>${m.quantity_before}</td>
+        <td>${m.quantity_after}</td>
+        <td><span class="badge badge-gray">${m.reference_type || '—'}</span></td>
+        <td class="text-muted">${formatDate(m.created_at)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  (async () => { const auth = await requireAdmin(); if (!auth) return; loadReport(); })();
+</script>
+</body>
+</html>

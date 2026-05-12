@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Produk - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    .category-wrap { display:flex; gap:6px; align-items:center; }
+    .category-wrap select { flex:1; }
+    .btn-add-cat {
+      flex-shrink:0; width:34px; height:34px; border:1px solid var(--border);
+      background:var(--surface); border-radius:7px; cursor:pointer;
+      font-size:18px; display:flex; align-items:center; justify-content:center;
+      color:var(--primary); transition:all .15s;
+    }
+    .btn-add-cat:hover { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+    /* ── PAGINATION ── */
+    .pagination { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:8px; }
+    .pagination-info { font-size:13px; color:var(--text-muted); }
+    .pagination-btns { display:flex; gap:4px; align-items:center; }
+    .page-btn {
+      min-width:32px; height:32px; padding:0 8px; border:1px solid var(--border);
+      border-radius:6px; background:var(--surface); cursor:pointer;
+      font-size:13px; font-weight:600; color:var(--text-muted); transition:all .15s;
+    }
+    .page-btn:hover:not(:disabled) { border-color:var(--primary); color:var(--primary); }
+    .page-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+    .page-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .page-size-select { font-size:13px; padding:4px 8px; border:1px solid var(--border); border-radius:6px; background:var(--surface); color:var(--text); cursor:pointer; }
+
+    /* ── IMPORT ── */
+    .import-drop {
+      border: 2px dashed var(--border); border-radius: 10px;
+      padding: 32px 20px; text-align: center; cursor: pointer;
+      transition: all .15s; background: var(--surface);
+    }
+    .import-drop:hover, .import-drop.dragover { border-color: var(--primary); background: #eff6ff; }
+    .import-drop .drop-icon { font-size: 32px; margin-bottom: 8px; }
+    .import-drop p { font-size: 13px; color: var(--text-muted); margin: 4px 0; }
+    .import-preview { margin-top: 14px; overflow-x: auto; font-size: 12px; }
+    .import-preview table { width: 100%; border-collapse: collapse; }
+    .import-preview th { background: #f1f5f9; padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; }
+    .import-preview td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; }
+    .import-result { padding: 12px 14px; border-radius: 8px; margin-top: 12px; font-size: 13px; }
+    .import-result.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+    .import-result.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
+    .import-result ul { margin: 6px 0 0 16px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item active"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Produk</h1>
+        <p>Kelola data produk dan stok</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openAddProduct()">+ Tambah Produk</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="filter-bar">
+        <div class="search-input-wrap" style="flex:1;max-width:340px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="Cari produk, SKU..." oninput="handleSearch()">
+        </div>
+        <select id="filter-category" onchange="loadProducts()">
+          <option value="">Semua Kategori</option>
+        </select>
+        <select id="filter-stock" onchange="loadProducts()">
+          <option value="">Semua Stok</option>
+          <option value="low">Stok Menipis</option>
+          <option value="out">Stok Habis</option>
+          <option value="ok">Stok Normal</option>
+        </select>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Daftar Produk <span id="product-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="openImport()">⬆️ Import CSV</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportXls()">⬇️ Export XLS</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadProducts()">🔄 Refresh</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>SKU</th>
+                <th>Nama Produk</th>
+                <th>Kategori</th>
+                <th>Harga Biasa</th>
+                <th>Harga Shopee</th>
+                <th>Harga Modal</th>
+                <th>Stok</th>
+                <th>Min.</th>
+                <th>Satuan</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="products-table">
+              <tr><td colspan="12" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination" id="pagination-bar">
+          <div class="pagination-info" id="pagination-info"></div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted)">
+              Tampilkan
+              <select class="page-size-select" id="page-size" onchange="changePageSize()">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="9999">Semua</option>
+              </select>
+              baris
+            </div>
+            <div class="pagination-btns" id="pagination-btns"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- MODAL ADD/EDIT PRODUCT -->
+<div class="modal-overlay" id="modal-product">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-product-title">Tambah Produk</h3>
+      <button class="modal-close" onclick="closeModal('modal-product')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="product-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nama Produk *</label>
+          <input type="text" id="product-name" placeholder="Nama produk">
+        </div>
+        <div class="form-group">
+          <label>SKU *</label>
+          <input type="text" id="product-sku" placeholder="Contoh: ELEC-001">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Kategori</label>
+          <div class="category-wrap">
+            <select id="product-category">
+              <option value="">-- Pilih Kategori --</option>
+            </select>
+            <button class="btn-add-cat" onclick="openAddCategory()" title="Tambah kategori baru">+</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Satuan</label>
+          <select id="product-unit">
+            <option value="pcs">pcs</option>
+            <option value="unit">unit</option>
+            <option value="pack">pack</option>
+            <option value="kg">kg</option>
+            <option value="liter">liter</option>
+            <option value="box">box</option>
+            <option value="lusin">lusin</option>
+            <option value="rim">rim</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Harga Jual Biasa (Rp) *</label>
+          <input type="number" id="product-price" placeholder="0" min="0">
+        </div>
+        <div class="form-group">
+          <label>Harga Jual Shopee (Rp)</label>
+          <input type="number" id="product-price-shopee" placeholder="0" min="0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Harga Modal (Rp)</label>
+          <input type="number" id="product-cost" placeholder="0" min="0">
+        </div>
+        <div class="form-group">
+          <label>Stok Awal</label>
+          <input type="number" id="product-stock" placeholder="0" min="0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Minimum Stok</label>
+          <input type="number" id="product-min-stock" placeholder="0" min="0">
+        </div>
+        <div class="form-group"></div>
+      </div>
+      <div class="form-group mb-0">
+        <label>Deskripsi</label>
+        <textarea id="product-desc" placeholder="Deskripsi produk (opsional)"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-product')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-product" onclick="saveProduct()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ADD CATEGORY -->
+<div class="modal-overlay" id="modal-add-category">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-header">
+      <h3>Tambah Kategori Baru</h3>
+      <button class="modal-close" onclick="closeModal('modal-add-category')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group mb-0">
+        <label>Nama Kategori *</label>
+        <input type="text" id="new-category-name" placeholder="Contoh: Aksesoris"
+          onkeydown="if(event.key==='Enter') saveNewCategory()">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-category')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-category" onclick="saveNewCategory()">Tambah</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL IMPORT CSV -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <h3>⬆️ Import Produk dari CSV</h3>
+      <button class="modal-close" onclick="closeModal('modal-import')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <p style="font-size:13px;color:var(--text-muted)">Kolom: <code>sku, nama, kategori, satuan, harga_biasa, harga_shopee, harga_modal, stok, min_stok, deskripsi</code></p>
+        <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()">📄 Download Template</button>
+      </div>
+      <div class="import-drop" id="import-drop" onclick="document.getElementById('import-file').click()"
+           ondragover="event.preventDefault();this.classList.add('dragover')"
+           ondragleave="this.classList.remove('dragover')"
+           ondrop="handleImportDrop(event)">
+        <div class="drop-icon">📂</div>
+        <p><strong>Klik atau drag & drop file CSV di sini</strong></p>
+        <p>Format file: .csv</p>
+      </div>
+      <input type="file" id="import-file" accept=".csv" style="display:none" onchange="handleImportFile(this)">
+      <div id="import-preview"></div>
+      <div id="import-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-import')">Tutup</button>
+      <button class="btn btn-primary" id="btn-run-import" style="display:none" onclick="runImport()">⬆️ Import Sekarang</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ADJUST STOCK -->
+<div class="modal-overlay" id="modal-adjust">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Sesuaikan Stok</h3>
+      <button class="modal-close" onclick="closeModal('modal-adjust')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="adjust-product-id">
+      <div class="form-group">
+        <label>Produk</label>
+        <input type="text" id="adjust-product-name" readonly style="background:#f8fafc">
+      </div>
+      <div class="form-group">
+        <label>Stok Saat Ini</label>
+        <input type="number" id="adjust-current-stock" readonly style="background:#f8fafc">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Tipe</label>
+          <select id="adjust-type">
+            <option value="in">Stok Masuk (+)</option>
+            <option value="out">Stok Keluar (-)</option>
+            <option value="set">Set Stok Baru</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Jumlah</label>
+          <input type="number" id="adjust-qty" placeholder="0" min="1">
+        </div>
+      </div>
+      <div class="form-group mb-0">
+        <label>Catatan</label>
+        <input type="text" id="adjust-notes" placeholder="Alasan penyesuaian stok">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-adjust')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-adjust" onclick="saveAdjustment()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let allProducts = [];
+  let categories = [];
+  let currentPage = 1;
+  let pageSize = 50;
+  const handleSearch = debounce(() => { currentPage = 1; renderProducts(); }, 350);
+
+  async function init() {
+    const auth = await requireAdmin(); if (!auth) return;
+    await loadCategories();
+    await loadProducts();
+  }
+
+  async function loadCategories() {
+    const { data } = await supabase.from('categories').select('*').order('name');
+    categories = data || [];
+    refreshCategorySelects();
+  }
+
+  function refreshCategorySelects() {
+    const opts = categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+    document.getElementById('filter-category').innerHTML = '<option value="">Semua Kategori</option>' + opts;
+    const currentVal = document.getElementById('product-category').value;
+    document.getElementById('product-category').innerHTML = '<option value="">-- Pilih Kategori --</option>' + opts;
+    document.getElementById('product-category').value = currentVal;
+  }
+
+  async function loadProducts() {
+    const catFilter = document.getElementById('filter-category').value;
+    let query = supabase.from('products').select('*, categories(name)').eq('is_active', true).order('name');
+    if (catFilter) query = query.eq('category_id', catFilter);
+    const { data, error } = await query;
+    if (error) { showToast('Gagal memuat produk: ' + error.message, 'error'); return; }
+    allProducts = data || [];
+    currentPage = 1;
+    renderProducts();
+  }
+
+  function renderProducts() {
+    const search = document.getElementById('search-input').value.toLowerCase();
+    const stockFilter = document.getElementById('filter-stock').value;
+    let filtered = allProducts.filter(p => {
+      const matchSearch = !search || p.name.toLowerCase().includes(search) || p.sku.toLowerCase().includes(search);
+      let matchStock = true;
+      if (stockFilter === 'low') matchStock = p.stock_quantity > 0 && p.stock_quantity <= p.min_stock;
+      if (stockFilter === 'out') matchStock = p.stock_quantity <= 0;
+      if (stockFilter === 'ok') matchStock = p.stock_quantity > p.min_stock;
+      return matchSearch && matchStock;
+    });
+
+    document.getElementById('product-count').textContent = filtered.length;
+    const tbody = document.getElementById('products-table');
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">📦</div><h4>Tidak ada produk</h4><p>Tambah produk baru atau ubah filter</p></div></td></tr>`;
+      document.getElementById('pagination-bar').style.display = 'none';
+      return;
+    }
+
+    // Pagination
+    const total      = filtered.length;
+    const totalPages = pageSize >= 9999 ? 1 : Math.ceil(total / pageSize);
+    if (currentPage > totalPages) currentPage = totalPages;
+    const start = pageSize >= 9999 ? 0 : (currentPage - 1) * pageSize;
+    const end   = pageSize >= 9999 ? total : Math.min(start + pageSize, total);
+    const paged = filtered.slice(start, end);
+
+    tbody.innerHTML = paged.map((p, i) => {
+      const cat = p.categories?.name || '—';
+      let stockClass = 'stock-ok';
+      if (p.stock_quantity <= 0) stockClass = 'stock-low';
+      else if (p.stock_quantity <= p.min_stock) stockClass = 'stock-warn';
+      return `<tr>
+        <td class="text-muted" style="font-size:12px">${start + i + 1}</td>
+        <td><code style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px">${escapeHtml(p.sku)}</code></td>
+        <td><strong>${escapeHtml(p.name)}</strong></td>
+        <td>${escapeHtml(cat)}</td>
+        <td class="text-right">${formatCurrency(p.price)}</td>
+        <td class="text-right">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
+        <td class="text-right">${formatCurrency(p.cost)}</td>
+        <td class="text-right font-bold ${stockClass}">${p.stock_quantity}</td>
+        <td class="text-right">${p.min_stock}</td>
+        <td>${escapeHtml(p.unit)}</td>
+        <td>${stockBadge(p.stock_quantity, p.min_stock)}</td>
+        <td>
+          <div class="table-actions">
+            <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}','${escapeHtml(p.name)}',${p.stock_quantity})" title="Sesuaikan Stok">📊</button>
+            <button class="btn btn-ghost btn-sm" onclick="openEditProduct('${p.id}')" title="Edit">✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}','${escapeHtml(p.name)}')" title="Hapus">🗑</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+
+    // Render pagination controls
+    document.getElementById('pagination-bar').style.display = '';
+    document.getElementById('pagination-info').textContent =
+      `Menampilkan ${start + 1}–${end} dari ${total} produk`;
+    renderPaginationBtns(totalPages);
+  }
+
+  function renderPaginationBtns(totalPages) {
+    if (totalPages <= 1) { document.getElementById('pagination-btns').innerHTML = ''; return; }
+
+    let pages = [];
+    if (totalPages <= 7) {
+      pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+    } else {
+      pages = [1];
+      if (currentPage > 3) pages.push('...');
+      for (let i = Math.max(2, currentPage - 1); i <= Math.min(totalPages - 1, currentPage + 1); i++) pages.push(i);
+      if (currentPage < totalPages - 2) pages.push('...');
+      pages.push(totalPages);
+    }
+
+    document.getElementById('pagination-btns').innerHTML =
+      `<button class="page-btn" onclick="goPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}>‹</button>` +
+      pages.map(p => p === '...'
+        ? `<span style="padding:0 4px;color:var(--text-muted)">…</span>`
+        : `<button class="page-btn ${p === currentPage ? 'active' : ''}" onclick="goPage(${p})">${p}</button>`
+      ).join('') +
+      `<button class="page-btn" onclick="goPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}>›</button>`;
+  }
+
+  function goPage(p) {
+    currentPage = p;
+    renderProducts();
+    document.querySelector('.table-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function changePageSize() {
+    pageSize = parseInt(document.getElementById('page-size').value);
+    currentPage = 1;
+    renderProducts();
+  }
+
+  function openAddProduct() {
+    document.getElementById('product-id').value = '';
+    ['product-name','product-sku','product-desc'].forEach(id => document.getElementById(id).value = '');
+    ['product-price','product-price-shopee','product-cost'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('product-stock').value = '0';
+    document.getElementById('product-min-stock').value = '0';
+    document.getElementById('product-category').value = '';
+    document.getElementById('product-unit').value = 'pcs';
+    document.getElementById('modal-product-title').textContent = 'Tambah Produk';
+    openModal('modal-product');
+  }
+
+  function openEditProduct(id) {
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('product-id').value = p.id;
+    document.getElementById('product-name').value = p.name;
+    document.getElementById('product-sku').value = p.sku;
+    document.getElementById('product-category').value = p.category_id || '';
+    document.getElementById('product-unit').value = p.unit;
+    document.getElementById('product-price').value = p.price;
+    document.getElementById('product-price-shopee').value = p.price_shopee || 0;
+    document.getElementById('product-cost').value = p.cost;
+    document.getElementById('product-stock').value = p.stock_quantity;
+    document.getElementById('product-min-stock').value = p.min_stock;
+    document.getElementById('product-desc').value = p.description || '';
+    document.getElementById('modal-product-title').textContent = 'Edit Produk';
+    openModal('modal-product');
+  }
+
+  async function saveProduct() {
+    const btn = document.getElementById('btn-save-product');
+    const id = document.getElementById('product-id').value;
+    const name = document.getElementById('product-name').value.trim();
+    const sku  = document.getElementById('product-sku').value.trim();
+    const price = parseFloat(document.getElementById('product-price').value) || 0;
+    if (!name || !sku) { showToast('Nama dan SKU wajib diisi', 'error'); return; }
+    if (price <= 0) { showToast('Harga jual harus lebih dari 0', 'error'); return; }
+
+    const payload = {
+      name, sku,
+      category_id: document.getElementById('product-category').value || null,
+      unit: document.getElementById('product-unit').value,
+      price,
+      price_shopee: parseFloat(document.getElementById('product-price-shopee').value) || 0,
+      cost: parseFloat(document.getElementById('product-cost').value) || 0,
+      stock_quantity: parseInt(document.getElementById('product-stock').value) || 0,
+      min_stock: parseInt(document.getElementById('product-min-stock').value) || 0,
+      description: document.getElementById('product-desc').value.trim() || null,
+    };
+
+    setLoading(btn, true);
+    let error;
+    if (id) {
+      const old = allProducts.find(x => x.id === id);
+      const diff = payload.stock_quantity - (old?.stock_quantity || 0);
+      ({ error } = await supabase.from('products').update(payload).eq('id', id));
+      if (!error && diff !== 0) {
+        await supabase.from('stock_movements').insert({
+          product_id: id, product_name: name, type: 'adjustment',
+          quantity: Math.abs(diff),
+          quantity_before: old?.stock_quantity || 0,
+          quantity_after: payload.stock_quantity, notes: 'Edit produk',
+        });
+      }
+    } else {
+      ({ error } = await supabase.from('products').insert(payload));
+    }
+
+    setLoading(btn, false);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast(id ? 'Produk diperbarui' : 'Produk ditambahkan');
+    closeModal('modal-product');
+    loadProducts();
+  }
+
+  async function deleteProduct(id, name) {
+    if (!showConfirm(`Hapus produk "${name}"?`)) return;
+    const { error } = await supabase.from('products').update({ is_active: false }).eq('id', id);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast(`Produk "${name}" dihapus`);
+    loadProducts();
+  }
+
+  // ── ADD CATEGORY INLINE ────────────────────────────────────
+  function openAddCategory() {
+    document.getElementById('new-category-name').value = '';
+    openModal('modal-add-category');
+    setTimeout(() => document.getElementById('new-category-name').focus(), 100);
+  }
+
+  async function saveNewCategory() {
+    const btn = document.getElementById('btn-save-category');
+    const name = document.getElementById('new-category-name').value.trim();
+    if (!name) { showToast('Nama kategori wajib diisi', 'error'); return; }
+
+    setLoading(btn, true);
+    const { data, error } = await supabase.from('categories').insert({ name }).select().single();
+    setLoading(btn, false);
+
+    if (error) {
+      if (error.code === '23505') showToast('Kategori sudah ada', 'error');
+      else showToast('Gagal: ' + error.message, 'error');
+      return;
+    }
+
+    showToast(`Kategori "${name}" ditambahkan`);
+    closeModal('modal-add-category');
+    await loadCategories();
+    document.getElementById('product-category').value = data.id;
+  }
+
+  // ── ADJUST STOCK ───────────────────────────────────────────
+  function openAdjustStock(id, name, currentStock) {
+    document.getElementById('adjust-product-id').value = id;
+    document.getElementById('adjust-product-name').value = name;
+    document.getElementById('adjust-current-stock').value = currentStock;
+    document.getElementById('adjust-qty').value = '';
+    document.getElementById('adjust-notes').value = '';
+    openModal('modal-adjust');
+  }
+
+  async function saveAdjustment() {
+    const btn = document.getElementById('btn-save-adjust');
+    const id = document.getElementById('adjust-product-id').value;
+    const type = document.getElementById('adjust-type').value;
+    const qty = parseInt(document.getElementById('adjust-qty').value);
+    const notes = document.getElementById('adjust-notes').value.trim();
+    const currentStock = parseInt(document.getElementById('adjust-current-stock').value);
+    const productName = document.getElementById('adjust-product-name').value;
+
+    if (!qty || qty <= 0) { showToast('Jumlah harus lebih dari 0', 'error'); return; }
+    let newStock;
+    if (type === 'in') newStock = currentStock + qty;
+    else if (type === 'out') {
+      if (qty > currentStock) { showToast('Stok tidak cukup', 'error'); return; }
+      newStock = currentStock - qty;
+    } else { newStock = qty; }
+
+    setLoading(btn, true);
+    const { error } = await supabase.from('products').update({ stock_quantity: newStock }).eq('id', id);
+    if (!error) {
+      await supabase.from('stock_movements').insert({
+        product_id: id, product_name: productName,
+        type: type === 'set' ? 'adjustment' : type,
+        quantity: type === 'set' ? Math.abs(newStock - currentStock) : qty,
+        quantity_before: currentStock, quantity_after: newStock,
+        notes: notes || 'Penyesuaian manual',
+      });
+    }
+    setLoading(btn, false);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Stok disesuaikan');
+    closeModal('modal-adjust');
+    loadProducts();
+  }
+
+  // ── EXPORT XLS ────────────────────────────────────────────
+  function exportXls() {
+    if (!allProducts.length) { showToast('Tidak ada produk untuk diekspor', 'error'); return; }
+
+    const rows = allProducts.map(p => ({
+      'SKU':           p.sku,
+      'Nama':          p.name,
+      'Kategori':      p.categories?.name || '',
+      'Satuan':        p.unit,
+      'Harga Biasa':   p.price,
+      'Harga Shopee':  p.price_shopee || 0,
+      'Harga Modal':   p.cost || 0,
+      'Stok':          p.stock_quantity,
+      'Min Stok':      p.min_stock,
+      'Deskripsi':     p.description || '',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    // Lebar kolom
+    ws['!cols'] = [8,30,16,8,14,14,14,8,8,30].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Produk');
+    const now = new Date();
+    const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+    XLSX.writeFile(wb, `produk_uddiana_${stamp}.xlsx`);
+    showToast(`✅ Exported ${rows.length} produk`);
+  }
+
+  // ── IMPORT CSV ─────────────────────────────────────────────
+  let importRows = [];
+
+  function openImport() {
+    importRows = [];
+    document.getElementById('import-file').value = '';
+    document.getElementById('import-preview').innerHTML = '';
+    document.getElementById('import-result').innerHTML = '';
+    document.getElementById('btn-run-import').style.display = 'none';
+    document.getElementById('import-drop').querySelector('p').innerHTML = '<strong>Klik atau drag & drop file CSV di sini</strong>';
+    openModal('modal-import');
+  }
+
+  function downloadTemplate() {
+    const headers = [['sku','nama','kategori','satuan','harga_biasa','harga_shopee','harga_modal','stok','min_stok','deskripsi']];
+    const example = [['PROD-001','Contoh Produk','Elektronik','pcs',50000,0,30000,100,10,'Deskripsi opsional']];
+    const ws = XLSX.utils.aoa_to_sheet([...headers, ...example]);
+    ws['!cols'] = [10,25,14,8,12,12,12,8,8,25].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    XLSX.writeFile(wb, 'template_import_produk.csv', { bookType: 'csv' });
+  }
+
+  function handleImportDrop(e) {
+    e.preventDefault();
+    document.getElementById('import-drop').classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) parseImportFile(file);
+  }
+
+  function handleImportFile(input) {
+    if (input.files[0]) parseImportFile(input.files[0]);
+  }
+
+  function parseImportFile(file) {
+    if (!file.name.endsWith('.csv')) { showToast('Hanya file .csv yang diterima', 'error'); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      const wb = XLSX.read(e.target.result, { type: 'string' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+      if (!raw.length) { showToast('File kosong atau format tidak sesuai', 'error'); return; }
+
+      // Normalize header keys (lowercase, trim)
+      importRows = raw.map(r => {
+        const norm = {};
+        Object.entries(r).forEach(([k, v]) => { norm[k.toLowerCase().trim().replace(/\s+/g,'_')] = String(v).trim(); });
+        return norm;
+      });
+
+      // Validasi minimal ada kolom sku & nama
+      if (!importRows[0].hasOwnProperty('sku') || !importRows[0].hasOwnProperty('nama')) {
+        showToast('Kolom "sku" dan "nama" wajib ada di CSV', 'error');
+        importRows = [];
+        return;
+      }
+
+      showImportPreview();
+    };
+    reader.readAsText(file);
+  }
+
+  function showImportPreview() {
+    const preview = document.getElementById('import-preview');
+    const skuSet = new Set(allProducts.map(p => p.sku.toLowerCase()));
+    const previewRows = importRows.slice(0, 5);
+    const moreCount = importRows.length - previewRows.length;
+
+    let html = `<div class="import-preview">
+      <p style="font-size:12px;color:var(--text-muted);margin:10px 0 6px">
+        <strong>${importRows.length} baris</strong> ditemukan — preview 5 baris pertama:
+      </p>
+      <table><thead><tr>
+        <th>SKU</th><th>Nama</th><th>Kategori</th><th>Harga</th><th>Stok</th><th>Status</th>
+      </tr></thead><tbody>`;
+
+    previewRows.forEach(r => {
+      const isUpdate = skuSet.has((r.sku||'').toLowerCase());
+      const badge = isUpdate
+        ? `<span style="background:#fef9c3;color:#854d0e;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700">🔄 Update</span>`
+        : `<span style="background:#f0fdf4;color:#166534;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700">✨ Baru</span>`;
+      html += `<tr>
+        <td><code>${escapeHtml(r.sku||'')}</code></td>
+        <td>${escapeHtml(r.nama||'')}</td>
+        <td>${escapeHtml(r.kategori||'—')}</td>
+        <td>${r.harga_biasa||0}</td>
+        <td>${r.stok||0}</td>
+        <td>${badge}</td>
+      </tr>`;
+    });
+
+    if (moreCount > 0) html += `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:6px">... dan ${moreCount} baris lainnya</td></tr>`;
+    html += `</tbody></table></div>`;
+    preview.innerHTML = html;
+
+    const newCount    = importRows.filter(r => !skuSet.has((r.sku||'').toLowerCase())).length;
+    const updateCount = importRows.length - newCount;
+    document.getElementById('import-result').innerHTML = `
+      <div class="import-result success">
+        Siap import: <strong>${newCount} produk baru</strong> + <strong>${updateCount} produk diperbarui</strong>
+      </div>`;
+    document.getElementById('btn-run-import').style.display = '';
+  }
+
+  async function runImport() {
+    if (!importRows.length) return;
+    const btn = document.getElementById('btn-run-import');
+    btn.disabled = true; btn.textContent = 'Mengimpor...';
+
+    let added = 0, updated = 0, errors = [];
+
+    // Ensure categories exist, get/create id map
+    const catMap = {};
+    for (const c of categories) catMap[c.name.toLowerCase()] = c.id;
+
+    for (const row of importRows) {
+      try {
+        const sku  = (row.sku || '').trim();
+        const nama = (row.nama || '').trim();
+        if (!sku || !nama) { errors.push(`Baris SKU "${sku||'?'}": sku/nama kosong`); continue; }
+
+        // Resolve category
+        let catId = null;
+        if (row.kategori) {
+          const catKey = row.kategori.toLowerCase().trim();
+          if (!catMap[catKey]) {
+            const { data: newCat } = await supabase.from('categories').insert({ name: row.kategori.trim() }).select('id,name').single();
+            if (newCat) { catMap[catKey] = newCat.id; categories.push(newCat); }
+          }
+          catId = catMap[catKey] || null;
+        }
+
+        const payload = {
+          name:           nama,
+          sku:            sku,
+          category_id:    catId,
+          unit:           row.satuan || 'pcs',
+          price:          parseFloat(row.harga_biasa)  || 0,
+          price_shopee:   parseFloat(row.harga_shopee) || 0,
+          cost:           parseFloat(row.harga_modal)  || 0,
+          stock_quantity: parseInt(row.stok)            || 0,
+          min_stock:      parseInt(row.min_stok)        || 0,
+          description:    row.deskripsi || null,
+          is_active:      true,
+        };
+
+        const existing = allProducts.find(p => p.sku.toLowerCase() === sku.toLowerCase());
+        if (existing) {
+          const { error } = await supabase.from('products').update(payload).eq('id', existing.id);
+          if (error) throw error;
+          updated++;
+        } else {
+          const { error } = await supabase.from('products').insert(payload);
+          if (error) throw error;
+          added++;
+        }
+      } catch(err) {
+        errors.push(`SKU "${row.sku||'?'}": ${err.message}`);
+      }
+    }
+
+    btn.disabled = false; btn.textContent = '⬆️ Import Sekarang';
+
+    let resultHtml = `<div class="import-result ${errors.length && !added && !updated ? 'error' : 'success'}">
+      ✅ <strong>${added} produk baru</strong> ditambahkan, <strong>${updated} produk</strong> diperbarui.`;
+    if (errors.length) {
+      resultHtml += `<br>⚠️ ${errors.length} baris gagal:<ul>${errors.slice(0,5).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
+    }
+    resultHtml += `</div>`;
+    document.getElementById('import-result').innerHTML = resultHtml;
+    document.getElementById('import-preview').innerHTML = '';
+    document.getElementById('btn-run-import').style.display = 'none';
+    importRows = [];
+
+    if (added || updated) {
+      refreshCategorySelects();
+      await loadProducts();
+    }
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>

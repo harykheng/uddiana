@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item active">
+        <span class="nav-icon">🏠</span> Dashboard
+      </a>
+      <a href="products.html" class="nav-item">
+        <span class="nav-icon">📦</span> Produk
+      </a>
+      <a href="customers.html" class="nav-item">
+        <span class="nav-icon">👥</span> Customers
+      </a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Dashboard</h1>
+        <p id="today-date">Memuat...</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn-icon" onclick="loadDashboard()" title="Refresh">🔄</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <!-- STAT CARDS -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon blue">📦</div>
+          <div class="stat-info">
+            <p>Total Produk</p>
+            <h3 id="stat-total-products">—</h3>
+            <small>produk aktif</small>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green">💰</div>
+          <div class="stat-info">
+            <p>Nilai Stok</p>
+            <h3 id="stat-stock-value" style="font-size:16px">—</h3>
+            <small>estimasi harga jual</small>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon yellow">⚠️</div>
+          <div class="stat-info">
+            <p>Stok Menipis</p>
+            <h3 id="stat-low-stock">—</h3>
+            <small>produk perlu restok</small>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple">🧾</div>
+          <div class="stat-info">
+            <p>Penjualan Hari Ini</p>
+            <h3 id="stat-today-sales" style="font-size:16px">—</h3>
+            <small id="stat-today-invoices">0 faktur</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- MAIN GRID -->
+      <div class="dashboard-grid">
+        <!-- RECENT INVOICES -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Faktur Terbaru</h3>
+            <a href="invoices.html" class="btn btn-ghost btn-sm">Lihat Semua</a>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No. Faktur</th>
+                  <th>Pelanggan</th>
+                  <th>Tanggal</th>
+                  <th>Total</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="recent-invoices">
+                <tr><td colspan="5" class="text-center text-muted" style="padding:30px">Memuat data...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- LOW STOCK ALERTS -->
+        <div class="card">
+          <div class="card-header">
+            <h3>⚠ Alert Stok Rendah</h3>
+            <a href="products.html" class="btn btn-ghost btn-sm">Kelola</a>
+          </div>
+          <div class="card-body">
+            <div id="low-stock-list">
+              <p class="text-muted text-center" style="padding:20px">Memuat...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RECENT MOVEMENTS -->
+      <div class="card mt-12" style="margin-top:20px">
+        <div class="card-header">
+          <h3>Pergerakan Stok Terbaru</h3>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Produk</th>
+                <th>Tipe</th>
+                <th>Jumlah</th>
+                <th>Stok Sebelum</th>
+                <th>Stok Sesudah</th>
+                <th>Referensi</th>
+                <th>Waktu</th>
+              </tr>
+            </thead>
+            <tbody id="recent-movements">
+              <tr><td colspan="7" class="text-center text-muted" style="padding:30px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  document.getElementById('today-date').textContent =
+    new Intl.DateTimeFormat('id-ID', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }).format(new Date());
+
+  async function loadDashboard() {
+    await Promise.all([loadStats(), loadRecentInvoices(), loadLowStock(), loadRecentMovements()]);
+  }
+
+  async function loadStats() {
+    try {
+      // Total products
+      const { count: totalProducts } = await supabase
+        .from('products').select('*', { count: 'exact', head: true })
+        .eq('is_active', true);
+      document.getElementById('stat-total-products').textContent = totalProducts || 0;
+
+      // Stock value
+      const { data: products } = await supabase
+        .from('products').select('price, stock_quantity').eq('is_active', true);
+      const stockValue = (products || []).reduce((s, p) => s + (p.price * p.stock_quantity), 0);
+      document.getElementById('stat-stock-value').textContent = formatCurrency(stockValue);
+
+      // Low stock
+      const { data: lowStock } = await supabase
+        .from('products').select('id').eq('is_active', true)
+        .filter('stock_quantity', 'lte', supabase.raw ? undefined : 0);
+
+      // Better: use a comparison
+      const { data: lowProds } = await supabase
+        .from('products').select('id, stock_quantity, min_stock').eq('is_active', true);
+      const lowCount = (lowProds || []).filter(p => p.stock_quantity <= p.min_stock).length;
+      document.getElementById('stat-low-stock').textContent = lowCount;
+
+      // Today's sales
+      const today = todayISO();
+      const { data: todayInvs } = await supabase
+        .from('invoices').select('total')
+        .eq('invoice_date', today)
+        .neq('status', 'cancelled');
+      const todaySales = (todayInvs || []).reduce((s, i) => s + Number(i.total), 0);
+      document.getElementById('stat-today-sales').textContent = formatCurrency(todaySales);
+      document.getElementById('stat-today-invoices').textContent = `${(todayInvs || []).length} faktur`;
+    } catch (e) { console.error(e); }
+  }
+
+  async function loadRecentInvoices() {
+    const { data, error } = await supabase
+      .from('invoices').select('*').order('created_at', { ascending: false }).limit(8);
+
+    const tbody = document.getElementById('recent-invoices');
+    if (error || !data?.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted" style="padding:30px">Belum ada faktur</td></tr>`;
+      return;
+    }
+
+    const statusLabel = { paid: ['Lunas', 'success'], pending: ['Pending', 'warning'], cancelled: ['Dibatalkan', 'danger'] };
+    tbody.innerHTML = data.map(inv => {
+      const [label, color] = statusLabel[inv.status] || ['—', 'gray'];
+      return `<tr>
+        <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
+        <td>${escapeHtml(inv.customer_name)}</td>
+        <td>${formatDate(inv.invoice_date)}</td>
+        <td class="text-right font-bold">${formatCurrency(inv.total)}</td>
+        <td><span class="badge badge-${color}">${label}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function loadLowStock() {
+    const { data } = await supabase
+      .from('products').select('name, stock_quantity, min_stock, unit').eq('is_active', true)
+      .order('stock_quantity', { ascending: true }).limit(8);
+
+    const container = document.getElementById('low-stock-list');
+    const alerts = (data || []).filter(p => p.stock_quantity <= p.min_stock);
+
+    if (!alerts.length) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><h4>Semua Stok Normal</h4><p>Tidak ada produk dengan stok rendah</p></div>`;
+      return;
+    }
+
+    container.innerHTML = `<div class="alert-list">${alerts.map(p => `
+      <div class="alert-item ${p.stock_quantity <= 0 ? 'out-of-stock' : ''}">
+        <div>
+          <div class="alert-item-name">${escapeHtml(p.name)}</div>
+          <div class="alert-item-meta">Min: ${p.min_stock} ${p.unit}</div>
+        </div>
+        <div class="stock-number ${p.stock_quantity <= 0 ? 'stock-low' : 'stock-warn'}">
+          ${p.stock_quantity} ${p.unit}
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }
+
+  async function loadRecentMovements() {
+    const { data } = await supabase
+      .from('stock_movements').select('*').order('created_at', { ascending: false }).limit(10);
+
+    const tbody = document.getElementById('recent-movements');
+    if (!data?.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding:30px">Belum ada pergerakan stok</td></tr>`;
+      return;
+    }
+
+    const typeLabel = { out: ['Keluar', 'danger'], in: ['Masuk', 'success'], adjustment: ['Adj.', 'info'] };
+    tbody.innerHTML = data.map(m => {
+      const [label, color] = typeLabel[m.type] || ['—', 'gray'];
+      return `<tr>
+        <td>${escapeHtml(m.product_name)}</td>
+        <td><span class="badge badge-${color}">${label}</span></td>
+        <td class="font-bold">${m.type === 'out' ? '-' : '+'}${m.quantity}</td>
+        <td>${m.quantity_before}</td>
+        <td>${m.quantity_after}</td>
+        <td>${m.reference_type ? escapeHtml(m.reference_type) : '-'}</td>
+        <td class="text-muted">${formatDate(m.created_at)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Real-time subscription
+  supabase.channel('dashboard-realtime')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, loadDashboard)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, loadDashboard)
+    .subscribe();
+
+  (async () => { const auth = await requireAdmin(); if (!auth) return; loadDashboard(); })();
+</script>
+</body>
+</html>

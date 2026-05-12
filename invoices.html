@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Faktur Penjualan - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+  <style>
+    .ts-wrapper .ts-control { border:1.5px solid var(--border); border-radius:6px; padding:5px 8px; box-shadow:none; min-height:unset; font-size:12.5px; }
+    .ts-wrapper.focus .ts-control,.ts-wrapper.single.input-active .ts-control { border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.1); }
+    .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; }
+    .ts-dropdown .option { padding:8px 12px; }
+    .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
+    .ts-dropdown-content { max-height:220px; }
+    .ts-dropdown { z-index:9999 !important; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* ── SALES BADGE ── */
+    .badge-sales { background:#ede9fe; color:#6d28d9; font-size:10px; padding:2px 7px; border-radius:20px; font-weight:700; display:inline-block; vertical-align:middle; margin-left:4px; }
+
+    /* ── PRICE MODE TOGGLE ── */
+    .price-mode-group { display:flex; gap:6px; flex-wrap:wrap; }
+    .price-mode-btn {
+      padding:6px 14px; border:1px solid var(--border); border-radius:20px;
+      background:var(--surface); cursor:pointer; font-size:12.5px; font-weight:600;
+      color:var(--text-muted); transition:all .15s;
+    }
+    .price-mode-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+    /* ── PAYMENT METHOD ── */
+    .pay-method-group { display:flex; gap:10px; }
+    .pay-method-btn {
+      flex:1; padding:12px; border:2px solid var(--border); border-radius:8px;
+      background:var(--surface); cursor:pointer; font-size:13px; font-weight:600;
+      color:var(--text-muted); text-align:center; transition:all .15s;
+    }
+    .pay-method-btn:hover { border-color:var(--primary); color:var(--primary); }
+    .pay-method-btn.active { border-color:var(--primary); background:var(--primary-light); color:var(--primary); }
+    .pay-method-btn .method-icon { font-size:22px; display:block; margin-bottom:4px; }
+
+    /* ── PRINT STYLES ── */
+    @media print {
+      body > .layout, .modal-overlay { display:none !important; }
+      #print-area { display:block !important; }
+    }
+    #print-area { display:none; }
+    .print-invoice {
+      font-family: Arial, sans-serif; padding:32px; max-width:700px; margin:0 auto;
+      font-size:13px; color:#111;
+    }
+    .print-header { display:flex; justify-content:space-between; margin-bottom:20px; }
+    .print-company h2 { font-size:20px; font-weight:800; margin-bottom:2px; }
+    .print-company p { font-size:12px; color:#555; }
+    .print-inv-info { text-align:right; }
+    .print-inv-info .inv-num { font-size:18px; font-weight:800; color:#2563eb; }
+    .print-divider { border:none; border-top:2px solid #111; margin:14px 0; }
+    .print-divider-light { border:none; border-top:1px solid #ddd; margin:10px 0; }
+    .print-parties { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:16px; }
+    .print-party h4 { font-size:10px; text-transform:uppercase; color:#888; letter-spacing:.05em; margin-bottom:4px; }
+    .print-party p { font-size:13px; font-weight:600; margin-bottom:2px; }
+    .print-party small { font-size:12px; color:#555; }
+    .print-table { width:100%; border-collapse:collapse; margin:14px 0; }
+    .print-table th {
+      background:#f1f5f9; padding:8px 10px; text-align:left;
+      font-size:11px; text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid #ddd;
+    }
+    .print-table td { padding:8px 10px; border-bottom:1px solid #eee; font-size:13px; }
+    .print-table tr:last-child td { border-bottom:none; }
+    .print-totals { margin-left:auto; width:260px; }
+    .print-total-row { display:flex; justify-content:space-between; padding:3px 0; font-size:13px; }
+    .print-total-row.grand { font-size:15px; font-weight:800; border-top:2px solid #111; padding-top:6px; margin-top:4px; }
+    .print-footer { margin-top:24px; display:grid; grid-template-columns:1fr 1fr; gap:20px; font-size:12px; }
+    .print-status-box { padding:8px 12px; border-radius:6px; font-weight:700; text-align:center; }
+    .print-status-paid { background:#dcfce7; color:#16a34a; }
+    .print-status-pending { background:#fef9c3; color:#ca8a04; }
+    .print-sign { text-align:center; padding-top:40px; border-top:1px solid #ddd; font-size:12px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item active"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Faktur Penjualan</h1>
+        <p>Buat dan kelola faktur penjualan</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openCreateInvoice()">+ Buat Faktur</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="filter-bar">
+        <div class="search-input-wrap" style="flex:1;max-width:300px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="No. faktur, pelanggan..." oninput="handleSearch()">
+        </div>
+        <select id="filter-status" onchange="loadInvoices()">
+          <option value="">Semua Status</option>
+          <option value="pending">Belum Lunas</option>
+          <option value="paid">Lunas</option>
+          <option value="cancelled">Dibatalkan</option>
+        </select>
+        <select id="filter-sales" onchange="renderInvoices()">
+          <option value="">Semua Sales</option>
+        </select>
+        <input type="date" id="filter-date-from" onchange="loadInvoices()">
+        <input type="date" id="filter-date-to" onchange="loadInvoices()">
+        <button class="btn btn-ghost btn-sm" onclick="clearFilters()">Reset</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Daftar Faktur <span id="invoice-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+          <span id="total-summary" class="text-muted" style="font-size:13px"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>No. Faktur</th>
+                <th>Pelanggan</th>
+                <th>Toko</th>
+                <th>Tanggal</th>
+                <th>Termin</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="invoices-table">
+              <tr><td colspan="8" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: BUAT FAKTUR
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-create-invoice">
+  <div class="modal modal-xl">
+    <div class="modal-header">
+      <h3>Buat Faktur Penjualan</h3>
+      <button class="modal-close" onclick="closeModal('modal-create-invoice')">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- CUSTOMER PICKER -->
+      <div style="background:#f8fafc;border-radius:8px;padding:14px 16px;margin-bottom:14px">
+        <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:10px">Pelanggan</div>
+        <div class="form-row" style="margin-bottom:10px">
+          <div class="form-group mb-0">
+            <label>Pilih Customer</label>
+            <select id="inv-customer-select" onchange="onCustomerSelect()">
+              <option value="">— Ketik manual / pilih customer —</option>
+            </select>
+          </div>
+          <div class="form-group mb-0">
+            <label>Nama Toko</label>
+            <input type="text" id="inv-store-name" placeholder="Nama toko">
+          </div>
+        </div>
+        <div class="form-row" style="margin-bottom:0">
+          <div class="form-group mb-0">
+            <label>Nama Pelanggan *</label>
+            <input type="text" id="inv-customer-name" placeholder="Nama pelanggan">
+          </div>
+          <div class="form-group mb-0">
+            <label>Nomor Telepon</label>
+            <input type="tel" id="inv-customer-phone" placeholder="08xx-xxxx-xxxx">
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:10px;margin-bottom:0">
+          <label>Alamat</label>
+          <input type="text" id="inv-customer-address" placeholder="Alamat pelanggan">
+        </div>
+      </div>
+
+      <!-- DATE & TERMIN -->
+      <div class="form-row" style="margin-bottom:14px">
+        <div class="form-group mb-0">
+          <label>Tanggal Faktur</label>
+          <input type="date" id="inv-date">
+        </div>
+        <div class="form-group mb-0">
+          <label>Termin Pembayaran</label>
+          <select id="inv-payment-term">
+            <option value="cod">COD (Bayar di Tempat)</option>
+            <option value="7_days">7 Hari</option>
+            <option value="15_days">15 Hari</option>
+            <option value="30_days">30 Hari</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- PRICE MODE -->
+      <div style="margin-bottom:14px">
+        <label style="display:block;margin-bottom:6px">Mode Harga</label>
+        <div class="price-mode-group">
+          <button class="price-mode-btn active" data-mode="regular" onclick="setPriceMode('regular')">💰 Harga Biasa</button>
+          <button class="price-mode-btn" data-mode="shopee" onclick="setPriceMode('shopee')">🛒 Harga Shopee</button>
+          <button class="price-mode-btn" data-mode="custom" onclick="setPriceMode('custom')">✏️ Custom</button>
+        </div>
+      </div>
+
+      <!-- ITEMS -->
+      <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">Item Penjualan</div>
+      <div class="table-wrap" style="margin-bottom:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);white-space:nowrap;width:38%">Produk</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Stok</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Qty</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:18%">Harga Satuan</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:16%">Subtotal</th>
+              <th style="padding:8px 6px;width:8%"></th>
+            </tr>
+          </thead>
+          <tbody id="invoice-items-body"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addItemRow()" style="margin-bottom:14px">+ Tambah Item</button>
+
+      <!-- SUMMARY -->
+      <div class="invoice-summary">
+        <div class="invoice-summary-row"><span>Subtotal</span><span id="inv-subtotal">Rp 0</span></div>
+        <div class="invoice-summary-row" style="align-items:center;gap:8px">
+          <span>Diskon (Rp)</span>
+          <input type="number" id="inv-discount" value="0" min="0" style="width:140px;text-align:right;padding:5px 8px" oninput="recalcTotal()">
+        </div>
+        <div class="invoice-summary-row total"><span>TOTAL</span><span id="inv-total" style="color:var(--primary)">Rp 0</span></div>
+      </div>
+
+      <div class="form-group" style="margin-top:12px;margin-bottom:0">
+        <label>Catatan</label>
+        <textarea id="inv-notes" placeholder="Catatan tambahan (opsional)" style="min-height:56px"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-create-invoice')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-invoice" onclick="saveInvoice()">🧾 Simpan Faktur</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: PELUNASAN
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-payment">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h3>Proses Pelunasan</h3>
+      <button class="modal-close" onclick="closeModal('modal-payment')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="pay-invoice-id">
+      <div style="background:#f8fafc;border-radius:8px;padding:12px 14px;margin-bottom:16px">
+        <div id="pay-invoice-info" style="font-size:13px"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Metode Pembayaran *</label>
+        <div class="pay-method-group">
+          <button class="pay-method-btn active" data-method="cash" onclick="setPayMethod('cash')">
+            <span class="method-icon">💵</span>Cash
+          </button>
+          <button class="pay-method-btn" data-method="transfer" onclick="setPayMethod('transfer')">
+            <span class="method-icon">🏦</span>Transfer Bank
+          </button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Tanggal Pembayaran</label>
+        <input type="date" id="pay-date">
+      </div>
+      <div class="form-group mb-0">
+        <label>Catatan</label>
+        <textarea id="pay-notes" placeholder="Contoh: Transfer BCA a/n xxx" style="min-height:60px"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-payment')">Batal</button>
+      <button class="btn btn-success" id="btn-confirm-payment" onclick="confirmPayment()">✓ Konfirmasi Lunas</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: DETAIL FAKTUR
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-view-invoice">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 id="view-invoice-title">Detail Faktur</h3>
+      <button class="modal-close" onclick="closeModal('modal-view-invoice')">×</button>
+    </div>
+    <div class="modal-body" id="view-invoice-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-view-invoice')">Tutup</button>
+      <button class="btn btn-ghost" id="btn-cancel-invoice"
+        onclick="cancelCurrentInvoice()"
+        style="color:var(--danger);border-color:var(--danger)">Batalkan</button>
+      <button class="btn btn-primary" onclick="printCurrentInvoice()">🖨 Cetak PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     PRINT AREA (tersembunyi, hanya tampil saat print)
+════════════════════════════════════════════════════════════ -->
+<div id="print-area"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let allInvoices = [];
+  let products    = [];
+  let customers   = [];
+  let currentInvoice = null;
+  let currentPriceMode = 'regular';
+  let currentPayMethod = 'cash';
+  let itemRowCount = 0;
+
+  const handleSearch = debounce(() => renderInvoices(), 350);
+
+  async function init() {
+    const auth = await requireAdmin(); if (!auth) return;
+    document.getElementById('inv-date').value = todayISO();
+    document.getElementById('pay-date').value  = todayISO();
+    await Promise.all([loadProducts(), loadCustomers(), loadInvoices()]);
+  }
+
+  async function loadProducts() {
+    const { data } = await supabase.from('products')
+      .select('id,name,sku,price,price_shopee,cost,stock_quantity,unit')
+      .eq('is_active', true).order('name');
+    products = data || [];
+  }
+
+  async function loadCustomers() {
+    const { data } = await supabase.from('customers').select('*').order('name');
+    customers = data || [];
+    const opts = customers.map(c =>
+      `<option value="${c.id}" data-name="${escapeHtml(c.name)}" data-store="${escapeHtml(c.store_name||'')}" data-phone="${escapeHtml(c.phone||'')}" data-address="${escapeHtml(c.address||'')}">
+        ${escapeHtml(c.name)}${c.store_name ? ` — ${escapeHtml(c.store_name)}` : ''}
+      </option>`
+    ).join('');
+    document.getElementById('inv-customer-select').innerHTML =
+      '<option value="">— Ketik manual / pilih customer —</option>' + opts;
+  }
+
+  async function loadInvoices() {
+    const status   = document.getElementById('filter-status').value;
+    const dateFrom = document.getElementById('filter-date-from').value;
+    const dateTo   = document.getElementById('filter-date-to').value;
+
+    let q = supabase.from('invoices').select('*').order('created_at', { ascending: false })
+      .or('verification_status.is.null,verification_status.eq.approved');
+    if (status)   q = q.eq('status', status);
+    if (dateFrom) q = q.gte('invoice_date', dateFrom);
+    if (dateTo)   q = q.lte('invoice_date', dateTo);
+
+    const { data, error } = await q;
+    if (error) { showToast('Gagal memuat faktur', 'error'); return; }
+    allInvoices = data || [];
+
+    // Populasi dropdown filter sales dari data yang ada
+    const salesNames = [...new Set(allInvoices.map(i => i.sales_name).filter(Boolean))].sort();
+    const selSales = document.getElementById('filter-sales');
+    const prevVal = selSales.value;
+    selSales.innerHTML = '<option value="">Semua Sales</option>' +
+      salesNames.map(n => `<option value="${n}"${n === prevVal ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('');
+
+    renderInvoices();
+  }
+
+  function renderInvoices() {
+    const search     = document.getElementById('search-input').value.toLowerCase();
+    const salesFilter = document.getElementById('filter-sales').value;
+    let filtered = allInvoices.filter(inv => {
+      if (search && !inv.invoice_number.toLowerCase().includes(search) &&
+          !inv.customer_name.toLowerCase().includes(search) &&
+          !(inv.store_name || '').toLowerCase().includes(search)) return false;
+      if (salesFilter && (inv.sales_name || '') !== salesFilter) return false;
+      return true;
+    });
+
+    document.getElementById('invoice-count').textContent = filtered.length;
+    const totalVal = filtered.filter(i => i.status !== 'cancelled').reduce((s, i) => s + Number(i.total), 0);
+    document.getElementById('total-summary').textContent = `Total: ${formatCurrency(totalVal)}`;
+
+    const tbody = document.getElementById('invoices-table');
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🧾</div><h4>Tidak ada faktur</h4></div></td></tr>`;
+      return;
+    }
+
+    const statusMap = {
+      paid:      ['Lunas',       'success'],
+      pending:   ['Belum Lunas', 'warning'],
+      cancelled: ['Dibatalkan',  'danger'],
+    };
+    const terminMap = {
+      cod:     'COD', '7_days': '7 Hari',
+      '15_days': '15 Hari', '30_days': '30 Hari',
+    };
+
+    tbody.innerHTML = filtered.map(inv => {
+      const [label, color] = statusMap[inv.status] || ['—', 'gray'];
+      const termin = terminMap[inv.payment_term] || inv.payment_term || '—';
+      const faded = inv.status === 'cancelled' ? 'style="opacity:.55"' : '';
+      return `<tr ${faded}>
+        <td>
+          <strong style="color:var(--primary)">${escapeHtml(inv.invoice_number)}</strong>
+          ${inv.sales_name ? `<span class="badge-sales">👤 ${escapeHtml(inv.sales_name)}</span>` : ''}
+        </td>
+        <td>${escapeHtml(inv.customer_name)}</td>
+        <td>${inv.store_name ? `<span class="badge badge-info">${escapeHtml(inv.store_name)}</span>` : '—'}</td>
+        <td>${formatDate(inv.invoice_date)}</td>
+        <td><span class="badge badge-gray">${termin}</span></td>
+        <td class="text-right font-bold">${formatCurrency(inv.total)}</td>
+        <td><span class="badge badge-${color}">${label}</span></td>
+        <td>
+          <div class="table-actions">
+            ${inv.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="openPayment('${inv.id}')">💳 Lunasi</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="viewInvoice('${inv.id}')">👁</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function clearFilters() {
+    ['search-input','filter-date-from','filter-date-to'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('filter-status').value = '';
+    document.getElementById('filter-sales').value = '';
+    loadInvoices();
+  }
+
+  // ── CREATE INVOICE ─────────────────────────────────────────
+  function openCreateInvoice() {
+    ['inv-customer-name','inv-customer-phone','inv-customer-address','inv-store-name','inv-notes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('inv-customer-select').value = '';
+    document.getElementById('inv-date').value = todayISO();
+    document.getElementById('inv-payment-term').value = 'cod';
+    document.getElementById('inv-discount').value = '0';
+    document.getElementById('invoice-items-body').innerHTML = '';
+    itemRowCount = 0;
+    setPriceMode('regular');
+    addItemRow();
+    recalcTotal();
+    openModal('modal-create-invoice');
+  }
+
+  function onCustomerSelect() {
+    const sel = document.getElementById('inv-customer-select');
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt.value) return;
+    document.getElementById('inv-customer-name').value    = opt.dataset.name    || '';
+    document.getElementById('inv-store-name').value       = opt.dataset.store   || '';
+    document.getElementById('inv-customer-phone').value   = opt.dataset.phone   || '';
+    document.getElementById('inv-customer-address').value = opt.dataset.address || '';
+  }
+
+  function setPriceMode(mode) {
+    currentPriceMode = mode;
+    document.querySelectorAll('.price-mode-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+    // Re-apply prices to existing rows
+    document.querySelectorAll('#invoice-items-body tr').forEach(tr => {
+      const sel = tr.querySelector('select');
+      if (sel?.value) onProductSelect(sel, tr.id);
+    });
+  }
+
+  function addItemRow() {
+    const id = `row-${++itemRowCount}`;
+    const tbody = document.getElementById('invoice-items-body');
+    const tr = document.createElement('tr');
+    tr.id = id;
+    tr.innerHTML = `
+      <td style="padding:5px 6px">
+        <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
+          <option value="">-- Pilih Produk --</option>
+          ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}" data-unit="${p.unit}">${escapeHtml(p.name)} (${p.stock_quantity} ${p.unit})</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="number" id="qty-${id}" value="1" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="number" id="price-${id}" value="0" min="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="number" id="sub-${id}" readonly value="0" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 4px"><button onclick="removeItemRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
+    `;
+    tbody.appendChild(tr);
+    const sel = tr.querySelector('select');
+    new TomSelect(sel, {
+      placeholder: '— Cari & pilih produk —',
+      maxOptions: 200,
+      dropdownParent: 'body',
+      onChange: () => onProductSelect(sel, id)
+    });
+  }
+
+  function onProductSelect(sel, rowId) {
+    const opt = sel.options[sel.selectedIndex];
+    const stock  = parseInt(opt.dataset.stock)  || 0;
+    const regular = parseFloat(opt.dataset.price)  || 0;
+    const shopee  = parseFloat(opt.dataset.shopee) || 0;
+
+    let price = 0;
+    if (currentPriceMode === 'regular') price = regular;
+    else if (currentPriceMode === 'shopee') price = shopee || regular;
+    // custom = leave as is
+
+    document.getElementById(`stock-${rowId}`).value = stock;
+    document.getElementById(`price-${rowId}`).value = price;
+    recalcRow(rowId);
+  }
+
+  function recalcRow(rowId) {
+    const qty   = parseInt(document.getElementById(`qty-${rowId}`)?.value) || 0;
+    const price = parseFloat(document.getElementById(`price-${rowId}`)?.value) || 0;
+    const sub   = document.getElementById(`sub-${rowId}`);
+    if (sub) sub.value = (qty * price).toFixed(0);
+    recalcTotal();
+  }
+
+  function removeItemRow(rowId) {
+    document.getElementById(rowId)?.remove();
+    recalcTotal();
+  }
+
+  function recalcTotal() {
+    let subtotal = 0;
+    document.querySelectorAll('#invoice-items-body tr').forEach(tr => {
+      const subEl = tr.querySelector('[id^="sub-"]');
+      subtotal += parseFloat(subEl?.value) || 0;
+    });
+    const discount = parseFloat(document.getElementById('inv-discount').value) || 0;
+    const total = Math.max(0, subtotal - discount);
+    document.getElementById('inv-subtotal').textContent = formatCurrency(subtotal);
+    document.getElementById('inv-total').textContent    = formatCurrency(total);
+  }
+
+  async function saveInvoice() {
+    const btn = document.getElementById('btn-save-invoice');
+    const customerName = document.getElementById('inv-customer-name').value.trim();
+    if (!customerName) { showToast('Nama pelanggan wajib diisi', 'error'); return; }
+
+    const items = [];
+    let subtotal = 0;
+    let valid = true;
+
+    document.querySelectorAll('#invoice-items-body tr').forEach(tr => {
+      const sel   = tr.querySelector('select');
+      const qtyEl = tr.querySelector('[id^="qty-"]');
+      const priceEl = tr.querySelector('[id^="price-"]');
+      const stockEl = tr.querySelector('[id^="stock-"]');
+      if (!sel?.value) return;
+
+      const qty   = parseInt(qtyEl?.value) || 0;
+      const price = parseFloat(priceEl?.value) || 0;
+      const stock = parseInt(stockEl?.value) || 0;
+      const prod  = products.find(p => p.id === sel.value);
+
+      if (qty <= 0)     { showToast('Jumlah item harus > 0', 'error'); valid = false; return; }
+      if (qty > stock)  { showToast(`Stok "${prod?.name}" tidak cukup (sisa: ${stock})`, 'error'); valid = false; return; }
+
+      const sub = qty * price;
+      subtotal += sub;
+      const costPrice = parseFloat(sel.options[sel.selectedIndex].dataset.cost) || 0;
+      items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, price, subtotal: sub, cost_price: costPrice });
+    });
+
+    if (!valid) return;
+    if (!items.length) { showToast('Tambahkan minimal 1 produk', 'error'); return; }
+
+    const discount = parseFloat(document.getElementById('inv-discount').value) || 0;
+    const total = Math.max(0, subtotal - discount);
+    const customerId = document.getElementById('inv-customer-select').value || null;
+
+    setLoading(btn, true);
+    const { data: invData, error: invErr } = await supabase.from('invoices').insert({
+      customer_id:    customerId,
+      customer_name:  customerName,
+      customer_phone: document.getElementById('inv-customer-phone').value.trim() || null,
+      customer_address: document.getElementById('inv-customer-address').value.trim() || null,
+      store_name:     document.getElementById('inv-store-name').value.trim() || null,
+      invoice_date:   document.getElementById('inv-date').value,
+      payment_term:   document.getElementById('inv-payment-term').value,
+      price_mode:     currentPriceMode,
+      subtotal, discount, tax_percent: 0, tax: 0, total,
+      status: 'pending',
+      notes: document.getElementById('inv-notes').value.trim() || null,
+    }).select().single();
+
+    if (invErr) { setLoading(btn, false); showToast('Gagal buat faktur: ' + invErr.message, 'error'); return; }
+
+    const { error: itemsErr } = await supabase.from('invoice_items').insert(
+      items.map(item => ({ ...item, invoice_id: invData.id }))
+    );
+
+    setLoading(btn, false);
+    if (itemsErr) {
+      await supabase.from('invoices').delete().eq('id', invData.id);
+      showToast('Gagal simpan item: ' + itemsErr.message, 'error');
+      return;
+    }
+
+    showToast(`Faktur ${invData.invoice_number} dibuat! Status: Belum Lunas`);
+    closeModal('modal-create-invoice');
+    loadInvoices();
+  }
+
+  // ── PAYMENT ────────────────────────────────────────────────
+  function setPayMethod(method) {
+    currentPayMethod = method;
+    document.querySelectorAll('.pay-method-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.method === method);
+    });
+  }
+
+  function openPayment(id) {
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv) return;
+    document.getElementById('pay-invoice-id').value = id;
+    document.getElementById('pay-date').value = todayISO();
+    document.getElementById('pay-notes').value = '';
+    setPayMethod('cash');
+
+    const terminMap = { cod:'COD', '7_days':'7 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
+    document.getElementById('pay-invoice-info').innerHTML = `
+      <div style="font-weight:700;font-size:15px;margin-bottom:4px">${escapeHtml(inv.invoice_number)}</div>
+      <div style="color:var(--text-muted)">${escapeHtml(inv.customer_name)}${inv.store_name ? ` &mdash; ${escapeHtml(inv.store_name)}` : ''}</div>
+      <div style="font-size:18px;font-weight:800;color:var(--primary);margin-top:6px">${formatCurrency(inv.total)}</div>
+      <div style="font-size:12px;color:var(--text-muted)">Termin: ${terminMap[inv.payment_term] || inv.payment_term}</div>
+    `;
+    openModal('modal-payment');
+  }
+
+  async function confirmPayment() {
+    const btn = document.getElementById('btn-confirm-payment');
+    const id  = document.getElementById('pay-invoice-id').value;
+    const date  = document.getElementById('pay-date').value;
+    const notes = document.getElementById('pay-notes').value.trim();
+
+    setLoading(btn, true);
+    const { error } = await supabase.from('invoices').update({
+      status: 'paid',
+      payment_method: currentPayMethod,
+      payment_date:   date || todayISO(),
+      payment_notes:  notes || null,
+    }).eq('id', id);
+    setLoading(btn, false);
+
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Faktur berhasil dilunasi ✓');
+    closeModal('modal-payment');
+    loadInvoices();
+  }
+
+  // ── VIEW & PRINT ───────────────────────────────────────────
+  async function viewInvoice(id) {
+    const { data: inv }   = await supabase.from('invoices').select('*').eq('id', id).single();
+    const { data: items } = await supabase.from('invoice_items').select('*').eq('invoice_id', id);
+    currentInvoice = { inv, items };
+
+    document.getElementById('view-invoice-title').textContent = `Faktur ${inv.invoice_number}`;
+
+    const statusMap = { paid:['Lunas','success'], pending:['Belum Lunas','warning'], cancelled:['Dibatalkan','danger'] };
+    const terminMap = { cod:'COD', '7_days':'7 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
+    const modeMap   = { regular:'Harga Biasa', shopee:'Harga Shopee', custom:'Custom' };
+    const [statusLabel, statusColor] = statusMap[inv.status] || ['—','gray'];
+
+    const itemsHtml = (items||[]).map(item => `
+      <tr>
+        <td style="padding:8px 10px">${escapeHtml(item.product_name)}</td>
+        <td style="padding:8px 10px;text-align:right">${item.quantity}</td>
+        <td style="padding:8px 10px;text-align:right">${formatCurrency(item.price)}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700">${formatCurrency(item.subtotal)}</td>
+      </tr>`).join('');
+
+    const paymentInfo = inv.status === 'paid' ? `
+      <div style="margin-top:12px;padding:10px 14px;background:var(--success-light);border-radius:8px;border-left:3px solid var(--success)">
+        <div style="font-size:12px;color:var(--success);font-weight:700;margin-bottom:2px">LUNAS</div>
+        <div style="font-size:13px">
+          Dibayar via <strong>${inv.payment_method === 'cash' ? '💵 Cash' : '🏦 Transfer Bank'}</strong>
+          • ${formatDate(inv.payment_date)}
+          ${inv.payment_notes ? `<br><span class="text-muted">${escapeHtml(inv.payment_notes)}</span>` : ''}
+        </div>
+      </div>` : '';
+
+    document.getElementById('view-invoice-body').innerHTML = `
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Pelanggan</div>
+          <div style="font-weight:700;font-size:15px">${escapeHtml(inv.customer_name)}</div>
+          ${inv.store_name ? `<div style="color:var(--primary);font-size:13px;font-weight:600">${escapeHtml(inv.store_name)}</div>` : ''}
+          ${inv.customer_phone ? `<div style="color:var(--text-muted);font-size:13px">📞 ${escapeHtml(inv.customer_phone)}</div>` : ''}
+          ${inv.customer_address ? `<div style="color:var(--text-muted);font-size:13px">📍 ${escapeHtml(inv.customer_address)}</div>` : ''}
+        </div>
+        <div style="text-align:right">
+          <span class="badge badge-${statusColor}" style="font-size:13px">${statusLabel}</span>
+          <div style="color:var(--text-muted);font-size:12px;margin-top:4px">📅 ${formatDate(inv.invoice_date)}</div>
+          <div style="margin-top:4px"><span class="badge badge-gray">${terminMap[inv.payment_term]||inv.payment_term}</span> <span class="badge badge-gray">${modeMap[inv.price_mode]||inv.price_mode}</span></div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Produk</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Qty</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Harga</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${itemsHtml}</tbody>
+      </table>
+      <div class="invoice-summary" style="margin-top:12px">
+        <div class="invoice-summary-row"><span>Subtotal</span><span>${formatCurrency(inv.subtotal)}</span></div>
+        <div class="invoice-summary-row"><span>Diskon</span><span>- ${formatCurrency(inv.discount)}</span></div>
+        <div class="invoice-summary-row total"><span>TOTAL</span><span style="color:var(--primary)">${formatCurrency(inv.total)}</span></div>
+      </div>
+      ${paymentInfo}
+      ${inv.notes ? `<div style="margin-top:10px;padding:10px 12px;background:#fffbeb;border-radius:7px;font-size:13px;color:var(--text-muted)">📝 ${escapeHtml(inv.notes)}</div>` : ''}
+    `;
+
+    const cancelBtn = document.getElementById('btn-cancel-invoice');
+    cancelBtn.style.display = inv.status === 'cancelled' ? 'none' : 'inline-flex';
+    openModal('modal-view-invoice');
+  }
+
+  async function cancelCurrentInvoice() {
+    if (!currentInvoice) return;
+    if (!showConfirm(`Batalkan faktur ${currentInvoice.inv.invoice_number}?\nStok akan dikembalikan.`)) return;
+    const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', currentInvoice.inv.id);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Faktur dibatalkan, stok dikembalikan');
+    closeModal('modal-view-invoice');
+    loadInvoices();
+  }
+
+  function printCurrentInvoice() {
+    if (!currentInvoice) return;
+    const { inv, items } = currentInvoice;
+
+    const terminMap = { cod:'COD (Bayar di Tempat)', '7_days':'7 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
+    const statusLabel = inv.status === 'paid' ? 'LUNAS' : inv.status === 'cancelled' ? 'DIBATALKAN' : 'BELUM LUNAS';
+    const statusClass = inv.status === 'paid' ? 'print-status-paid' : 'print-status-pending';
+    const payInfo = inv.status === 'paid'
+      ? `Via ${inv.payment_method === 'cash' ? 'Cash' : 'Transfer Bank'} • ${formatDate(inv.payment_date)}${inv.payment_notes ? `<br>${escapeHtml(inv.payment_notes)}` : ''}`
+      : '—';
+
+    let no = 1;
+    const itemRows = (items||[]).map(item => `
+      <tr>
+        <td style="padding:7px 10px">${no++}</td>
+        <td style="padding:7px 10px">${escapeHtml(item.product_name)}</td>
+        <td style="padding:7px 10px;text-align:right">${item.quantity}</td>
+        <td style="padding:7px 10px;text-align:right">${formatCurrency(item.price)}</td>
+        <td style="padding:7px 10px;text-align:right;font-weight:700">${formatCurrency(item.subtotal)}</td>
+      </tr>`).join('');
+
+    document.getElementById('print-area').innerHTML = `
+      <div class="print-invoice">
+        <div class="print-header">
+          <div class="print-company">
+            <h2>UD. DIANA</h2>
+            <p>Sistem Manajemen Stok</p>
+          </div>
+          <div class="print-inv-info">
+            <div class="inv-num">${escapeHtml(inv.invoice_number)}</div>
+            <div style="font-size:12px;color:#555;margin-top:2px">Tanggal: ${formatDate(inv.invoice_date)}</div>
+          </div>
+        </div>
+        <hr class="print-divider">
+        <div class="print-parties">
+          <div class="print-party">
+            <h4>Kepada</h4>
+            <p>${escapeHtml(inv.customer_name)}</p>
+            ${inv.store_name ? `<small>${escapeHtml(inv.store_name)}</small><br>` : ''}
+            ${inv.customer_phone ? `<small>📞 ${escapeHtml(inv.customer_phone)}</small><br>` : ''}
+            ${inv.customer_address ? `<small>📍 ${escapeHtml(inv.customer_address)}</small>` : ''}
+          </div>
+          <div class="print-party" style="text-align:right">
+            <h4>Info Faktur</h4>
+            <p><span class="print-status-box ${statusClass}">${statusLabel}</span></p>
+            <small>Termin: ${terminMap[inv.payment_term]||inv.payment_term}</small>
+            ${inv.sales_name ? `<br><small>Sales: <strong>${escapeHtml(inv.sales_name)}</strong></small>` : ''}
+          </div>
+        </div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th style="width:5%">No</th>
+              <th>Produk</th>
+              <th style="width:8%;text-align:right">Qty</th>
+              <th style="width:18%;text-align:right">Harga Satuan</th>
+              <th style="width:18%;text-align:right">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+        <div style="display:flex;justify-content:flex-end">
+          <div class="print-totals">
+            <div class="print-total-row"><span>Subtotal</span><span>${formatCurrency(inv.subtotal)}</span></div>
+            <div class="print-total-row"><span>Diskon</span><span>- ${formatCurrency(inv.discount)}</span></div>
+            <div class="print-total-row grand"><span>TOTAL</span><span>${formatCurrency(inv.total)}</span></div>
+          </div>
+        </div>
+        <hr class="print-divider">
+        <div class="print-footer">
+          <div>
+            <strong>Pembayaran</strong><br>
+            ${payInfo}
+          </div>
+          <div class="print-sign">
+            <div>Hormat Kami,</div>
+            <div style="margin-top:32px;border-top:1px solid #999;padding-top:4px;width:120px;margin-left:auto">UD. DIANA</div>
+          </div>
+        </div>
+        ${inv.notes ? `<div style="margin-top:12px;font-size:12px;color:#555">Catatan: ${escapeHtml(inv.notes)}</div>` : ''}
+      </div>`;
+
+    window.print();
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>

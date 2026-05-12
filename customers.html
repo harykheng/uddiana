@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customers - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .stat-chip { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:600; }
+    .stat-chip.piutang { background:#fef9c3; color:#92400e; }
+    .stat-chip.clear   { background:#dcfce7; color:#166534; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item active"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Customers</h1>
+        <p>Kelola data pelanggan</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openAddCustomer()">+ Tambah Customer</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="filter-bar">
+        <div class="search-input-wrap" style="flex:1;max-width:360px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="Cari nama, toko, telepon..." oninput="handleSearch()">
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadCustomers()">🔄 Refresh</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Daftar Customer <span id="customer-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Nama</th>
+                <th>Nama Toko</th>
+                <th>Telepon</th>
+                <th class="text-right">Total Transaksi</th>
+                <th class="text-right">Total Belanja</th>
+                <th class="text-right">Piutang</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="customers-table">
+              <tr><td colspan="8" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- MODAL RIWAYAT CUSTOMER -->
+<div class="modal-overlay" id="modal-history">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-header">
+      <h3 id="history-title">Riwayat Transaksi</h3>
+      <button class="modal-close" onclick="closeModal('modal-history')">×</button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <div id="history-summary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--border)">
+        <div style="background:var(--surface);padding:16px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">Total Faktur</div>
+          <div id="hs-count" style="font-size:22px;font-weight:800">—</div>
+        </div>
+        <div style="background:var(--surface);padding:16px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">Total Belanja</div>
+          <div id="hs-total" style="font-size:22px;font-weight:800;color:var(--primary)">—</div>
+        </div>
+        <div style="background:var(--surface);padding:16px;text-align:center">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px">Piutang</div>
+          <div id="hs-piutang" style="font-size:22px;font-weight:800">—</div>
+        </div>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">No. Faktur</th>
+              <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">Tanggal</th>
+              <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">Sales</th>
+              <th style="padding:10px 12px;text-align:right;border-bottom:1px solid var(--border)">Total</th>
+              <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">Status</th>
+              <th style="padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)">Pembayaran</th>
+            </tr>
+          </thead>
+          <tbody id="history-table"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-history')">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ADD/EDIT CUSTOMER -->
+<div class="modal-overlay" id="modal-customer">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-customer-title">Tambah Customer</h3>
+      <button class="modal-close" onclick="closeModal('modal-customer')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="customer-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nama Customer *</label>
+          <input type="text" id="customer-name" placeholder="Nama lengkap">
+        </div>
+        <div class="form-group">
+          <label>Nama Toko</label>
+          <input type="text" id="customer-store" placeholder="Nama toko / usaha">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Nomor Telepon</label>
+        <input type="tel" id="customer-phone" placeholder="08xx-xxxx-xxxx">
+      </div>
+      <div class="form-group">
+        <label>Alamat</label>
+        <textarea id="customer-address" placeholder="Alamat lengkap" style="min-height:70px"></textarea>
+      </div>
+      <div class="form-group mb-0">
+        <label>Catatan</label>
+        <textarea id="customer-notes" placeholder="Catatan tambahan (opsional)" style="min-height:60px"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-customer')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-customer" onclick="saveCustomer()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let allCustomers = [];
+  let invoiceStats = {}; // { customer_id: { count, total, piutang } }
+  const handleSearch = debounce(() => renderCustomers(), 350);
+
+  async function loadCustomers() {
+    const [{ data: customers, error }, { data: invoices }] = await Promise.all([
+      supabase.from('customers').select('*').order('name'),
+      supabase.from('invoices')
+        .select('customer_id,total,status,verification_status')
+        .or('verification_status.is.null,verification_status.eq.approved')
+        .neq('status', 'cancelled')
+    ]);
+    if (error) { showToast('Gagal memuat customers: ' + error.message, 'error'); return; }
+    allCustomers = customers || [];
+
+    // Hitung stats per customer
+    invoiceStats = {};
+    (invoices || []).forEach(inv => {
+      if (!inv.customer_id) return;
+      if (!invoiceStats[inv.customer_id]) invoiceStats[inv.customer_id] = { count:0, total:0, piutang:0 };
+      invoiceStats[inv.customer_id].count++;
+      invoiceStats[inv.customer_id].total += Number(inv.total);
+      if (inv.status === 'pending') invoiceStats[inv.customer_id].piutang += Number(inv.total);
+    });
+
+    renderCustomers();
+  }
+
+  function renderCustomers() {
+    const search = document.getElementById('search-input').value.toLowerCase();
+    const filtered = allCustomers.filter(c =>
+      !search ||
+      c.name.toLowerCase().includes(search) ||
+      (c.store_name || '').toLowerCase().includes(search) ||
+      (c.phone || '').includes(search)
+    );
+
+    document.getElementById('customer-count').textContent = filtered.length;
+    const tbody = document.getElementById('customers-table');
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👥</div><h4>Belum ada customer</h4><p>Tambah customer baru</p></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map((c, i) => {
+      const st = invoiceStats[c.id] || { count:0, total:0, piutang:0 };
+      const piutangChip = st.piutang > 0
+        ? `<span class="stat-chip piutang">${formatCurrency(st.piutang)}</span>`
+        : `<span class="stat-chip clear">Lunas</span>`;
+      return `<tr>
+        <td class="text-muted">${i + 1}</td>
+        <td>
+          <strong>${escapeHtml(c.name)}</strong>
+          ${c.notes ? `<br><small class="text-muted">${escapeHtml(c.notes.substring(0,40))}</small>` : ''}
+        </td>
+        <td>${c.store_name ? `<span class="badge badge-info">${escapeHtml(c.store_name)}</span>` : '—'}</td>
+        <td>${escapeHtml(c.phone || '—')}</td>
+        <td class="text-right text-muted">${st.count > 0 ? st.count + ' faktur' : '—'}</td>
+        <td class="text-right font-bold">${st.total > 0 ? formatCurrency(st.total) : '—'}</td>
+        <td class="text-right">${st.count > 0 ? piutangChip : '—'}</td>
+        <td>
+          <div class="table-actions">
+            <button class="btn btn-ghost btn-sm" onclick="openHistory('${c.id}')">📋 Riwayat</button>
+            <button class="btn btn-ghost btn-sm" onclick="openEditCustomer('${c.id}')">✏️ Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteCustomer('${c.id}','${escapeHtml(c.name)}')">🗑</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function openAddCustomer() {
+    document.getElementById('customer-id').value = '';
+    document.getElementById('customer-name').value = '';
+    document.getElementById('customer-store').value = '';
+    document.getElementById('customer-phone').value = '';
+    document.getElementById('customer-address').value = '';
+    document.getElementById('customer-notes').value = '';
+    document.getElementById('modal-customer-title').textContent = 'Tambah Customer';
+    openModal('modal-customer');
+  }
+
+  function openEditCustomer(id) {
+    const c = allCustomers.find(x => x.id === id);
+    if (!c) return;
+    document.getElementById('customer-id').value = c.id;
+    document.getElementById('customer-name').value = c.name;
+    document.getElementById('customer-store').value = c.store_name || '';
+    document.getElementById('customer-phone').value = c.phone || '';
+    document.getElementById('customer-address').value = c.address || '';
+    document.getElementById('customer-notes').value = c.notes || '';
+    document.getElementById('modal-customer-title').textContent = 'Edit Customer';
+    openModal('modal-customer');
+  }
+
+  async function saveCustomer() {
+    const btn = document.getElementById('btn-save-customer');
+    const id = document.getElementById('customer-id').value;
+    const name = document.getElementById('customer-name').value.trim();
+    if (!name) { showToast('Nama customer wajib diisi', 'error'); return; }
+
+    const payload = {
+      name,
+      store_name: document.getElementById('customer-store').value.trim() || null,
+      phone: document.getElementById('customer-phone').value.trim() || null,
+      address: document.getElementById('customer-address').value.trim() || null,
+      notes: document.getElementById('customer-notes').value.trim() || null,
+    };
+
+    setLoading(btn, true);
+    const { error } = id
+      ? await supabase.from('customers').update(payload).eq('id', id)
+      : await supabase.from('customers').insert(payload);
+    setLoading(btn, false);
+
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast(id ? 'Customer diperbarui' : 'Customer ditambahkan');
+    closeModal('modal-customer');
+    loadCustomers();
+  }
+
+  async function deleteCustomer(id, name) {
+    if (!showConfirm(`Hapus customer "${name}"?`)) return;
+    const { error } = await supabase.from('customers').delete().eq('id', id);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast(`Customer "${name}" dihapus`);
+    loadCustomers();
+  }
+
+  async function openHistory(customerId) {
+    const c = allCustomers.find(x => x.id === customerId);
+    if (!c) return;
+    document.getElementById('history-title').textContent = `📋 ${c.store_name || c.name}`;
+    document.getElementById('history-table').innerHTML = `<tr><td colspan="6" class="text-center text-muted" style="padding:20px">Memuat...</td></tr>`;
+    openModal('modal-history');
+
+    const { data: invs } = await supabase
+      .from('invoices')
+      .select('id,invoice_number,invoice_date,total,status,verification_status,payment_method,payment_date,sales_name')
+      .eq('customer_id', customerId)
+      .or('verification_status.is.null,verification_status.eq.approved')
+      .neq('status', 'cancelled')
+      .order('invoice_date', { ascending: false });
+
+    const list = invs || [];
+    const totalVal  = list.reduce((s,i) => s + Number(i.total), 0);
+    const piutangVal = list.filter(i => i.status === 'pending').reduce((s,i) => s + Number(i.total), 0);
+
+    document.getElementById('hs-count').textContent   = list.length;
+    document.getElementById('hs-total').textContent   = formatCurrency(totalVal);
+    document.getElementById('hs-piutang').textContent = formatCurrency(piutangVal);
+    document.getElementById('hs-piutang').style.color = piutangVal > 0 ? 'var(--danger)' : 'var(--success)';
+
+    if (!list.length) {
+      document.getElementById('history-table').innerHTML = `<tr><td colspan="6" class="text-center text-muted" style="padding:20px">Belum ada faktur</td></tr>`;
+      return;
+    }
+
+    const payMethodLabel = { cash:'💵 Cash', transfer:'🏦 Transfer' };
+    document.getElementById('history-table').innerHTML = list.map(inv => {
+      const statusBadge = inv.status === 'paid'
+        ? `<span class="badge badge-success">Lunas</span>`
+        : `<span class="badge badge-warning">Belum Lunas</span>`;
+      const payInfo = inv.status === 'paid' && inv.payment_method
+        ? `<span style="font-size:11px;color:var(--text-muted)">${payMethodLabel[inv.payment_method]||inv.payment_method}${inv.payment_date ? ' · '+formatDate(inv.payment_date) : ''}</span>`
+        : '—';
+      return `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:9px 12px"><strong>${escapeHtml(inv.invoice_number||'—')}</strong></td>
+        <td style="padding:9px 12px;color:var(--text-muted)">${formatDate(inv.invoice_date)}</td>
+        <td style="padding:9px 12px">${inv.sales_name ? `<span style="background:#ede9fe;color:#6d28d9;padding:2px 7px;border-radius:20px;font-size:11px;font-weight:700">👤 ${escapeHtml(inv.sales_name)}</span>` : '—'}</td>
+        <td style="padding:9px 12px;text-align:right;font-weight:700">${formatCurrency(inv.total)}</td>
+        <td style="padding:9px 12px">${statusBadge}</td>
+        <td style="padding:9px 12px">${payInfo}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  (async () => { const auth = await requireAdmin(); if (!auth) return; loadCustomers(); })();
+</script>
+</body>
+</html>

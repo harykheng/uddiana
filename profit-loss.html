@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laba Rugi - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    .pl-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      box-shadow: var(--shadow);
+      border-left: 4px solid transparent;
+    }
+    .pl-card.revenue  { border-left-color: #2563eb; }
+    .pl-card.cogs     { border-left-color: #dc2626; }
+    .pl-card.gross    { border-left-color: #16a34a; }
+    .pl-card.margin   { border-left-color: #d97706; }
+    .pl-card.purchase { border-left-color: #7c3aed; }
+    .pl-card.txn      { border-left-color: #0891b2; }
+    .pl-card.cash     { border-left-color: #16a34a; }
+    .pl-card.transfer { border-left-color: #0284c7; }
+
+    .pl-card .label { font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+    .pl-card .value { font-size:22px; font-weight:800; line-height:1.2; }
+    .pl-card .sub   { font-size:12px; color:var(--text-muted); margin-top:3px; }
+
+    .pl-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:22px; }
+
+    .period-btn {
+      padding:6px 14px; border:1px solid var(--border); border-radius:20px;
+      background:var(--surface); cursor:pointer; font-size:12.5px; font-weight:600;
+      color:var(--text-muted); transition:all .15s;
+    }
+    .period-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+    .profit-bar-wrap { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+    .profit-bar-bg   { flex:1; height:10px; background:#e2e8f0; border-radius:5px; overflow:hidden; }
+    .profit-bar-fill { height:100%; border-radius:5px; transition:width .5s; }
+
+    /* ── KAS MASUK ── */
+    .kas-split { display:flex; gap:16px; margin-bottom:16px; }
+    .kas-box { flex:1; padding:16px; border-radius:10px; text-align:center; }
+    .kas-box.cash     { background:#f0fdf4; border:1.5px solid #86efac; }
+    .kas-box.transfer { background:#f0f9ff; border:1.5px solid #7dd3fc; }
+    .kas-box .kas-icon { font-size:22px; margin-bottom:4px; }
+    .kas-box .kas-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin-bottom:4px; }
+    .kas-box .kas-val { font-size:18px; font-weight:800; }
+    .kas-box.cash .kas-val     { color:#16a34a; }
+    .kas-box.transfer .kas-val { color:#0284c7; }
+    .kas-box .kas-pct { font-size:11px; color:var(--text-muted); margin-top:2px; }
+    .kas-bar-wrap { display:flex; height:10px; border-radius:6px; overflow:hidden; margin-bottom:10px; }
+    .kas-bar-cash     { background:#16a34a; transition:width .5s; }
+    .kas-bar-transfer { background:#0284c7; transition:width .5s; flex:1; }
+    .kas-legend { display:flex; gap:16px; font-size:12px; color:var(--text-muted); margin-bottom:16px; }
+    .kas-legend span { display:flex; align-items:center; gap:5px; }
+    .kas-legend span::before { content:''; width:10px; height:10px; border-radius:2px; display:inline-block; }
+    .kas-legend .leg-cash::before     { background:#16a34a; }
+    .kas-legend .leg-transfer::before { background:#0284c7; }
+    .kas-monthly-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .kas-monthly-table th { text-align:left; padding:8px 10px; border-bottom:2px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); }
+    .kas-monthly-table td { padding:9px 10px; border-bottom:1px solid var(--border); }
+    .kas-monthly-table tr:last-child td { border-bottom:none; font-weight:700; background:#f8fafc; }
+    .kas-mini-bar { display:flex; height:6px; border-radius:3px; overflow:hidden; margin-top:4px; min-width:80px; }
+    .kas-mini-cash     { background:#16a34a; }
+    .kas-mini-transfer { background:#0284c7; }
+
+    /* ── PRINT ── */
+    @media print {
+      body > .layout, .no-print { display:none !important; }
+      #print-pl { display:block !important; }
+      body { background:white; }
+    }
+    #print-pl { display:none; }
+    .print-pl { font-family:Arial,sans-serif; padding:32px; font-size:13px; color:#111; }
+    .print-pl h2 { font-size:20px; font-weight:800; margin-bottom:2px; }
+    .print-pl .pl-section { margin-bottom:20px; }
+    .print-pl .pl-row { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #eee; }
+    .print-pl .pl-row.total { font-weight:800; font-size:15px; border-top:2px solid #111; border-bottom:none; padding-top:8px; margin-top:4px; }
+    .print-pl .pl-row.sub { color:#555; font-size:12px; padding-left:16px; }
+    .print-table { width:100%; border-collapse:collapse; margin-top:12px; }
+    .print-table th { background:#f1f5f9; padding:7px 10px; text-align:left; font-size:11px; text-transform:uppercase; border-bottom:1px solid #ddd; }
+    .print-table td { padding:7px 10px; border-bottom:1px solid #eee; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item active"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Laporan Laba Rugi</h1>
+        <p id="period-label">Memuat periode...</p>
+      </div>
+      <div class="topbar-right no-print">
+        <button class="btn btn-ghost btn-sm" onclick="exportPdf()">🖨 Export PDF</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <!-- PERIOD FILTER -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap" class="no-print">
+        <div style="display:flex;gap:6px">
+          <button class="period-btn active" data-p="month"  onclick="setPeriod('month')">Bulan Ini</button>
+          <button class="period-btn" data-p="last_month"    onclick="setPeriod('last_month')">Bulan Lalu</button>
+          <button class="period-btn" data-p="quarter"       onclick="setPeriod('quarter')">3 Bulan</button>
+          <button class="period-btn" data-p="year"          onclick="setPeriod('year')">Tahun Ini</button>
+          <button class="period-btn" data-p="custom"        onclick="setPeriod('custom')">Custom</button>
+        </div>
+        <div id="custom-range" style="display:none;gap:8px;align-items:center">
+          <input type="date" id="custom-from" onchange="loadReport()" style="width:auto">
+          <span class="text-muted">—</span>
+          <input type="date" id="custom-to" onchange="loadReport()" style="width:auto">
+        </div>
+      </div>
+
+      <!-- SUMMARY CARDS -->
+      <div class="pl-grid" id="pl-cards">
+        <div class="pl-card revenue"><div class="label">Pendapatan Penjualan</div><div class="value" id="c-revenue">—</div><div class="sub" id="c-revenue-sub">—</div></div>
+        <div class="pl-card cogs"><div class="label">HPP (Harga Pokok)</div><div class="value" id="c-cogs">—</div><div class="sub">Biaya barang terjual</div></div>
+        <div class="pl-card gross"><div class="label">Laba Kotor</div><div class="value" id="c-gross">—</div><div class="sub" id="c-gross-pct">—</div></div>
+        <div class="pl-card margin"><div class="label">Margin Kotor</div><div class="value" id="c-margin">—</div><div class="sub">Laba / Pendapatan</div></div>
+        <div class="pl-card purchase"><div class="label">Total Pembelian Stok</div><div class="value" id="c-purchase">—</div><div class="sub" id="c-purchase-sub">—</div></div>
+        <div class="pl-card txn"><div class="label">Jumlah Transaksi</div><div class="value" id="c-txn">—</div><div class="sub">Faktur lunas</div></div>
+      </div>
+
+      <!-- CHARTS -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+        <div class="card">
+          <div class="card-header"><h3>📈 Pendapatan vs Laba Kotor Harian</h3></div>
+          <div class="card-body"><div style="position:relative;height:240px"><canvas id="chart-daily"></canvas></div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>🥧 Komposisi Pendapatan</h3></div>
+          <div class="card-body"><div style="position:relative;height:240px"><canvas id="chart-composition"></canvas></div></div>
+        </div>
+      </div>
+
+      <!-- KAS MASUK -->
+      <div class="card" id="kas-section">
+        <div class="card-header">
+          <h3>💳 Rekap Kas Masuk</h3>
+          <span id="kas-period-label" style="font-size:12px;color:var(--text-muted);font-weight:400"></span>
+        </div>
+        <div class="card-body">
+          <!-- Summary boxes -->
+          <div class="kas-split">
+            <div class="kas-box cash">
+              <div class="kas-icon">💵</div>
+              <div class="kas-label">Cash</div>
+              <div class="kas-val" id="kas-cash-val">—</div>
+              <div class="kas-pct" id="kas-cash-pct">—</div>
+            </div>
+            <div class="kas-box transfer">
+              <div class="kas-icon">🏦</div>
+              <div class="kas-label">Transfer / Rekening</div>
+              <div class="kas-val" id="kas-transfer-val">—</div>
+              <div class="kas-pct" id="kas-transfer-pct">—</div>
+            </div>
+          </div>
+          <!-- Visual bar -->
+          <div class="kas-bar-wrap" id="kas-bar">
+            <div class="kas-bar-cash" id="kas-bar-cash" style="width:50%"></div>
+            <div class="kas-bar-transfer" id="kas-bar-transfer" style="width:50%"></div>
+          </div>
+          <div class="kas-legend">
+            <span class="leg-cash">Cash</span>
+            <span class="leg-transfer">Transfer Bank</span>
+          </div>
+          <!-- Monthly breakdown -->
+          <div id="kas-monthly-wrap">
+            <table class="kas-monthly-table">
+              <thead>
+                <tr>
+                  <th>Bulan</th>
+                  <th class="text-right">💵 Cash</th>
+                  <th class="text-right">🏦 Transfer</th>
+                  <th class="text-right">Total</th>
+                  <th style="min-width:100px">Proporsi</th>
+                </tr>
+              </thead>
+              <tbody id="kas-monthly-body">
+                <tr><td colspan="5" class="text-center text-muted" style="padding:20px">Memuat...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRODUCT BREAKDOWN -->
+      <div class="card">
+        <div class="card-header">
+          <h3>📋 Rincian per Produk</h3>
+          <select id="sort-products" onchange="renderProductTable()" style="width:auto;font-size:13px">
+            <option value="profit">Urutkan: Laba Tertinggi</option>
+            <option value="revenue">Urutkan: Pendapatan</option>
+            <option value="qty">Urutkan: Qty Terjual</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Produk</th>
+                <th class="text-right">Qty Terjual</th>
+                <th class="text-right">Pendapatan</th>
+                <th class="text-right">HPP</th>
+                <th class="text-right">Laba Kotor</th>
+                <th>Margin</th>
+                <th>Kontribusi</th>
+              </tr>
+            </thead>
+            <tbody id="product-breakdown-table">
+              <tr><td colspan="8" class="text-center text-muted" style="padding:30px">Memuat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- PRINT AREA -->
+<div id="print-pl"></div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let currentPeriod = 'month';
+  let reportData = { revenue:0, cogs:0, gross:0, margin:0, purchases:0, txnCount:0, daily:[], products:[], cashTotal:0, transferTotal:0, monthly:[] };
+  let dailyChart = null;
+  let compChart  = null;
+
+  // ── PERIOD HELPERS ─────────────────────────────────────────
+  function getDateRange(period) {
+    const now = new Date();
+    let from, to;
+    if (period === 'month') {
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (period === 'last_month') {
+      from = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      to   = new Date(now.getFullYear(), now.getMonth(), 0);
+    } else if (period === 'quarter') {
+      from = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+      to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (period === 'year') {
+      from = new Date(now.getFullYear(), 0, 1);
+      to   = new Date(now.getFullYear(), 11, 31);
+    } else {
+      from = new Date(document.getElementById('custom-from').value || now);
+      to   = new Date(document.getElementById('custom-to').value   || now);
+    }
+    return {
+      from: from.toISOString().split('T')[0],
+      to:   to.toISOString().split('T')[0],
+    };
+  }
+
+  function setPeriod(p) {
+    currentPeriod = p;
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.toggle('active', b.dataset.p === p));
+    document.getElementById('custom-range').style.display = p === 'custom' ? 'flex' : 'none';
+    if (p !== 'custom') loadReport();
+  }
+
+  // ── LOAD DATA ──────────────────────────────────────────────
+  async function loadReport() {
+    const { from, to } = getDateRange(currentPeriod);
+    const fromLabel = formatDate(from);
+    const toLabel   = formatDate(to);
+    document.getElementById('period-label').textContent = `${fromLabel} — ${toLabel}`;
+
+    await Promise.all([
+      loadInvoiceData(from, to),
+      loadPurchaseData(from, to),
+    ]);
+
+    renderCards();
+    renderDailyChart();
+    renderCompositionChart();
+    renderProductTable();
+    renderPaymentSummary();
+  }
+
+  async function loadInvoiceData(from, to) {
+    // Get paid invoices in range
+    const { data: invoices } = await supabase
+      .from('invoices').select('id,total,invoice_date,payment_method')
+      .eq('status', 'paid')
+      .gte('invoice_date', from).lte('invoice_date', to);
+
+    const invIds = (invoices||[]).map(i => i.id);
+    reportData.txnCount      = invIds.length;
+    reportData.revenue       = (invoices||[]).reduce((s,i) => s + Number(i.total), 0);
+    reportData.cashTotal     = (invoices||[]).filter(i => i.payment_method === 'cash').reduce((s,i) => s + Number(i.total), 0);
+    reportData.transferTotal = (invoices||[]).filter(i => i.payment_method === 'transfer').reduce((s,i) => s + Number(i.total), 0);
+
+    // Monthly breakdown (cash vs transfer per bulan)
+    const monthlyMap = {};
+    (invoices||[]).forEach(inv => {
+      const m = inv.invoice_date.substring(0, 7); // YYYY-MM
+      if (!monthlyMap[m]) monthlyMap[m] = { cash:0, transfer:0, other:0, total:0 };
+      const amt = Number(inv.total);
+      monthlyMap[m].total += amt;
+      if (inv.payment_method === 'cash')         monthlyMap[m].cash     += amt;
+      else if (inv.payment_method === 'transfer') monthlyMap[m].transfer += amt;
+      else                                        monthlyMap[m].other    += amt;
+    });
+    reportData.monthly = Object.entries(monthlyMap)
+      .sort((a,b) => a[0].localeCompare(b[0]))
+      .map(([month, v]) => ({ month, ...v }));
+
+    if (!invIds.length) {
+      reportData.cogs = 0; reportData.daily = []; reportData.products = [];
+      reportData.gross = 0; reportData.margin = 0;
+      reportData.cashTotal = 0; reportData.transferTotal = 0; reportData.monthly = [];
+      return;
+    }
+
+    // Get invoice items with cost for COGS
+    const { data: items } = await supabase
+      .from('invoice_items')
+      .select('invoice_id,product_name,quantity,price,subtotal,cost_price')
+      .in('invoice_id', invIds);
+
+    reportData.cogs = (items||[]).reduce((s,i) => s + (Number(i.cost_price) * Number(i.quantity)), 0);
+    reportData.gross  = reportData.revenue - reportData.cogs;
+    reportData.margin = reportData.revenue > 0 ? (reportData.gross / reportData.revenue * 100) : 0;
+
+    // Daily breakdown
+    const dailyMap = {};
+    (invoices||[]).forEach(inv => {
+      const d = inv.invoice_date;
+      if (!dailyMap[d]) dailyMap[d] = { revenue:0, cogs:0 };
+      dailyMap[d].revenue += Number(inv.total);
+    });
+    (items||[]).forEach(item => {
+      const inv = (invoices||[]).find(i => i.id === item.invoice_id);
+      if (!inv) return;
+      const d = inv.invoice_date;
+      if (dailyMap[d]) dailyMap[d].cogs += Number(item.cost_price) * Number(item.quantity);
+    });
+    reportData.daily = Object.entries(dailyMap)
+      .sort((a,b) => a[0].localeCompare(b[0]))
+      .map(([date, v]) => ({ date, revenue: v.revenue, cogs: v.cogs, gross: v.revenue - v.cogs }));
+
+    // Product breakdown
+    const prodMap = {};
+    (items||[]).forEach(item => {
+      if (!prodMap[item.product_name]) prodMap[item.product_name] = { qty:0, revenue:0, cogs:0 };
+      prodMap[item.product_name].qty     += Number(item.quantity);
+      prodMap[item.product_name].revenue += Number(item.subtotal);
+      prodMap[item.product_name].cogs    += Number(item.cost_price) * Number(item.quantity);
+    });
+    reportData.products = Object.entries(prodMap).map(([name, v]) => ({
+      name, qty: v.qty, revenue: v.revenue, cogs: v.cogs,
+      profit: v.revenue - v.cogs,
+      margin: v.revenue > 0 ? ((v.revenue - v.cogs) / v.revenue * 100) : 0,
+    }));
+  }
+
+  async function loadPurchaseData(from, to) {
+    const { data } = await supabase
+      .from('purchases').select('total_cost')
+      .eq('status', 'received')
+      .gte('purchase_date', from).lte('purchase_date', to);
+    reportData.purchases = (data||[]).reduce((s,p) => s + Number(p.total_cost), 0);
+  }
+
+  // ── RENDER ─────────────────────────────────────────────────
+  function renderCards() {
+    const { revenue, cogs, gross, margin, purchases, txnCount } = reportData;
+    document.getElementById('c-revenue').textContent     = formatCurrency(revenue);
+    document.getElementById('c-revenue-sub').textContent = `${txnCount} faktur lunas`;
+    document.getElementById('c-cogs').textContent        = formatCurrency(cogs);
+    document.getElementById('c-gross').textContent       = formatCurrency(gross);
+    document.getElementById('c-gross-pct').textContent   = `${gross >= 0 ? '+' : ''}${formatCurrency(gross)} dari penjualan`;
+    document.getElementById('c-margin').textContent      = `${margin.toFixed(1)}%`;
+    document.getElementById('c-purchase').textContent    = formatCurrency(purchases);
+    document.getElementById('c-purchase-sub').textContent = 'Pengeluaran beli stok';
+    document.getElementById('c-txn').textContent         = txnCount;
+
+    // Color gross based on value
+    const grossEl = document.getElementById('c-gross');
+    grossEl.style.color = gross >= 0 ? 'var(--success)' : 'var(--danger)';
+  }
+
+  function renderDailyChart() {
+    if (dailyChart) dailyChart.destroy();
+    const ctx = document.getElementById('chart-daily').getContext('2d');
+    const labels = reportData.daily.map(d => {
+      const dt = new Date(d.date);
+      return `${dt.getDate()}/${dt.getMonth()+1}`;
+    });
+    if (!labels.length) {
+      ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+      ctx.fillStyle = '#94a3b8'; ctx.font = '14px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('Tidak ada data', ctx.canvas.width/2, ctx.canvas.height/2);
+      return;
+    }
+    dailyChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label:'Pendapatan', data: reportData.daily.map(d => d.revenue),
+            backgroundColor:'rgba(37,99,235,.2)', borderColor:'#2563eb', borderWidth:2, borderRadius:4 },
+          { label:'Laba Kotor', data: reportData.daily.map(d => d.gross),
+            backgroundColor:'rgba(22,163,74,.2)', borderColor:'#16a34a', borderWidth:2, borderRadius:4, type:'line', tension:.3 },
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ position:'bottom', labels:{ font:{size:11} } } },
+        scales:{
+          y:{ ticks:{ callback: v => v>=1e6 ? (v/1e6).toFixed(1)+'jt' : (v/1e3).toFixed(0)+'rb' }, grid:{color:'#f1f5f9'} },
+          x:{ grid:{display:false} }
+        }
+      }
+    });
+  }
+
+  function renderCompositionChart() {
+    if (compChart) compChart.destroy();
+    const ctx = document.getElementById('chart-composition').getContext('2d');
+    const top = [...reportData.products].sort((a,b) => b.revenue - a.revenue).slice(0,6);
+    if (!top.length) {
+      ctx.clearRect(0,0,ctx.canvas.width,ctx.canvas.height);
+      ctx.fillStyle = '#94a3b8'; ctx.font = '14px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('Tidak ada data', ctx.canvas.width/2, ctx.canvas.height/2);
+      return;
+    }
+    const colors = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2'];
+    compChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: top.map(p => p.name),
+        datasets:[{ data: top.map(p => p.revenue), backgroundColor: colors, borderWidth:2 }]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false, cutout:'60%',
+        plugins:{
+          legend:{ position:'bottom', labels:{ font:{size:11}, padding:10 } },
+          tooltip:{ callbacks:{ label: c => ` ${c.label}: ${formatCurrency(c.raw)}` } }
+        }
+      }
+    });
+  }
+
+  function renderProductTable() {
+    const sortBy = document.getElementById('sort-products').value;
+    const sorted = [...reportData.products].sort((a,b) => b[sortBy] - a[sortBy]);
+    const totalRevenue = reportData.revenue || 1;
+
+    const tbody = document.getElementById('product-breakdown-table');
+    if (!sorted.length) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state" style="padding:30px"><div class="empty-icon">📦</div><h4>Tidak ada data penjualan</h4></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = sorted.map((p,i) => {
+      const contribution = (p.revenue / totalRevenue * 100).toFixed(1);
+      const barWidth = Math.min(100, (p.profit / (sorted[0].profit || 1) * 100)).toFixed(1);
+      const barColor = p.profit >= 0 ? '#16a34a' : '#dc2626';
+      const marginColor = p.margin >= 20 ? 'stock-ok' : p.margin >= 10 ? 'stock-warn' : 'stock-low';
+      return `<tr>
+        <td class="text-muted">${i+1}</td>
+        <td><strong>${escapeHtml(p.name)}</strong></td>
+        <td class="text-right">${p.qty.toLocaleString('id-ID')}</td>
+        <td class="text-right">${formatCurrency(p.revenue)}</td>
+        <td class="text-right text-muted">${formatCurrency(p.cogs)}</td>
+        <td class="text-right font-bold" style="color:${p.profit>=0?'var(--success)':'var(--danger)'}">${formatCurrency(p.profit)}</td>
+        <td><span class="${marginColor} font-bold">${p.margin.toFixed(1)}%</span></td>
+        <td style="min-width:100px">
+          <div class="profit-bar-wrap">
+            <div class="profit-bar-bg"><div class="profit-bar-fill" style="width:${barWidth}%;background:${barColor}"></div></div>
+            <span style="font-size:11px;color:var(--text-muted);min-width:32px">${contribution}%</span>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── PAYMENT SUMMARY ────────────────────────────────────────
+  function renderPaymentSummary() {
+    const { cashTotal, transferTotal, monthly, revenue } = reportData;
+    const total = cashTotal + transferTotal;
+    const cashPct     = total > 0 ? (cashTotal / total * 100) : 0;
+    const transferPct = total > 0 ? (transferTotal / total * 100) : 0;
+
+    // Summary boxes
+    document.getElementById('kas-cash-val').textContent     = formatCurrency(cashTotal);
+    document.getElementById('kas-transfer-val').textContent = formatCurrency(transferTotal);
+    document.getElementById('kas-cash-pct').textContent     = `${cashPct.toFixed(1)}% dari total lunas`;
+    document.getElementById('kas-transfer-pct').textContent = `${transferPct.toFixed(1)}% dari total lunas`;
+
+    // Bar proporsi
+    document.getElementById('kas-bar-cash').style.width     = cashPct + '%';
+    document.getElementById('kas-bar-transfer').style.width = transferPct + '%';
+
+    // Monthly table
+    const { from, to } = getDateRange(currentPeriod);
+    document.getElementById('kas-period-label').textContent = `${formatDate(from)} — ${formatDate(to)}`;
+
+    const tbody = document.getElementById('kas-monthly-body');
+    if (!monthly.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted" style="padding:20px">Tidak ada data pembayaran pada periode ini</td></tr>`;
+      return;
+    }
+
+    const monthNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    let sumCash = 0, sumTrf = 0, sumTotal = 0;
+
+    const rows = monthly.map(m => {
+      const [y, mo] = m.month.split('-');
+      const label = `${monthNames[parseInt(mo)-1]} ${y}`;
+      const mTotal = m.total;
+      const mCashPct     = mTotal > 0 ? (m.cash / mTotal * 100) : 0;
+      const mTransferPct = mTotal > 0 ? (m.transfer / mTotal * 100) : 0;
+      sumCash += m.cash; sumTrf += m.transfer; sumTotal += mTotal;
+      return `<tr>
+        <td><strong>${label}</strong></td>
+        <td class="text-right" style="color:#16a34a;font-weight:600">${formatCurrency(m.cash)}</td>
+        <td class="text-right" style="color:#0284c7;font-weight:600">${formatCurrency(m.transfer)}</td>
+        <td class="text-right font-bold">${formatCurrency(mTotal)}</td>
+        <td>
+          <div class="kas-mini-bar">
+            <div class="kas-mini-cash" style="width:${mCashPct.toFixed(1)}%"></div>
+            <div class="kas-mini-transfer" style="flex:1"></div>
+          </div>
+          <div style="font-size:10px;color:var(--text-muted);margin-top:2px">
+            💵 ${mCashPct.toFixed(0)}% · 🏦 ${mTransferPct.toFixed(0)}%
+          </div>
+        </td>
+      </tr>`;
+    });
+
+    // Total row
+    const totCashPct = sumTotal > 0 ? (sumCash / sumTotal * 100).toFixed(0) : 0;
+    const totTrfPct  = sumTotal > 0 ? (sumTrf / sumTotal * 100).toFixed(0) : 0;
+    rows.push(`<tr>
+      <td>TOTAL</td>
+      <td class="text-right" style="color:#16a34a">${formatCurrency(sumCash)}</td>
+      <td class="text-right" style="color:#0284c7">${formatCurrency(sumTrf)}</td>
+      <td class="text-right">${formatCurrency(sumTotal)}</td>
+      <td style="font-size:11px;color:var(--text-muted)">💵 ${totCashPct}% · 🏦 ${totTrfPct}%</td>
+    </tr>`);
+
+    tbody.innerHTML = rows.join('');
+  }
+
+  // ── EXPORT PDF ─────────────────────────────────────────────
+  function exportPdf() {
+    const { from, to } = getDateRange(currentPeriod);
+    const { revenue, cogs, gross, margin, purchases, txnCount, products, cashTotal, transferTotal, monthly } = reportData;
+    const avgOrder = txnCount > 0 ? revenue / txnCount : 0;
+
+    const sorted = [...products].sort((a,b) => b.profit - a.profit);
+    let no = 1;
+    const prodRows = sorted.map(p => `
+      <tr>
+        <td>${no++}</td>
+        <td>${escapeHtml(p.name)}</td>
+        <td style="text-align:right">${p.qty}</td>
+        <td style="text-align:right">${formatCurrency(p.revenue)}</td>
+        <td style="text-align:right">${formatCurrency(p.cogs)}</td>
+        <td style="text-align:right;font-weight:700;color:${p.profit>=0?'#16a34a':'#dc2626'}">${formatCurrency(p.profit)}</td>
+        <td style="text-align:right">${p.margin.toFixed(1)}%</td>
+      </tr>`).join('');
+
+    document.getElementById('print-pl').innerHTML = `
+      <div class="print-pl">
+        <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+          <div>
+            <h2>UD. DIANA</h2>
+            <div style="color:#555;font-size:12px">Laporan Laba Rugi</div>
+          </div>
+          <div style="text-align:right;font-size:12px;color:#555">
+            Periode: ${formatDate(from)} — ${formatDate(to)}<br>
+            Dicetak: ${new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(new Date())}
+          </div>
+        </div>
+        <hr style="border:none;border-top:2px solid #111;margin:12px 0">
+
+        <div class="pl-section">
+          <div style="font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;color:#555">Ringkasan Keuangan</div>
+          <div class="pl-row"><span>Pendapatan Penjualan</span><span style="font-weight:700">${formatCurrency(revenue)}</span></div>
+          <div class="pl-row sub"><span>Jumlah Transaksi</span><span>${txnCount} faktur lunas</span></div>
+          <div class="pl-row sub"><span>Rata-rata per Transaksi</span><span>${formatCurrency(avgOrder)}</span></div>
+          <div class="pl-row" style="margin-top:8px"><span>HPP (Harga Pokok Penjualan)</span><span style="color:#dc2626">- ${formatCurrency(cogs)}</span></div>
+          <div class="pl-row total"><span>Laba Kotor</span><span style="color:${gross>=0?'#16a34a':'#dc2626'}">${formatCurrency(gross)}</span></div>
+          <div class="pl-row sub"><span>Margin Kotor</span><span>${margin.toFixed(1)}%</span></div>
+          <div class="pl-row" style="margin-top:8px;color:#555"><span>Total Pembelian Stok (periode ini)</span><span>${formatCurrency(purchases)}</span></div>
+        </div>
+
+        <div class="pl-section" style="margin-top:20px">
+          <div style="font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;color:#555">Rekap Kas Masuk</div>
+          <div class="pl-row"><span>💵 Cash</span><span style="color:#16a34a;font-weight:700">${formatCurrency(cashTotal)}</span></div>
+          <div class="pl-row"><span>🏦 Transfer Bank</span><span style="color:#0284c7;font-weight:700">${formatCurrency(transferTotal)}</span></div>
+          ${monthly.length > 1 ? `
+          <table class="print-table" style="margin-top:10px">
+            <thead><tr>
+              <th>Bulan</th><th style="text-align:right">Cash</th><th style="text-align:right">Transfer</th><th style="text-align:right">Total</th>
+            </tr></thead>
+            <tbody>${(()=>{
+              const mNames=['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+              return monthly.map(m=>{const[y,mo]=m.month.split('-');return`<tr><td>${mNames[parseInt(mo)-1]} ${y}</td><td style="text-align:right;color:#16a34a">${formatCurrency(m.cash)}</td><td style="text-align:right;color:#0284c7">${formatCurrency(m.transfer)}</td><td style="text-align:right;font-weight:700">${formatCurrency(m.total)}</td></tr>`;}).join('');
+            })()}</tbody>
+          </table>` : ''}
+        </div>
+
+        <div class="pl-section" style="margin-top:20px">
+          <div style="font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;color:#555">Rincian per Produk</div>
+          <table class="print-table">
+            <thead>
+              <tr>
+                <th style="width:4%">No</th>
+                <th>Produk</th>
+                <th style="text-align:right;width:8%">Qty</th>
+                <th style="text-align:right;width:16%">Pendapatan</th>
+                <th style="text-align:right;width:14%">HPP</th>
+                <th style="text-align:right;width:14%">Laba Kotor</th>
+                <th style="text-align:right;width:8%">Margin</th>
+              </tr>
+            </thead>
+            <tbody>${prodRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+
+    window.print();
+  }
+
+  (async () => { const auth = await requireAdmin(); if (!auth) return; loadReport(); })();
+</script>
+</body>
+</html>

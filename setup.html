@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup Admin - UD.DIANA</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 40px;
+      width: 100%;
+      max-width: 440px;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+    }
+    .header { text-align: center; margin-bottom: 28px; }
+    .logo-icon {
+      width: 60px; height: 60px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px; margin: 0 auto 12px;
+    }
+    .header h1 { font-size: 20px; font-weight: 700; color: #0f172a; }
+    .header p { font-size: 13px; color: #64748b; margin-top: 4px; }
+    .warning {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #92400e;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12.5px;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    .warning strong { display: block; margin-bottom: 4px; font-size: 13px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+    .form-group input {
+      width: 100%; padding: 10px 13px;
+      border: 1.5px solid #e2e8f0; border-radius: 8px;
+      font-size: 14px; color: #1e293b;
+      transition: border-color .2s; outline: none;
+    }
+    .form-group input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+    .btn {
+      width: 100%; padding: 12px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      color: #fff; border: none; border-radius: 8px;
+      font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: opacity .2s;
+    }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+    .msg {
+      border-radius: 8px; padding: 12px 14px;
+      font-size: 13px; margin-bottom: 16px; display: none;
+    }
+    .msg.success { background: #f0fdf4; border: 1px solid #86efac; color: #15803d; }
+    .msg.error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+    .step { font-size: 12px; color: #94a3b8; margin-top: 6px; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="header">
+    <div class="logo-icon">⚙️</div>
+    <h1>Setup Admin Account</h1>
+    <p>Jalankan sekali untuk membuat akun admin pertama</p>
+  </div>
+
+  <div class="warning">
+    <strong>⚠️ Sebelum melanjutkan:</strong>
+    Pastikan sudah mematikan "Confirm email" di Supabase Dashboard → Authentication → Providers → Email → toggle OFF → Save.
+  </div>
+
+  <div class="msg" id="msg"></div>
+
+  <div class="form-group">
+    <label>Nama Admin</label>
+    <input type="text" id="admin-name" value="Admin UD.DIANA">
+  </div>
+  <div class="form-group">
+    <label>Email</label>
+    <input type="email" id="admin-email" value="admin@uddiana.com">
+  </div>
+  <div class="form-group">
+    <label>Password</label>
+    <input type="password" id="admin-password" value="uddiana7788">
+  </div>
+
+  <button class="btn" id="btn-setup" onclick="createAdmin()">Buat Akun Admin</button>
+  <p class="step" id="step-info" style="text-align:center;margin-top:12px"></p>
+</div>
+
+<script src="js/config.js"></script>
+<script>
+  async function createAdmin() {
+    const btn = document.getElementById('btn-setup');
+    const name = document.getElementById('admin-name').value.trim();
+    const email = document.getElementById('admin-email').value.trim();
+    const password = document.getElementById('admin-password').value;
+
+    if (!name || !email || !password) { showMsg('Semua field wajib diisi', 'error'); return; }
+    if (password.length < 6) { showMsg('Password minimal 6 karakter', 'error'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Membuat akun...';
+    setStep('Langkah 1/3: Membuat akun di Supabase Auth...');
+
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
+
+    if (signUpError) {
+      btn.disabled = false;
+      btn.textContent = 'Buat Akun Admin';
+      setStep('');
+
+      if (signUpError.message.includes('already registered') || signUpError.message.includes('already been registered')) {
+        showMsg('Email sudah terdaftar. Coba login langsung di login.html', 'error');
+      } else {
+        showMsg('Error: ' + signUpError.message, 'error');
+      }
+      return;
+    }
+
+    const userId = signUpData.user?.id;
+    if (!userId) {
+      btn.disabled = false;
+      btn.textContent = 'Buat Akun Admin';
+      showMsg('Gagal mendapatkan user ID. Pastikan "Confirm email" sudah dimatikan di Supabase.', 'error');
+      setStep('');
+      return;
+    }
+
+    setStep('Langkah 2/3: Menyimpan profil admin...');
+
+    const { error: profileError } = await supabase.from('user_profiles').upsert({
+      id: userId,
+      name,
+      email,
+      role: 'admin',
+      is_active: true
+    });
+
+    if (profileError) {
+      btn.disabled = false;
+      btn.textContent = 'Buat Akun Admin';
+      showMsg('Akun dibuat tapi gagal simpan profil: ' + profileError.message, 'error');
+      setStep('');
+      return;
+    }
+
+    setStep('Langkah 3/3: Selesai!');
+    showMsg('✅ Akun admin berhasil dibuat! Mengalihkan ke halaman login...', 'success');
+
+    setTimeout(() => { window.location.href = 'login.html'; }, 2500);
+  }
+
+  function showMsg(msg, type) {
+    const el = document.getElementById('msg');
+    el.textContent = msg;
+    el.className = 'msg ' + type;
+    el.style.display = 'block';
+  }
+
+  function setStep(txt) {
+    document.getElementById('step-info').textContent = txt;
+  }
+</script>
+</body>
+</html>

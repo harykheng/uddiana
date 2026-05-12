@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keluar Barang - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+  <style>
+    .ts-wrapper .ts-control { border:1px solid var(--border); border-radius:6px; padding:4px 8px; box-shadow:none; min-height:unset; font-size:12.5px; }
+    .ts-wrapper.focus .ts-control,.ts-wrapper.single.input-active .ts-control { border-color:var(--primary); }
+    .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; }
+    .ts-dropdown .option { padding:8px 12px; }
+    .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
+    .ts-dropdown-content { max-height:220px; }
+    .ts-dropdown { z-index:9999 !important; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item active"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Keluar Barang</h1>
+        <p>Perpindahan / pengeluaran stok non-penjualan</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openCreate()">+ Catat Keluar Barang</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <!-- INFO BANNER -->
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 16px;margin-bottom:18px;font-size:13px;color:#92400e;display:flex;gap:8px;align-items:flex-start">
+        <span style="font-size:16px">ℹ️</span>
+        <span>Halaman ini untuk pengeluaran barang <strong>bukan penjualan</strong> — retur ke supplier, barang rusak, sample, mutasi gudang, dll. Tidak mempengaruhi laporan laba rugi.</span>
+      </div>
+
+      <div class="filter-bar">
+        <div class="search-input-wrap" style="flex:1;max-width:300px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="No. OUT, alasan..." oninput="handleSearch()">
+        </div>
+        <select id="filter-reason" onchange="renderTransfers()">
+          <option value="">Semua Alasan</option>
+          <option value="Retur ke Supplier">Retur ke Supplier</option>
+          <option value="Barang Rusak">Barang Rusak</option>
+          <option value="Sample / Promosi">Sample / Promosi</option>
+          <option value="Mutasi Gudang">Mutasi Gudang</option>
+          <option value="Lainnya">Lainnya</option>
+        </select>
+        <input type="date" id="filter-from" onchange="loadTransfers()">
+        <input type="date" id="filter-to" onchange="loadTransfers()">
+        <button class="btn btn-ghost btn-sm" onclick="clearFilters()">Reset</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Riwayat Keluar Barang <span id="transfer-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>No.</th>
+                <th>Tanggal</th>
+                <th>Alasan</th>
+                <th>Jml Produk</th>
+                <th>Catatan</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="transfer-table">
+              <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- MODAL CREATE -->
+<div class="modal-overlay" id="modal-create-transfer">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3>Catat Keluar Barang</h3>
+      <button class="modal-close" onclick="closeModal('modal-create-transfer')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#f8fafc;border-radius:8px;padding:14px 16px;margin-bottom:14px">
+        <div class="form-row">
+          <div class="form-group mb-0">
+            <label>Alasan Keluar *</label>
+            <select id="tr-reason">
+              <option value="Retur ke Supplier">Retur ke Supplier</option>
+              <option value="Barang Rusak">Barang Rusak</option>
+              <option value="Sample / Promosi">Sample / Promosi</option>
+              <option value="Mutasi Gudang">Mutasi Gudang</option>
+              <option value="Lainnya">Lainnya</option>
+            </select>
+          </div>
+          <div class="form-group mb-0">
+            <label>Tanggal</label>
+            <input type="date" id="tr-date">
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:10px;margin-bottom:0">
+          <label>Catatan</label>
+          <input type="text" id="tr-notes" placeholder="Keterangan tambahan">
+        </div>
+      </div>
+
+      <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">Barang yang Keluar</div>
+      <div class="table-wrap" style="margin-bottom:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:45%">Produk</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:12%">Stok</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:15%">Qty Keluar</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Keterangan Item</th>
+              <th style="width:8%"></th>
+            </tr>
+          </thead>
+          <tbody id="tr-items-body"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addTrRow()" style="margin-bottom:8px">+ Tambah Barang</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-create-transfer')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-transfer" onclick="saveTransfer()">📤 Simpan & Kurangi Stok</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VIEW -->
+<div class="modal-overlay" id="modal-view-transfer">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="view-tr-title">Detail Keluar Barang</h3>
+      <button class="modal-close" onclick="closeModal('modal-view-transfer')">×</button>
+    </div>
+    <div class="modal-body" id="view-tr-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-view-transfer')">Tutup</button>
+      <button class="btn btn-ghost" id="btn-cancel-transfer" style="color:var(--danger);border-color:var(--danger)" onclick="cancelCurrentTransfer()">Batalkan</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let allTransfers = [];
+  let products = [];
+  let currentTransfer = null;
+  let trRowCount = 0;
+  const handleSearch = debounce(() => renderTransfers(), 350);
+
+  async function init() {
+    const auth = await requireAdmin(); if (!auth) return;
+    document.getElementById('tr-date').value = todayISO();
+    await loadProducts();
+    await loadTransfers();
+  }
+
+  async function loadProducts() {
+    const { data } = await supabase.from('products')
+      .select('id,name,stock_quantity,unit').eq('is_active', true).order('name');
+    products = data || [];
+  }
+
+  async function loadTransfers() {
+    const from = document.getElementById('filter-from').value;
+    const to   = document.getElementById('filter-to').value;
+    let q = supabase.from('stock_transfers').select('*').order('created_at', { ascending: false });
+    if (from) q = q.gte('transfer_date', from);
+    if (to)   q = q.lte('transfer_date', to);
+    const { data, error } = await q;
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    allTransfers = data || [];
+    renderTransfers();
+  }
+
+  function renderTransfers() {
+    const search = document.getElementById('search-input').value.toLowerCase();
+    const reason = document.getElementById('filter-reason').value;
+    const filtered = allTransfers.filter(t =>
+      (!search || t.transfer_number.toLowerCase().includes(search) || (t.reason||'').toLowerCase().includes(search)) &&
+      (!reason || t.reason === reason)
+    );
+
+    document.getElementById('transfer-count').textContent = filtered.length;
+    const tbody = document.getElementById('transfer-table');
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📤</div><h4>Belum ada keluar barang</h4></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(t => {
+      const faded = t.status === 'cancelled' ? 'style="opacity:.55"' : '';
+      const badge = t.status === 'cancelled'
+        ? '<span class="badge badge-danger">Dibatalkan</span>'
+        : '<span class="badge badge-success">Selesai</span>';
+      return `<tr ${faded}>
+        <td><strong style="color:var(--primary)">${escapeHtml(t.transfer_number)}</strong></td>
+        <td>${formatDate(t.transfer_date)}</td>
+        <td><span class="badge badge-warning">${escapeHtml(t.reason)}</span></td>
+        <td class="text-center">—</td>
+        <td class="text-muted">${escapeHtml(t.notes||'—')}</td>
+        <td>${badge}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="viewTransfer('${t.id}')">👁 Detail</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  function clearFilters() {
+    ['search-input','filter-from','filter-to'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('filter-reason').value = '';
+    loadTransfers();
+  }
+
+  // ── CREATE ─────────────────────────────────────────────────
+  function openCreate() {
+    document.getElementById('tr-date').value = todayISO();
+    document.getElementById('tr-notes').value = '';
+    document.getElementById('tr-reason').value = 'Retur ke Supplier';
+    document.getElementById('tr-items-body').innerHTML = '';
+    trRowCount = 0;
+    addTrRow();
+    openModal('modal-create-transfer');
+  }
+
+  function addTrRow() {
+    const id = `trr-${++trRowCount}`;
+    const tbody = document.getElementById('tr-items-body');
+    const tr = document.createElement('tr');
+    tr.id = id;
+    tr.innerHTML = `
+      <td style="padding:5px 6px">
+        <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
+          <option value="">-- Pilih Produk --</option>
+          ${products.map(p => `<option value="${p.id}" data-stock="${p.stock_quantity}" data-unit="${p.unit}">${escapeHtml(p.name)} (${p.stock_quantity} ${p.unit})</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:5px 6px"><input type="number" id="trstock-${id}" readonly value="0" style="background:#f8fafc;width:65px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="number" id="trqty-${id}" value="1" min="1" style="width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="text" id="trnote-${id}" placeholder="(opsional)" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
+    `;
+    tbody.appendChild(tr);
+    const selEl = tr.querySelector('select');
+    new TomSelect(selEl, {
+      placeholder: '— Cari & pilih produk —',
+      maxOptions: 200,
+      dropdownParent: 'body',
+      onChange: () => onTrProductSelect(selEl, id)
+    });
+  }
+
+  function onTrProductSelect(sel, rowId) {
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById(`trstock-${rowId}`).value = opt.dataset.stock || 0;
+  }
+
+  async function saveTransfer() {
+    const btn = document.getElementById('btn-save-transfer');
+    const items = [];
+    let valid = true;
+
+    document.querySelectorAll('#tr-items-body tr').forEach(tr => {
+      const sel   = tr.querySelector('select');
+      const qtyEl = tr.querySelector('[id^="trqty-"]');
+      const noteEl = tr.querySelector('[id^="trnote-"]');
+      const stockEl = tr.querySelector('[id^="trstock-"]');
+      if (!sel?.value) return;
+
+      const qty   = parseInt(qtyEl?.value) || 0;
+      const stock = parseInt(stockEl?.value) || 0;
+      const prod  = products.find(p => p.id === sel.value);
+
+      if (qty <= 0)    { showToast('Jumlah harus > 0', 'error'); valid = false; return; }
+      if (qty > stock) { showToast(`Stok "${prod?.name}" tidak cukup (tersisa: ${stock})`, 'error'); valid = false; return; }
+      items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, notes: noteEl?.value.trim() || null });
+    });
+
+    if (!valid) return;
+    if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); return; }
+
+    setLoading(btn, true);
+    const { data: trData, error: trErr } = await supabase.from('stock_transfers').insert({
+      transfer_date: document.getElementById('tr-date').value,
+      reason: document.getElementById('tr-reason').value,
+      notes: document.getElementById('tr-notes').value.trim() || null,
+    }).select().single();
+
+    if (trErr) { setLoading(btn, false); showToast('Gagal: ' + trErr.message, 'error'); return; }
+
+    const { error: itemsErr } = await supabase.from('stock_transfer_items').insert(
+      items.map(i => ({ ...i, transfer_id: trData.id }))
+    );
+
+    setLoading(btn, false);
+    if (itemsErr) {
+      await supabase.from('stock_transfers').delete().eq('id', trData.id);
+      showToast('Gagal: ' + itemsErr.message, 'error');
+      return;
+    }
+
+    showToast(`${trData.transfer_number} disimpan, stok dikurangi`);
+    closeModal('modal-create-transfer');
+    loadTransfers();
+    loadProducts();
+  }
+
+  // ── VIEW ───────────────────────────────────────────────────
+  async function viewTransfer(id) {
+    const { data: tr }    = await supabase.from('stock_transfers').select('*').eq('id', id).single();
+    const { data: items } = await supabase.from('stock_transfer_items').select('*').eq('transfer_id', id);
+    currentTransfer = { tr, items };
+
+    document.getElementById('view-tr-title').textContent = tr.transfer_number;
+    const badge = tr.status === 'cancelled'
+      ? '<span class="badge badge-danger">Dibatalkan</span>'
+      : '<span class="badge badge-success">Selesai</span>';
+
+    const itemsHtml = (items||[]).map(i => `
+      <tr>
+        <td style="padding:8px 10px">${escapeHtml(i.product_name)}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700">${i.quantity}</td>
+        <td style="padding:8px 10px;color:var(--text-muted)">${escapeHtml(i.notes||'—')}</td>
+      </tr>`).join('');
+
+    document.getElementById('view-tr-body').innerHTML = `
+      <div style="display:flex;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Alasan</div>
+          <div style="font-weight:700;font-size:15px"><span class="badge badge-warning" style="font-size:13px">${escapeHtml(tr.reason)}</span></div>
+          ${tr.notes ? `<div style="color:var(--text-muted);font-size:13px;margin-top:4px">${escapeHtml(tr.notes)}</div>` : ''}
+        </div>
+        <div style="text-align:right">${badge}<div style="color:var(--text-muted);font-size:12px;margin-top:4px">📅 ${formatDate(tr.transfer_date)}</div></div>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Produk</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Qty Keluar</th>
+            <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Keterangan</th>
+          </tr>
+        </thead>
+        <tbody>${itemsHtml}</tbody>
+      </table>`;
+
+    document.getElementById('btn-cancel-transfer').style.display = tr.status === 'cancelled' ? 'none' : 'inline-flex';
+    openModal('modal-view-transfer');
+  }
+
+  async function cancelCurrentTransfer() {
+    if (!currentTransfer) return;
+    if (!showConfirm(`Batalkan ${currentTransfer.tr.transfer_number}?\nStok akan dikembalikan.`)) return;
+    const { error } = await supabase.from('stock_transfers').update({ status: 'cancelled' }).eq('id', currentTransfer.tr.id);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Dibatalkan, stok dikembalikan');
+    closeModal('modal-view-transfer');
+    loadTransfers();
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>

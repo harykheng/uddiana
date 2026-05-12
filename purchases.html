@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pembelian Barang - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+  <style>
+    .ts-wrapper .ts-control { border:1px solid var(--border); border-radius:6px; padding:4px 8px; box-shadow:none; min-height:unset; font-size:12.5px; }
+    .ts-wrapper.focus .ts-control,.ts-wrapper.single.input-active .ts-control { border-color:var(--primary); }
+    .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; }
+    .ts-dropdown .option { padding:8px 12px; }
+    .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
+    .ts-dropdown-content { max-height:220px; }
+    .ts-dropdown { z-index:9999 !important; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    @media print {
+      body > .layout, .modal-overlay { display:none !important; }
+      #print-area { display:block !important; }
+    }
+    #print-area { display:none; }
+    .print-doc { font-family:Arial,sans-serif; padding:32px; max-width:700px; margin:0 auto; font-size:13px; }
+    .print-doc h2 { margin:0; font-size:20px; }
+    .print-doc .meta { color:#555; font-size:12px; }
+    .print-doc table { width:100%; border-collapse:collapse; margin:16px 0; }
+    .print-doc th { background:#f1f5f9; padding:8px 10px; text-align:left; font-size:11px; text-transform:uppercase; border-bottom:1px solid #ddd; }
+    .print-doc td { padding:8px 10px; border-bottom:1px solid #eee; }
+    .print-doc .total-row { font-weight:700; font-size:15px; text-align:right; padding-top:8px; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item active"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Pembelian Barang</h1>
+        <p>Input stok masuk dari pembelian / supplier</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openCreate()">+ Buat PO Baru</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="filter-bar">
+        <div class="search-input-wrap" style="flex:1;max-width:300px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="No. PO, supplier..." oninput="handleSearch()">
+        </div>
+        <input type="date" id="filter-from" onchange="loadPurchases()">
+        <input type="date" id="filter-to" onchange="loadPurchases()">
+        <button class="btn btn-ghost btn-sm" onclick="clearFilters()">Reset</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Daftar Pembelian <span id="po-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+          <span id="po-total-summary" class="text-muted" style="font-size:13px"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>No. PO</th>
+                <th>Supplier</th>
+                <th>Tanggal</th>
+                <th>Jml Item</th>
+                <th>Total Modal</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="po-table">
+              <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- MODAL CREATE PO -->
+<div class="modal-overlay" id="modal-create-po">
+  <div class="modal modal-xl">
+    <div class="modal-header">
+      <h3>Buat Pembelian Barang</h3>
+      <button class="modal-close" onclick="closeModal('modal-create-po')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#f8fafc;border-radius:8px;padding:14px 16px;margin-bottom:14px">
+        <div class="form-row">
+          <div class="form-group mb-0">
+            <label>Nama Supplier</label>
+            <input type="text" id="po-supplier" placeholder="Nama distributor / supplier">
+          </div>
+          <div class="form-group mb-0">
+            <label>Tanggal</label>
+            <input type="date" id="po-date">
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:10px;margin-bottom:0">
+          <label>Catatan / No. Surat Jalan</label>
+          <input type="text" id="po-notes" placeholder="Nomor surat jalan atau catatan lainnya">
+        </div>
+      </div>
+
+      <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">Daftar Barang</div>
+      <div class="table-wrap" style="margin-bottom:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:38%">Produk</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Stok</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Qty</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Harga Modal / Unit</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Subtotal</th>
+              <th style="width:8%"></th>
+            </tr>
+          </thead>
+          <tbody id="po-items-body"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addPoRow()" style="margin-bottom:14px">+ Tambah Barang</button>
+
+      <div class="invoice-summary">
+        <div class="invoice-summary-row total">
+          <span>TOTAL MODAL PEMBELIAN</span>
+          <span id="po-total" style="color:var(--primary)">Rp 0</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-create-po')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-po" onclick="savePurchase()">🛒 Simpan & Update Stok</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VIEW DETAIL -->
+<div class="modal-overlay" id="modal-view-po">
+  <div class="modal modal-lg">
+    <div class="modal-header">
+      <h3 id="view-po-title">Detail Pembelian</h3>
+      <button class="modal-close" onclick="closeModal('modal-view-po')">×</button>
+    </div>
+    <div class="modal-body" id="view-po-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-view-po')">Tutup</button>
+      <button class="btn btn-ghost" id="btn-cancel-po" style="color:var(--danger);border-color:var(--danger)" onclick="cancelCurrentPo()">Batalkan PO</button>
+      <button class="btn btn-primary" onclick="printCurrentPo()">🖨 Cetak Surat Jalan</button>
+    </div>
+  </div>
+</div>
+
+<div id="print-area"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let allPurchases = [];
+  let products = [];
+  let currentPo = null;
+  let poRowCount = 0;
+  const handleSearch = debounce(() => renderPurchases(), 350);
+
+  async function init() {
+    const auth = await requireAdmin(); if (!auth) return;
+    document.getElementById('po-date').value = todayISO();
+    await loadProducts();
+    await loadPurchases();
+  }
+
+  async function loadProducts() {
+    const { data } = await supabase.from('products')
+      .select('id,name,sku,cost,stock_quantity,unit').eq('is_active', true).order('name');
+    products = data || [];
+  }
+
+  async function loadPurchases() {
+    const from = document.getElementById('filter-from').value;
+    const to   = document.getElementById('filter-to').value;
+    let q = supabase.from('purchases').select('*').order('created_at', { ascending: false });
+    if (from) q = q.gte('purchase_date', from);
+    if (to)   q = q.lte('purchase_date', to);
+    const { data, error } = await q;
+    if (error) { showToast('Gagal memuat: ' + error.message, 'error'); return; }
+    allPurchases = data || [];
+    renderPurchases();
+  }
+
+  function renderPurchases() {
+    const search = document.getElementById('search-input').value.toLowerCase();
+    const filtered = allPurchases.filter(p =>
+      !search ||
+      p.purchase_number.toLowerCase().includes(search) ||
+      (p.supplier_name||'').toLowerCase().includes(search)
+    );
+    document.getElementById('po-count').textContent = filtered.length;
+    const total = filtered.filter(p => p.status !== 'cancelled').reduce((s, p) => s + Number(p.total_cost), 0);
+    document.getElementById('po-total-summary').textContent = `Total: ${formatCurrency(total)}`;
+
+    const tbody = document.getElementById('po-table');
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">🛒</div><h4>Belum ada pembelian</h4></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = filtered.map(p => {
+      const faded = p.status === 'cancelled' ? 'style="opacity:.55"' : '';
+      const statusBadge = p.status === 'cancelled'
+        ? '<span class="badge badge-danger">Dibatalkan</span>'
+        : '<span class="badge badge-success">Diterima</span>';
+      return `<tr ${faded}>
+        <td><strong style="color:var(--primary)">${escapeHtml(p.purchase_number)}</strong></td>
+        <td>${escapeHtml(p.supplier_name || '—')}</td>
+        <td>${formatDate(p.purchase_date)}</td>
+        <td class="text-center">—</td>
+        <td class="text-right font-bold">${formatCurrency(p.total_cost)}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <button class="btn btn-ghost btn-sm" onclick="viewPo('${p.id}')">👁 Detail</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function clearFilters() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-from').value = '';
+    document.getElementById('filter-to').value = '';
+    loadPurchases();
+  }
+
+  // ── CREATE PO ──────────────────────────────────────────────
+  function openCreate() {
+    document.getElementById('po-supplier').value = '';
+    document.getElementById('po-date').value = todayISO();
+    document.getElementById('po-notes').value = '';
+    document.getElementById('po-items-body').innerHTML = '';
+    poRowCount = 0;
+    addPoRow();
+    recalcPoTotal();
+    openModal('modal-create-po');
+  }
+
+  function addPoRow() {
+    const id = `por-${++poRowCount}`;
+    const tbody = document.getElementById('po-items-body');
+    const tr = document.createElement('tr');
+    tr.id = id;
+    tr.innerHTML = `
+      <td style="padding:5px 6px">
+        <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
+          <option value="">-- Pilih Produk --</option>
+          ${products.map(p => `<option value="${p.id}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}">${escapeHtml(p.name)} (${p.stock_quantity} ${p.unit})</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:5px 6px"><input type="number" id="postock-${id}" readonly value="0" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="number" id="poqty-${id}" value="1" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="number" id="pocost-${id}" value="0" min="0" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="number" id="posub-${id}" readonly value="0" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcPoTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
+    `;
+    tbody.appendChild(tr);
+    const selEl = tr.querySelector('select');
+    new TomSelect(selEl, {
+      placeholder: '— Cari & pilih produk —',
+      maxOptions: 200,
+      dropdownParent: 'body',
+      onChange: () => onPoProductSelect(selEl, id)
+    });
+  }
+
+  function onPoProductSelect(sel, rowId) {
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById(`postock-${rowId}`).value = opt.dataset.stock || 0;
+    document.getElementById(`pocost-${rowId}`).value  = opt.dataset.cost  || 0;
+    recalcPoRow(rowId);
+  }
+
+  function recalcPoRow(rowId) {
+    const qty  = parseInt(document.getElementById(`poqty-${rowId}`)?.value) || 0;
+    const cost = parseFloat(document.getElementById(`pocost-${rowId}`)?.value) || 0;
+    const sub  = document.getElementById(`posub-${rowId}`);
+    if (sub) sub.value = (qty * cost).toFixed(0);
+    recalcPoTotal();
+  }
+
+  function recalcPoTotal() {
+    let total = 0;
+    document.querySelectorAll('#po-items-body tr').forEach(tr => {
+      const subEl = tr.querySelector('[id^="posub-"]');
+      total += parseFloat(subEl?.value) || 0;
+    });
+    document.getElementById('po-total').textContent = formatCurrency(total);
+  }
+
+  async function savePurchase() {
+    const btn = document.getElementById('btn-save-po');
+    const items = [];
+    let totalCost = 0;
+    let valid = true;
+
+    document.querySelectorAll('#po-items-body tr').forEach(tr => {
+      const sel   = tr.querySelector('select');
+      const qtyEl = tr.querySelector('[id^="poqty-"]');
+      const costEl = tr.querySelector('[id^="pocost-"]');
+      if (!sel?.value) return;
+
+      const qty  = parseInt(qtyEl?.value) || 0;
+      const cost = parseFloat(costEl?.value) || 0;
+      const prod = products.find(p => p.id === sel.value);
+
+      if (qty <= 0) { showToast('Jumlah harus > 0', 'error'); valid = false; return; }
+      const sub = qty * cost;
+      totalCost += sub;
+      items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, cost_price: cost, subtotal: sub });
+    });
+
+    if (!valid) return;
+    if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); return; }
+
+    setLoading(btn, true);
+    const { data: poData, error: poErr } = await supabase.from('purchases').insert({
+      supplier_name: document.getElementById('po-supplier').value.trim() || null,
+      purchase_date: document.getElementById('po-date').value,
+      notes: document.getElementById('po-notes').value.trim() || null,
+      total_cost: totalCost,
+    }).select().single();
+
+    if (poErr) { setLoading(btn, false); showToast('Gagal: ' + poErr.message, 'error'); return; }
+
+    const { error: itemsErr } = await supabase.from('purchase_items').insert(
+      items.map(i => ({ ...i, purchase_id: poData.id }))
+    );
+
+    setLoading(btn, false);
+    if (itemsErr) {
+      await supabase.from('purchases').delete().eq('id', poData.id);
+      showToast('Gagal simpan item: ' + itemsErr.message, 'error');
+      return;
+    }
+
+    showToast(`${poData.purchase_number} berhasil disimpan, stok diperbarui`);
+    closeModal('modal-create-po');
+    loadPurchases();
+  }
+
+  // ── VIEW & PRINT ───────────────────────────────────────────
+  async function viewPo(id) {
+    const { data: po }    = await supabase.from('purchases').select('*').eq('id', id).single();
+    const { data: items } = await supabase.from('purchase_items').select('*').eq('purchase_id', id);
+    currentPo = { po, items };
+
+    document.getElementById('view-po-title').textContent = po.purchase_number;
+    const statusBadge = po.status === 'cancelled'
+      ? '<span class="badge badge-danger">Dibatalkan</span>'
+      : '<span class="badge badge-success">Diterima</span>';
+
+    const itemsHtml = (items||[]).map(item => `
+      <tr>
+        <td style="padding:8px 10px">${escapeHtml(item.product_name)}</td>
+        <td style="padding:8px 10px;text-align:right">${item.quantity}</td>
+        <td style="padding:8px 10px;text-align:right">${formatCurrency(item.cost_price)}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700">${formatCurrency(item.subtotal)}</td>
+      </tr>`).join('');
+
+    document.getElementById('view-po-body').innerHTML = `
+      <div style="display:flex;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase">Supplier</div>
+          <div style="font-weight:700;font-size:15px">${escapeHtml(po.supplier_name || '—')}</div>
+          ${po.notes ? `<div style="color:var(--text-muted);font-size:13px;margin-top:2px">📋 ${escapeHtml(po.notes)}</div>` : ''}
+        </div>
+        <div style="text-align:right">
+          ${statusBadge}
+          <div style="color:var(--text-muted);font-size:12px;margin-top:4px">📅 ${formatDate(po.purchase_date)}</div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:#f8fafc">
+            <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Produk</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Qty</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Harga Modal</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${itemsHtml}</tbody>
+      </table>
+      <div class="invoice-summary" style="margin-top:12px">
+        <div class="invoice-summary-row total">
+          <span>TOTAL MODAL</span>
+          <span style="color:var(--primary)">${formatCurrency(po.total_cost)}</span>
+        </div>
+      </div>`;
+
+    document.getElementById('btn-cancel-po').style.display = po.status === 'cancelled' ? 'none' : 'inline-flex';
+    openModal('modal-view-po');
+  }
+
+  async function cancelCurrentPo() {
+    if (!currentPo) return;
+    if (!showConfirm(`Batalkan PO ${currentPo.po.purchase_number}?\nStok yang sudah ditambahkan akan dikurangi kembali.`)) return;
+    const { error } = await supabase.from('purchases').update({ status: 'cancelled' }).eq('id', currentPo.po.id);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('PO dibatalkan, stok dikembalikan');
+    closeModal('modal-view-po');
+    loadPurchases();
+  }
+
+  function printCurrentPo() {
+    if (!currentPo) return;
+    const { po, items } = currentPo;
+    let no = 1;
+    const rows = (items||[]).map(i => `
+      <tr>
+        <td>${no++}</td>
+        <td>${escapeHtml(i.product_name)}</td>
+        <td style="text-align:right">${i.quantity}</td>
+        <td style="text-align:right">${formatCurrency(i.cost_price)}</td>
+        <td style="text-align:right">${formatCurrency(i.subtotal)}</td>
+      </tr>`).join('');
+
+    document.getElementById('print-area').innerHTML = `
+      <div class="print-doc">
+        <div style="display:flex;justify-content:space-between;margin-bottom:16px">
+          <div><h2>UD. DIANA</h2><div class="meta">Purchase Order / Surat Jalan</div></div>
+          <div style="text-align:right">
+            <div style="font-size:18px;font-weight:800;color:#2563eb">${escapeHtml(po.purchase_number)}</div>
+            <div class="meta">Tanggal: ${formatDate(po.purchase_date)}</div>
+          </div>
+        </div>
+        <hr style="border:none;border-top:2px solid #111;margin:12px 0">
+        <div style="margin-bottom:12px">
+          <strong>Supplier:</strong> ${escapeHtml(po.supplier_name || '—')}<br>
+          ${po.notes ? `<strong>No. Surat Jalan:</strong> ${escapeHtml(po.notes)}` : ''}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width:5%">No</th>
+              <th>Nama Barang</th>
+              <th style="text-align:right;width:10%">Qty</th>
+              <th style="text-align:right;width:18%">Harga Modal</th>
+              <th style="text-align:right;width:18%">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="total-row">Total Modal: ${formatCurrency(po.total_cost)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:32px;font-size:12px">
+          <div style="text-align:center;border-top:1px solid #999;padding-top:4px">Diterima Oleh</div>
+          <div style="text-align:center;border-top:1px solid #999;padding-top:4px">Diserahkan Oleh</div>
+        </div>
+      </div>`;
+    window.print();
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>

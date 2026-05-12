@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retur Barang - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    /* ── SUMMARY CARDS ── */
+    .rt-card {
+      background: var(--surface); border-radius: var(--radius);
+      padding: 16px 20px; box-shadow: var(--shadow);
+      border-left: 4px solid transparent;
+    }
+    .rt-card.total   { border-left-color: #2563eb; }
+    .rt-card.pending { border-left-color: #d97706; }
+    .rt-card.approve { border-left-color: #16a34a; }
+    .rt-card.nilai   { border-left-color: #7c3aed; }
+    .rt-card .label  { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+    .rt-card .value  { font-size:20px; font-weight:800; line-height:1.2; }
+    .rt-card .sub    { font-size:12px; color:var(--text-muted); margin-top:2px; }
+    .rt-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-bottom:20px; }
+
+    /* ── STATUS BADGES ── */
+    .badge-pending  { background:#fef9c3; color:#92400e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+    .badge-approved { background:#dcfce7; color:#166534; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+    .badge-rejected { background:#fee2e2; color:#991b1b; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+
+    /* ── CREATE MODAL ── */
+    .inv-search-row { display:flex; gap:8px; align-items:flex-end; }
+    .inv-search-row input { flex:1; }
+    .inv-info-box {
+      background:#f8fafc; border:1px solid var(--border); border-radius:8px;
+      padding:12px 16px; margin: 8px 0 14px;
+    }
+    .inv-info-box .inv-no  { font-weight:800; font-size:15px; margin-bottom:4px; }
+    .inv-info-box .inv-meta { font-size:12px; color:var(--text-muted); }
+
+    /* ── RETURN ITEMS TABLE ── */
+    .retur-items-wrap { max-height:300px; overflow-y:auto; margin-bottom:14px; }
+    .retur-items-wrap table { width:100%; border-collapse:collapse; }
+    .retur-items-wrap th { background:#f1f5f9; font-size:11px; text-transform:uppercase; font-weight:700; padding:8px 10px; text-align:left; position:sticky; top:0; }
+    .retur-items-wrap td { padding:8px 10px; border-bottom:1px solid var(--border); font-size:13px; vertical-align:middle; }
+    .retur-items-wrap input[type=number] { width:70px; padding:4px 8px; border:1px solid var(--border); border-radius:6px; text-align:center; font-size:13px; }
+    .retur-items-wrap input[type=checkbox] { width:16px; height:16px; cursor:pointer; }
+
+    /* ── DETAIL MODAL ITEMS ── */
+    .detail-items-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .detail-items-table th { background:#f8fafc; padding:8px 12px; text-align:left; font-size:11px; text-transform:uppercase; border-bottom:1px solid var(--border); }
+    .detail-items-table td { padding:8px 12px; border-bottom:1px solid var(--border); }
+    .detail-items-table .num { text-align:right; }
+
+    /* ── REASON CHIP ── */
+    .reason-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+    .reason-chip {
+      padding:5px 12px; border:1px solid var(--border); border-radius:20px;
+      font-size:12px; cursor:pointer; transition:all .15s; background:var(--surface);
+    }
+    .reason-chip.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+    /* ── APPROVE/REJECT BUTTONS in list ── */
+    .action-btns { display:flex; gap:6px; }
+    .btn-sm { padding:4px 10px; font-size:12px; border-radius:6px; border:none; cursor:pointer; font-weight:600; }
+    .btn-approve { background:#dcfce7; color:#166534; }
+    .btn-approve:hover { background:#bbf7d0; }
+    .btn-reject  { background:#fee2e2; color:#991b1b; }
+    .btn-reject:hover  { background:#fecaca; }
+    .btn-detail  { background:#eff6ff; color:#1d4ed8; }
+    .btn-detail:hover  { background:#dbeafe; }
+    .content { margin: 25px;}
+
+    /* ── SETUP NOTICE ── */
+    .setup-notice {
+      background:#fffbeb; border:1px solid #fbbf24; border-radius:12px;
+      padding:24px 28px; margin-bottom:20px;
+    }
+    .setup-notice h3 { margin:0 0 8px; font-size:15px; font-weight:800; color:#92400e; }
+    .setup-notice p  { margin:0 0 12px; font-size:13px; color:#78350f; }
+    .setup-notice pre {
+      background:#1e293b; color:#e2e8f0; border-radius:8px;
+      padding:14px 16px; font-size:11.5px; overflow-x:auto;
+      white-space:pre; margin:0 0 12px;
+    }
+    .setup-notice .copy-btn { font-size:12px; }
+
+    /* ── PRINT ── */
+    @media print {
+      body > .layout { display:none !important; }
+      #print-area { display:block !important; }
+    }
+    #print-area { display:none; }
+    .print-wrap { font-family:Arial,sans-serif; padding:28px; font-size:13px; }
+    .print-wrap h2 { font-size:16px; font-weight:800; margin-bottom:4px; }
+    .print-wrap p  { font-size:12px; color:#555; margin:0 0 14px; }
+    .print-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .print-table th { background:#f1f5f9; padding:7px 10px; text-align:left; border-bottom:1px solid #ddd; font-size:11px; text-transform:uppercase; }
+    .print-table td { padding:7px 10px; border-bottom:1px solid #eee; }
+    .print-table .num { text-align:right; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📦</div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item active"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer" id="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Retur Barang</h1>
+        <p>Kelola pengembalian barang dari pelanggan</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openCreateModal()">➕ Buat Retur</button>
+        <button class="btn btn-secondary" onclick="exportXls()" style="margin-left:6px">📥 Export XLS</button>
+        <div class="user-avatar" id="user-avatar-initial">A</div>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- Setup Notice (shown if tables not ready) -->
+      <div id="setup-notice" class="setup-notice" style="display:none">
+        <h3>⚙️ Setup Diperlukan</h3>
+        <p>Tabel <strong>returns</strong> dan <strong>return_items</strong> belum ada di database Supabase Anda. Jalankan SQL berikut di <strong>Supabase → SQL Editor</strong> untuk mengaktifkan fitur ini:</p>
+        <pre id="setup-sql"></pre>
+        <button class="btn btn-secondary copy-btn" onclick="copySetupSql()">📋 Salin SQL</button>
+      </div>
+
+      <!-- Stats -->
+      <div class="rt-grid" id="stats-grid">
+        <div class="rt-card total">
+          <div class="label">Total Retur (Bulan Ini)</div>
+          <div class="value" id="stat-total">0</div>
+          <div class="sub">transaksi retur</div>
+        </div>
+        <div class="rt-card pending">
+          <div class="label">Menunggu Persetujuan</div>
+          <div class="value" id="stat-pending">0</div>
+          <div class="sub">retur pending</div>
+        </div>
+        <div class="rt-card approve">
+          <div class="label">Disetujui</div>
+          <div class="value" id="stat-approved">0</div>
+          <div class="sub">retur disetujui</div>
+        </div>
+        <div class="rt-card nilai">
+          <div class="label">Total Nilai Retur</div>
+          <div class="value" id="stat-nilai">Rp 0</div>
+          <div class="sub">bulan ini</div>
+        </div>
+      </div>
+
+      <!-- Filter bar -->
+      <div class="card" style="padding:14px 18px; margin-bottom:16px;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+          <div style="flex:1; min-width:180px;">
+            <label class="form-label" style="font-size:11px;">Cari No. Retur / Customer</label>
+            <input type="text" id="filter-search" class="form-control" placeholder="Cari…" oninput="renderTable()">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11px;">Status</label>
+            <select id="filter-status" class="form-control" onchange="renderTable()">
+              <option value="">Semua Status</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Disetujui</option>
+              <option value="rejected">Ditolak</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11px;">Dari Tanggal</label>
+            <input type="date" id="filter-from" class="form-control" onchange="renderTable()">
+          </div>
+          <div>
+            <label class="form-label" style="font-size:11px;">Sampai Tanggal</label>
+            <input type="date" id="filter-to" class="form-control" onchange="renderTable()">
+          </div>
+          <button class="btn btn-secondary" onclick="clearFilters()">✕ Reset</button>
+        </div>
+      </div>
+
+      <!-- Returns Table -->
+      <div class="card">
+        <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+          <h3 style="margin:0; font-size:15px; font-weight:700;">Daftar Retur</h3>
+          <span id="retur-count" style="font-size:12px; color:var(--text-muted);"></span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="table" id="retur-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>No. Retur</th>
+                <th>Tanggal</th>
+                <th>Customer</th>
+                <th>No. Faktur</th>
+                <th>Alasan</th>
+                <th>Jumlah Item</th>
+                <th>Total Nilai</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="retur-tbody">
+              <tr><td colspan="10" style="text-align:center; padding:40px; color:var(--text-muted);">Memuat data…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /layout -->
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- MODAL: Create Retur -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="modal-create" class="modal-overlay">
+  <div class="modal" style="max-width:700px; width:95%;">
+    <div class="modal-header">
+      <h3>Buat Retur Barang</h3>
+      <button class="modal-close" onclick="closeCreateModal()">×</button>
+    </div>
+    <div class="modal-body" style="max-height:80vh; overflow-y:auto;">
+
+      <!-- Step 1: Cari Faktur -->
+      <div id="create-step1">
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
+          Masukkan nomor faktur penjualan untuk mencari barang yang bisa diretur.
+        </p>
+        <div class="form-group">
+          <label class="form-label">Nomor Faktur <span style="color:red">*</span></label>
+          <div class="inv-search-row">
+            <input type="text" id="search-inv-no" class="form-control" placeholder="Contoh: INV-20250101-001"
+              oninput="this.value = this.value.toUpperCase()" onkeydown="if(event.key==='Enter') searchInvoice()">
+            <button class="btn btn-primary" onclick="searchInvoice()" id="btn-search-inv">🔍 Cari</button>
+          </div>
+        </div>
+
+        <div id="inv-found-box" style="display:none">
+          <div class="inv-info-box">
+            <div class="inv-no" id="inv-found-no"></div>
+            <div class="inv-meta" id="inv-found-meta"></div>
+          </div>
+
+          <!-- Pilih Item -->
+          <div class="form-group">
+            <label class="form-label">Pilih Barang yang Diretur</label>
+            <div class="retur-items-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:32px">✓</th>
+                    <th>Nama Produk</th>
+                    <th>SKU</th>
+                    <th style="width:80px; text-align:center">Qty Faktur</th>
+                    <th style="width:80px; text-align:center">Qty Retur</th>
+                    <th style="width:100px; text-align:right">Harga Satuan</th>
+                  </tr>
+                </thead>
+                <tbody id="inv-items-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tanggal & Alasan -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+            <div class="form-group">
+              <label class="form-label">Tanggal Retur <span style="color:red">*</span></label>
+              <input type="date" id="retur-date" class="form-control">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Alasan Retur <span style="color:red">*</span></label>
+              <div class="reason-chips" id="reason-chips">
+                <span class="reason-chip" onclick="selectReason(this,'Barang Rusak')">Barang Rusak</span>
+                <span class="reason-chip" onclick="selectReason(this,'Salah Kirim')">Salah Kirim</span>
+                <span class="reason-chip" onclick="selectReason(this,'Kelebihan Order')">Kelebihan Order</span>
+                <span class="reason-chip" onclick="selectReason(this,'Kadaluarsa')">Kadaluarsa</span>
+                <span class="reason-chip" onclick="selectReason(this,'Lainnya')">Lainnya</span>
+              </div>
+              <input type="text" id="retur-reason" class="form-control" placeholder="Alasan retur…" style="margin-top:6px;">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Catatan Tambahan</label>
+            <textarea id="retur-notes" class="form-control" rows="2" placeholder="Catatan opsional…" style="resize:vertical;"></textarea>
+          </div>
+
+          <!-- Summary -->
+          <div style="background:#f8fafc; border-radius:8px; padding:12px 16px; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+            <span style="font-size:13px; font-weight:600;">Total Nilai Retur:</span>
+            <span id="retur-total-val" style="font-size:16px; font-weight:800; color:var(--primary);">Rp 0</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeCreateModal()">Batal</button>
+      <button class="btn btn-primary" id="btn-submit-retur" onclick="submitRetur()" style="display:none" disabled>
+        📤 Ajukan Retur
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- MODAL: Detail Retur -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="modal-detail" class="modal-overlay">
+  <div class="modal" style="max-width:650px; width:95%;">
+    <div class="modal-header">
+      <h3>Detail Retur</h3>
+      <button class="modal-close" onclick="closeDetailModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="detail-content"></div>
+    </div>
+    <div class="modal-footer" id="detail-footer">
+      <button class="btn btn-secondary" onclick="closeDetailModal()">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- MODAL: Reject Reason -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="modal-reject" class="modal-overlay">
+  <div class="modal" style="max-width:420px; width:95%;">
+    <div class="modal-header">
+      <h3>Tolak Retur</h3>
+      <button class="modal-close" onclick="closeModal('modal-reject')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Alasan Penolakan <span style="color:red">*</span></label>
+        <textarea id="reject-reason-input" class="form-control" rows="3" placeholder="Jelaskan alasan penolakan retur…" style="resize:vertical;"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-reject')">Batal</button>
+      <button class="btn btn-danger" onclick="confirmReject()">Tolak Retur</button>
+    </div>
+  </div>
+</div>
+
+<!-- Print area -->
+<div id="print-area"></div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  // ── State ──────────────────────────────────────────────────────────────
+  let allReturns = [];        // all returns from DB (with return_items)
+  let filteredReturns = [];
+  let currentUser = null;
+  let selectedInvoice = null; // invoice found by search
+  let rejectTargetId = null;
+
+  const REASONS = ['Barang Rusak','Salah Kirim','Kelebihan Order','Kadaluarsa','Lainnya'];
+
+  const SETUP_SQL = `-- Jalankan di Supabase SQL Editor
+create table if not exists returns (
+  id uuid default gen_random_uuid() primary key,
+  return_number text not null,
+  invoice_id uuid references invoices(id),
+  invoice_number text,
+  customer_id uuid,
+  customer_name text,
+  return_date date not null,
+  reason text,
+  notes text,
+  status text default 'pending',
+  total_return_value numeric(15,2) default 0,
+  handled_by text,
+  created_at timestamptz default now(),
+  created_by text
+);
+
+create table if not exists return_items (
+  id uuid default gen_random_uuid() primary key,
+  return_id uuid references returns(id) on delete cascade,
+  product_id uuid,
+  product_name text,
+  sku text,
+  quantity integer not null,
+  unit_price numeric(15,2) default 0,
+  subtotal numeric(15,2) default 0
+);`;
+
+  // ── Init ───────────────────────────────────────────────────────────────
+  async function init() {
+    const auth = await requireAdmin();
+    if (!auth) return;
+    currentUser = auth;
+
+    // Update avatar
+    const av = document.getElementById('user-avatar-initial');
+    if (av) av.textContent = (auth.profile?.name || 'A')[0].toUpperCase();
+
+    // Check if returns table exists
+    const { error: tableCheck } = await supabase.from('returns').select('id').limit(1);
+    if (tableCheck && (tableCheck.code === '42P01' || tableCheck.message?.includes('does not exist') || tableCheck.message?.includes('relation'))) {
+      showSetupNotice();
+      return;
+    }
+
+    // Set default dates (current month)
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    document.getElementById('filter-from').value = firstDay.toISOString().split('T')[0];
+    document.getElementById('filter-to').value   = today.toISOString().split('T')[0];
+
+    await loadReturns();
+  }
+
+  function showSetupNotice() {
+    document.getElementById('setup-notice').style.display = 'block';
+    document.getElementById('setup-sql').textContent = SETUP_SQL;
+    document.getElementById('stats-grid').style.display = 'none';
+    document.getElementById('retur-tbody').innerHTML =
+      `<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text-muted);">Tabel belum dibuat. Ikuti petunjuk di atas.</td></tr>`;
+  }
+
+  function copySetupSql() {
+    navigator.clipboard.writeText(SETUP_SQL).then(() => showToast('SQL disalin!', 'success'));
+  }
+
+  // ── Load Data ──────────────────────────────────────────────────────────
+  async function loadReturns() {
+    const { data, error } = await supabase
+      .from('returns')
+      .select(`*, return_items(*)`)
+      .order('created_at', { ascending: false });
+
+    if (error) { showToast('Gagal memuat data retur: ' + error.message, 'error'); return; }
+    allReturns = data || [];
+    updateStats();
+    renderTable();
+  }
+
+  // ── Stats ──────────────────────────────────────────────────────────────
+  function updateStats() {
+    const now = new Date();
+    const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+    const monthly  = allReturns.filter(r => (r.return_date||'').startsWith(thisMonth));
+    const pending  = allReturns.filter(r => r.status === 'pending');
+    const approved = allReturns.filter(r => r.status === 'approved');
+    const totalNilai = monthly.reduce((s,r) => s + Number(r.total_return_value||0), 0);
+
+    document.getElementById('stat-total').textContent    = monthly.length;
+    document.getElementById('stat-pending').textContent  = pending.length;
+    document.getElementById('stat-approved').textContent = approved.length;
+    document.getElementById('stat-nilai').textContent    = formatRupiah(totalNilai);
+  }
+
+  // ── Render Table ───────────────────────────────────────────────────────
+  function renderTable() {
+    const search = (document.getElementById('filter-search').value || '').toLowerCase();
+    const status = document.getElementById('filter-status').value;
+    const from   = document.getElementById('filter-from').value;
+    const to     = document.getElementById('filter-to').value;
+
+    filteredReturns = allReturns.filter(r => {
+      if (status && r.status !== status) return false;
+      if (from && r.return_date < from) return false;
+      if (to   && r.return_date > to)   return false;
+      if (search) {
+        const hay = `${r.return_number} ${r.customer_name} ${r.invoice_number}`.toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
+
+    document.getElementById('retur-count').textContent = `${filteredReturns.length} retur`;
+
+    const tbody = document.getElementById('retur-tbody');
+    if (!filteredReturns.length) {
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text-muted);">Tidak ada data retur</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filteredReturns.map((r, i) => {
+      const items = r.return_items || [];
+      const totalQty = items.reduce((s,it) => s + it.quantity, 0);
+      const badgeClass = r.status === 'pending' ? 'badge-pending' : r.status === 'approved' ? 'badge-approved' : 'badge-rejected';
+      const statusLabel = r.status === 'pending' ? 'Pending' : r.status === 'approved' ? 'Disetujui' : 'Ditolak';
+
+      const actionBtns = r.status === 'pending'
+        ? `<div class="action-btns">
+             <button class="btn-sm btn-detail" onclick="openDetailModal('${r.id}')">🔍 Detail</button>
+             <button class="btn-sm btn-approve" onclick="approveRetur('${r.id}')">✅ Setujui</button>
+             <button class="btn-sm btn-reject"  onclick="openRejectModal('${r.id}')">❌ Tolak</button>
+           </div>`
+        : `<button class="btn-sm btn-detail" onclick="openDetailModal('${r.id}')">🔍 Detail</button>`;
+
+      return `<tr>
+        <td style="color:var(--text-muted);font-size:12px;">${i+1}</td>
+        <td><strong>${escapeHtml(r.return_number||'-')}</strong></td>
+        <td>${formatDate(r.return_date)}</td>
+        <td>${escapeHtml(r.customer_name||'-')}</td>
+        <td><span style="color:var(--primary);font-size:12px;">${escapeHtml(r.invoice_number||'-')}</span></td>
+        <td style="max-width:150px;"><span title="${escapeHtml(r.reason||'')}" style="font-size:12px;">${escapeHtml((r.reason||'-').substring(0,30))}${(r.reason||'').length>30?'…':''}</span></td>
+        <td style="text-align:center;">${totalQty} item</td>
+        <td style="text-align:right;font-weight:700;">${formatRupiah(r.total_return_value||0)}</td>
+        <td><span class="${badgeClass}">${statusLabel}</span></td>
+        <td>${actionBtns}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function clearFilters() {
+    document.getElementById('filter-search').value = '';
+    document.getElementById('filter-status').value = '';
+    document.getElementById('filter-from').value   = '';
+    document.getElementById('filter-to').value     = '';
+    renderTable();
+  }
+
+  // ── Invoice Search ─────────────────────────────────────────────────────
+  async function searchInvoice() {
+    const inv_no = document.getElementById('search-inv-no').value.trim();
+    if (!inv_no) { showToast('Masukkan nomor faktur', 'error'); return; }
+
+    const btn = document.getElementById('btn-search-inv');
+    setLoading(btn, true);
+
+    const { data, error } = await supabase
+      .from('invoices')
+      .select(`*, invoice_items(*, products(name, sku))`)
+      .ilike('invoice_number', inv_no)
+      .in('verification_status', ['approved'])
+      .neq('status', 'cancelled')
+      .single();
+
+    setLoading(btn, false);
+
+    if (error || !data) {
+      showToast('Faktur tidak ditemukan atau belum diverifikasi', 'error');
+      document.getElementById('inv-found-box').style.display = 'none';
+      document.getElementById('btn-submit-retur').style.display = 'none';
+      selectedInvoice = null;
+      return;
+    }
+
+    selectedInvoice = data;
+    renderFoundInvoice(data);
+  }
+
+  function renderFoundInvoice(inv) {
+    document.getElementById('inv-found-no').textContent = inv.invoice_number;
+    document.getElementById('inv-found-meta').innerHTML =
+      `Customer: <strong>${escapeHtml(inv.customer_name||'')}</strong> &nbsp;|&nbsp;
+       Tanggal: <strong>${formatDate(inv.invoice_date)}</strong> &nbsp;|&nbsp;
+       Total: <strong>${formatRupiah(inv.total||0)}</strong>`;
+
+    // Set today's date
+    document.getElementById('retur-date').value = new Date().toISOString().split('T')[0];
+
+    // Build items table
+    const tbody = document.getElementById('inv-items-tbody');
+    const items = inv.invoice_items || [];
+    tbody.innerHTML = items.map((it, i) => {
+      const prodName = it.products?.name || it.product_name || '-';
+      const sku      = it.products?.sku  || it.sku || '-';
+      const qty      = it.quantity || 0;
+      const price    = Number(it.unit_price || it.price || 0);
+      return `<tr>
+        <td><input type="checkbox" id="chk-${i}" data-idx="${i}" onchange="recalcTotal()"></td>
+        <td>${escapeHtml(prodName)}</td>
+        <td style="color:var(--text-muted);font-size:12px;">${escapeHtml(sku)}</td>
+        <td style="text-align:center;">${qty}</td>
+        <td style="text-align:center;">
+          <input type="number" id="qty-retur-${i}" min="1" max="${qty}" value="1"
+            data-max="${qty}" data-price="${price}" data-product-id="${it.product_id||''}"
+            data-product-name="${escapeHtml(prodName)}" data-sku="${escapeHtml(sku)}"
+            oninput="clampQty(this); recalcTotal()" disabled>
+        </td>
+        <td style="text-align:right;">${formatRupiah(price)}</td>
+      </tr>`;
+    }).join('');
+
+    // Wire checkbox to enable/disable qty input
+    items.forEach((_, i) => {
+      const chk = document.getElementById(`chk-${i}`);
+      if (chk) chk.addEventListener('change', function() {
+        const qtyInput = document.getElementById(`qty-retur-${i}`);
+        qtyInput.disabled = !this.checked;
+        recalcTotal();
+      });
+    });
+
+    document.getElementById('inv-found-box').style.display = 'block';
+    document.getElementById('btn-submit-retur').style.display = '';
+    document.getElementById('btn-submit-retur').disabled = false;
+    recalcTotal();
+  }
+
+  function clampQty(input) {
+    const max = parseInt(input.dataset.max);
+    if (parseInt(input.value) > max) input.value = max;
+    if (parseInt(input.value) < 1 || !input.value) input.value = 1;
+  }
+
+  function recalcTotal() {
+    if (!selectedInvoice) return;
+    const items = selectedInvoice.invoice_items || [];
+    let total = 0;
+    items.forEach((_, i) => {
+      const chk = document.getElementById(`chk-${i}`);
+      const qtyInput = document.getElementById(`qty-retur-${i}`);
+      if (chk?.checked && qtyInput) {
+        total += parseInt(qtyInput.value||0) * parseFloat(qtyInput.dataset.price||0);
+      }
+    });
+    document.getElementById('retur-total-val').textContent = formatRupiah(total);
+  }
+
+  function selectReason(el, reason) {
+    document.querySelectorAll('.reason-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('retur-reason').value = reason;
+  }
+
+  // ── Submit Retur ───────────────────────────────────────────────────────
+  async function submitRetur() {
+    if (!selectedInvoice) return;
+
+    const returnDate = document.getElementById('retur-date').value;
+    const reason     = document.getElementById('retur-reason').value.trim();
+    const notes      = document.getElementById('retur-notes').value.trim();
+
+    if (!returnDate) { showToast('Pilih tanggal retur', 'error'); return; }
+    if (!reason)     { showToast('Masukkan alasan retur', 'error'); return; }
+
+    // Collect selected items
+    const items = selectedInvoice.invoice_items || [];
+    const selectedItems = [];
+    items.forEach((it, i) => {
+      const chk = document.getElementById(`chk-${i}`);
+      const qtyInput = document.getElementById(`qty-retur-${i}`);
+      if (chk?.checked) {
+        const qty   = parseInt(qtyInput.value || 1);
+        const price = parseFloat(qtyInput.dataset.price || 0);
+        selectedItems.push({
+          product_id:   qtyInput.dataset.productId || it.product_id,
+          product_name: it.products?.name || it.product_name || '-',
+          sku:          it.products?.sku  || it.sku || '-',
+          quantity:     qty,
+          unit_price:   price,
+          subtotal:     qty * price
+        });
+      }
+    });
+
+    if (!selectedItems.length) { showToast('Pilih minimal 1 barang untuk diretur', 'error'); return; }
+
+    const totalValue = selectedItems.reduce((s, it) => s + it.subtotal, 0);
+
+    // Generate return number
+    const returnNumber = await generateReturnNumber();
+
+    const btn = document.getElementById('btn-submit-retur');
+    setLoading(btn, true);
+
+    // Insert return header
+    const { data: retData, error: retErr } = await supabase.from('returns').insert({
+      return_number:       returnNumber,
+      invoice_id:          selectedInvoice.id,
+      invoice_number:      selectedInvoice.invoice_number,
+      customer_id:         selectedInvoice.customer_id,
+      customer_name:       selectedInvoice.customer_name,
+      return_date:         returnDate,
+      reason:              reason,
+      notes:               notes,
+      status:              'pending',
+      total_return_value:  totalValue,
+      created_by:          currentUser?.profile?.name || 'Admin'
+    }).select().single();
+
+    if (retErr) {
+      showToast('Gagal membuat retur: ' + retErr.message, 'error');
+      setLoading(btn, false);
+      return;
+    }
+
+    // Insert return items
+    const itemsPayload = selectedItems.map(it => ({ ...it, return_id: retData.id }));
+    const { error: itemsErr } = await supabase.from('return_items').insert(itemsPayload);
+    if (itemsErr) {
+      showToast('Gagal menyimpan item retur: ' + itemsErr.message, 'error');
+      setLoading(btn, false);
+      return;
+    }
+
+    setLoading(btn, false);
+    showToast(`Retur ${returnNumber} berhasil diajukan!`, 'success');
+    closeCreateModal();
+    await loadReturns();
+  }
+
+  async function generateReturnNumber() {
+    const d = new Date();
+    const prefix = `RTR-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+    const { data } = await supabase.from('returns')
+      .select('return_number')
+      .ilike('return_number', prefix + '%')
+      .order('return_number', { ascending: false })
+      .limit(1);
+    const last = data?.[0]?.return_number;
+    let seq = 1;
+    if (last) {
+      const parts = last.split('-');
+      seq = (parseInt(parts[parts.length - 1]) || 0) + 1;
+    }
+    return `${prefix}-${String(seq).padStart(3,'0')}`;
+  }
+
+  // ── Approve ────────────────────────────────────────────────────────────
+  async function approveRetur(returId) {
+    if (!confirm('Setujui retur ini? Stok produk akan dikembalikan.')) return;
+
+    const ret = allReturns.find(r => r.id === returId);
+    if (!ret) return;
+
+    // Restore stock for each item
+    const items = ret.return_items || [];
+    for (const it of items) {
+      if (!it.product_id) continue;
+      const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', it.product_id).single();
+      if (prod) {
+        const { error } = await supabase.from('products')
+          .update({ stock_quantity: prod.stock_quantity + it.quantity })
+          .eq('id', it.product_id);
+        if (error) {
+          showToast('Gagal mengembalikan stok untuk: ' + it.product_name, 'error');
+          return;
+        }
+      }
+    }
+
+    // Update return status
+    const { error } = await supabase.from('returns').update({
+      status:     'approved',
+      handled_by: currentUser?.profile?.name || 'Admin'
+    }).eq('id', returId);
+
+    if (error) { showToast('Gagal update status retur: ' + error.message, 'error'); return; }
+
+    showToast('Retur disetujui! Stok telah dikembalikan ✅', 'success');
+    await loadReturns();
+  }
+
+  // ── Reject ─────────────────────────────────────────────────────────────
+  function openRejectModal(returId) {
+    rejectTargetId = returId;
+    document.getElementById('reject-reason-input').value = '';
+    openModal('modal-reject');
+  }
+
+  async function confirmReject() {
+    const reason = document.getElementById('reject-reason-input').value.trim();
+    if (!reason) { showToast('Masukkan alasan penolakan', 'error'); return; }
+
+    const btn = document.querySelector('#modal-reject .btn-danger');
+    setLoading(btn, true);
+
+    const { error } = await supabase.from('returns').update({
+      status:     'rejected',
+      notes:      ((allReturns.find(r=>r.id===rejectTargetId)?.notes)||'') + `\n[Ditolak: ${reason}]`,
+      handled_by: currentUser?.profile?.name || 'Admin'
+    }).eq('id', rejectTargetId);
+
+    setLoading(btn, false);
+
+    if (error) { showToast('Gagal menolak retur: ' + error.message, 'error'); return; }
+
+    closeModal('modal-reject');
+    showToast('Retur ditolak', 'success');
+    await loadReturns();
+  }
+
+  // ── Detail Modal ───────────────────────────────────────────────────────
+  function openDetailModal(returId) {
+    const ret = allReturns.find(r => r.id === returId);
+    if (!ret) return;
+
+    const items = ret.return_items || [];
+    const statusLabel = ret.status === 'pending' ? '🟡 Pending' : ret.status === 'approved' ? '🟢 Disetujui' : '🔴 Ditolak';
+
+    const itemsHtml = items.map(it => `<tr>
+      <td>${escapeHtml(it.product_name||'-')}</td>
+      <td style="color:var(--text-muted);font-size:12px;">${escapeHtml(it.sku||'-')}</td>
+      <td class="num">${it.quantity}</td>
+      <td class="num">${formatRupiah(it.unit_price||0)}</td>
+      <td class="num" style="font-weight:700;">${formatRupiah(it.subtotal||0)}</td>
+    </tr>`).join('');
+
+    const notesDisplay = (ret.notes||'').replace(/\[Ditolak:.+\]/g, '').trim();
+    const rejectReason = (ret.notes||'').match(/\[Ditolak: (.+)\]/);
+
+    document.getElementById('detail-content').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">No. Retur</div>
+          <div style="font-size:15px;font-weight:800;">${escapeHtml(ret.return_number)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Status</div>
+          <div style="font-size:14px;font-weight:700;">${statusLabel}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Customer</div>
+          <div style="font-weight:600;">${escapeHtml(ret.customer_name||'-')}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Faktur Asal</div>
+          <div style="color:var(--primary);font-weight:600;">${escapeHtml(ret.invoice_number||'-')}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Tanggal Retur</div>
+          <div>${formatDate(ret.return_date)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Diproses Oleh</div>
+          <div>${escapeHtml(ret.handled_by||ret.created_by||'-')}</div>
+        </div>
+        <div style="grid-column:1/-1;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Alasan Retur</div>
+          <div>${escapeHtml(ret.reason||'-')}</div>
+        </div>
+        ${notesDisplay ? `<div style="grid-column:1/-1;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Catatan</div>
+          <div style="font-size:13px;color:var(--text-muted);">${escapeHtml(notesDisplay)}</div>
+        </div>` : ''}
+        ${rejectReason ? `<div style="grid-column:1/-1; background:#fee2e2; border-radius:8px; padding:10px 14px;">
+          <div style="font-size:11px;font-weight:700;color:#991b1b;text-transform:uppercase;margin-bottom:2px;">Alasan Penolakan</div>
+          <div style="color:#991b1b;">${escapeHtml(rejectReason[1])}</div>
+        </div>` : ''}
+      </div>
+
+      <div style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;">Barang Diretur</div>
+      <table class="detail-items-table">
+        <thead>
+          <tr>
+            <th>Nama Produk</th>
+            <th>SKU</th>
+            <th class="num">Qty</th>
+            <th class="num">Harga Satuan</th>
+            <th class="num">Subtotal</th>
+          </tr>
+        </thead>
+        <tbody>${itemsHtml}</tbody>
+        <tfoot>
+          <tr>
+            <td colspan="4" style="text-align:right;font-weight:700;padding:10px 12px;">Total Nilai Retur</td>
+            <td class="num" style="font-weight:800;font-size:15px;color:var(--primary);">${formatRupiah(ret.total_return_value||0)}</td>
+          </tr>
+        </tfoot>
+      </table>`;
+
+    // Footer buttons
+    const footer = document.getElementById('detail-footer');
+    const pendingBtns = ret.status === 'pending'
+      ? `<button class="btn btn-success" onclick="closeDetailModal(); approveRetur('${ret.id}')">✅ Setujui Retur</button>
+         <button class="btn btn-danger"  onclick="closeDetailModal(); openRejectModal('${ret.id}')">❌ Tolak</button>`
+      : '';
+    footer.innerHTML = `
+      <button class="btn btn-secondary" onclick="printRetur('${ret.id}')">🖨️ Print</button>
+      ${pendingBtns}
+      <button class="btn btn-secondary" onclick="closeDetailModal()">Tutup</button>`;
+
+    openModal('modal-detail');
+  }
+
+  function closeDetailModal() {
+    closeModal('modal-detail');
+  }
+
+  // ── Print ──────────────────────────────────────────────────────────────
+  function printRetur(returId) {
+    const ret = allReturns.find(r => r.id === returId);
+    if (!ret) return;
+    const items = ret.return_items || [];
+    const statusLabel = ret.status === 'approved' ? 'DISETUJUI' : ret.status === 'rejected' ? 'DITOLAK' : 'PENDING';
+
+    const html = `<div class="print-wrap">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;">
+        <div>
+          <h2>SURAT RETUR BARANG</h2>
+          <p>UD. DIANA</p>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:18px;font-weight:800;">${escapeHtml(ret.return_number)}</div>
+          <div style="font-size:12px;color:#555;">Status: ${statusLabel}</div>
+        </div>
+      </div>
+      <table style="width:100%;margin-bottom:16px;font-size:12px;">
+        <tr><td style="width:140px;color:#666;padding:3px 0;">Customer</td><td>: <strong>${escapeHtml(ret.customer_name||'-')}</strong></td>
+            <td style="width:140px;color:#666;padding:3px 0;">Tanggal Retur</td><td>: ${formatDate(ret.return_date)}</td></tr>
+        <tr><td style="color:#666;padding:3px 0;">No. Faktur Asal</td><td>: ${escapeHtml(ret.invoice_number||'-')}</td>
+            <td style="color:#666;padding:3px 0;">Dibuat Oleh</td><td>: ${escapeHtml(ret.created_by||'-')}</td></tr>
+        <tr><td style="color:#666;padding:3px 0;">Alasan Retur</td><td colspan="3">: ${escapeHtml(ret.reason||'-')}</td></tr>
+        ${ret.notes ? `<tr><td style="color:#666;padding:3px 0;">Catatan</td><td colspan="3">: ${escapeHtml(ret.notes)}</td></tr>` : ''}
+      </table>
+      <table class="print-table">
+        <thead><tr><th>#</th><th>Nama Produk</th><th>SKU</th><th class="num">Qty</th><th class="num">Harga Satuan</th><th class="num">Subtotal</th></tr></thead>
+        <tbody>
+          ${items.map((it,i) => `<tr>
+            <td>${i+1}</td>
+            <td>${escapeHtml(it.product_name||'-')}</td>
+            <td>${escapeHtml(it.sku||'-')}</td>
+            <td class="num">${it.quantity}</td>
+            <td class="num">${formatRupiah(it.unit_price||0)}</td>
+            <td class="num">${formatRupiah(it.subtotal||0)}</td>
+          </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr><td colspan="5" style="text-align:right;font-weight:700;padding:8px 10px;">Total Nilai Retur</td>
+              <td class="num" style="font-weight:800;font-size:14px;">${formatRupiah(ret.total_return_value||0)}</td></tr>
+        </tfoot>
+      </table>
+      <div style="margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:40px;font-size:12px;">
+        <div style="text-align:center;">
+          <div style="margin-bottom:50px;">Hormat kami,</div>
+          <div style="border-top:1px solid #999;padding-top:6px;">( ${escapeHtml(ret.created_by||'Admin')} )</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="margin-bottom:50px;">Penerima,</div>
+          <div style="border-top:1px solid #999;padding-top:6px;">( __________________ )</div>
+        </div>
+      </div>
+    </div>`;
+
+    document.getElementById('print-area').innerHTML = html;
+    window.print();
+  }
+
+  // ── Export XLS ─────────────────────────────────────────────────────────
+  function exportXls() {
+    if (!filteredReturns.length) { showToast('Tidak ada data untuk diekspor', 'error'); return; }
+
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Summary
+    const summaryRows = [
+      ['No.','No. Retur','Tanggal','Customer','No. Faktur','Alasan','Jml Item','Total Nilai','Status','Dibuat Oleh']
+    ];
+    filteredReturns.forEach((r, i) => {
+      summaryRows.push([
+        i + 1,
+        r.return_number,
+        r.return_date,
+        r.customer_name,
+        r.invoice_number,
+        r.reason,
+        (r.return_items||[]).reduce((s,it) => s + it.quantity, 0),
+        Number(r.total_return_value||0),
+        r.status === 'approved' ? 'Disetujui' : r.status === 'rejected' ? 'Ditolak' : 'Pending',
+        r.created_by
+      ]);
+    });
+    const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+    ws1['!cols'] = [5,18,12,22,20,25,10,15,12,18].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws1, 'Ringkasan Retur');
+
+    // Sheet 2: Detail items
+    const detailRows = [
+      ['No. Retur','Customer','Tanggal','Nama Produk','SKU','Qty Retur','Harga Satuan','Subtotal']
+    ];
+    filteredReturns.forEach(r => {
+      (r.return_items||[]).forEach(it => {
+        detailRows.push([
+          r.return_number,
+          r.customer_name,
+          r.return_date,
+          it.product_name,
+          it.sku,
+          it.quantity,
+          Number(it.unit_price||0),
+          Number(it.subtotal||0)
+        ]);
+      });
+    });
+    const ws2 = XLSX.utils.aoa_to_sheet(detailRows);
+    ws2['!cols'] = [18,22,12,25,14,10,15,15].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws2, 'Detail Item Retur');
+
+    const d = new Date();
+    XLSX.writeFile(wb, `Retur_${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}.xlsx`);
+    showToast('File XLS berhasil diunduh', 'success');
+  }
+
+  // ── Modal helpers ───────────────────────────────────────────────────────
+  function openCreateModal() {
+    document.getElementById('search-inv-no').value   = '';
+    document.getElementById('inv-found-box').style.display = 'none';
+    document.getElementById('btn-submit-retur').style.display = 'none';
+    document.getElementById('retur-reason').value    = '';
+    document.getElementById('retur-notes').value     = '';
+    document.getElementById('retur-total-val').textContent = 'Rp 0';
+    document.querySelectorAll('.reason-chip').forEach(c => c.classList.remove('active'));
+    selectedInvoice = null;
+    openModal('modal-create');
+    setTimeout(() => document.getElementById('search-inv-no').focus(), 150);
+  }
+
+  function closeCreateModal() {
+    closeModal('modal-create');
+    selectedInvoice = null;
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  function formatRupiah(n) {
+    return 'Rp ' + Math.round(n).toLocaleString('id-ID');
+  }
+  function formatDate(s) {
+    if (!s) return '-';
+    const d = new Date(s + (s.length === 10 ? 'T00:00:00' : ''));
+    return d.toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' });
+  }
+  function escapeHtml(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Close modals on overlay click ───────────────────────────────────────
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>

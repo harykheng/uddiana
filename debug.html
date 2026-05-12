@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Debug Koneksi Supabase</title>
+  <style>
+    body { font-family: monospace; padding: 30px; background: #0f172a; color: #e2e8f0; }
+    h2 { color: #60a5fa; margin-bottom: 20px; }
+    .check { padding: 10px 14px; border-radius: 6px; margin-bottom: 10px; font-size: 14px; }
+    .ok   { background: #14532d; border-left: 4px solid #22c55e; }
+    .fail { background: #7f1d1d; border-left: 4px solid #ef4444; }
+    .info { background: #1e3a5f; border-left: 4px solid #60a5fa; }
+    .warn { background: #78350f; border-left: 4px solid #f59e0b; }
+    pre { font-size: 12px; margin-top: 6px; opacity: .8; white-space: pre-wrap; word-break: break-all; }
+    button { margin-top: 20px; padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+    button:hover { background: #1d4ed8; }
+    #log { margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <h2>🔍 Diagnostik Koneksi Supabase</h2>
+  <div id="log"></div>
+  <button onclick="runDiag()">▶ Jalankan Ulang</button>
+  <p style="margin-top:20px;opacity:.6;font-size:12px">Hapus file ini setelah selesai debug.</p>
+
+<script>
+// ── CONFIG INLINE (tidak depend pada config.js) ──────────────
+const SUPABASE_URL     = 'https://fxdvnnxdiufymwqxtgxm.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ4ZHZubnhkaXVmeW13cXh0Z3htIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg0OTYzMzMsImV4cCI6MjA5NDA3MjMzM30.rZo1gGw-3MkCMTbJKwT_ARZqVJw7ZfxWg1q2VAjlXKw';
+
+// ── HELPERS ──────────────────────────────────────────────────
+const log = document.getElementById('log');
+
+function add(type, title, detail = '') {
+  const icon = { ok:'✅', fail:'❌', info:'ℹ️', warn:'⚠️' }[type] || '';
+  const div = document.createElement('div');
+  div.className = `check ${type}`;
+  div.innerHTML = `<strong>${icon} ${title}</strong>${detail ? `<pre>${detail}</pre>` : ''}`;
+  log.appendChild(div);
+}
+
+// ── QUERY HELPER (fetch langsung, tanpa SDK) ─────────────────
+async function pgQuery(table, params = '') {
+  const url = `${SUPABASE_URL}/rest/v1/${table}?${params}&limit=3`;
+  const res = await fetch(url, {
+    headers: {
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Accept': 'application/json',
+      'Prefer': 'count=exact'
+    }
+  });
+  const text = await res.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch(_) {}
+  return { status: res.status, ok: res.ok, text, json,
+           count: res.headers.get('content-range') };
+}
+
+// ── MAIN DIAG ────────────────────────────────────────────────
+async function runDiag() {
+  log.innerHTML = '';
+  add('info', 'Config', `URL: ${SUPABASE_URL}\nKey: ${SUPABASE_ANON_KEY.substring(0,30)}...`);
+
+  // 1. Ping REST API
+  add('info', 'Menghubungi Supabase REST API...');
+  try {
+    const r = await pgQuery('products', 'select=id');
+    log.lastChild.remove();
+
+    if (r.status === 200 || r.status === 206) {
+      const rows = Array.isArray(r.json) ? r.json.length : '?';
+      add('ok', `Koneksi OK — Tabel "products" ada, ${rows} baris ditemukan (limit 3)`);
+    } else if (r.status === 401 || r.status === 403) {
+      add('fail', `Akses ditolak (HTTP ${r.status}) — ANON KEY mungkin salah atau RLS aktif`,
+        `Response: ${r.text}\n\nCoba jalankan di Supabase SQL Editor:\nALTER TABLE products DISABLE ROW LEVEL SECURITY;\nALTER TABLE categories DISABLE ROW LEVEL SECURITY;\nALTER TABLE invoices DISABLE ROW LEVEL SECURITY;\nALTER TABLE invoice_items DISABLE ROW LEVEL SECURITY;\nALTER TABLE stock_movements DISABLE ROW LEVEL SECURITY;`);
+    } else if (r.status === 404 || (r.json && r.json.code === '42P01')) {
+      add('fail', 'Tabel "products" TIDAK DITEMUKAN — SQL schema belum dijalankan!',
+        'Buka Supabase Dashboard → SQL Editor → paste isi supabase_schema.sql → Run');
+    } else if (r.status === 0 || !r.status) {
+      add('fail', 'Tidak bisa terhubung ke internet atau Supabase URL salah');
+    } else {
+      add('warn', `HTTP ${r.status} — respons tak terduga`, r.text.substring(0, 500));
+    }
+  } catch(e) {
+    log.lastChild?.remove();
+    add('fail', 'Network error — tidak bisa terhubung', e.message);
+    return;
+  }
+
+  // 2. Cek tiap tabel
+  for (const tbl of ['categories', 'invoices', 'invoice_items', 'stock_movements']) {
+    try {
+      const r = await pgQuery(tbl, 'select=id');
+      if (r.status === 200) {
+        add('ok', `Tabel "${tbl}" OK`);
+      } else {
+        add('fail', `Tabel "${tbl}" error HTTP ${r.status}`, r.text.substring(0,200));
+      }
+    } catch(e) {
+      add('fail', `Tabel "${tbl}" network error`, e.message);
+    }
+  }
+
+  // 3. Cek isi categories
+  try {
+    const r = await pgQuery('categories', 'select=name&order=name');
+    if (r.status === 200 && Array.isArray(r.json)) {
+      if (r.json.length === 0) {
+        add('warn', 'Tabel "categories" KOSONG — sample data belum diinsert',
+          'Pastikan Anda menjalankan SELURUH isi supabase_schema.sql termasuk bagian INSERT INTO di bawah');
+      } else {
+        add('ok', `Sample data OK — Kategori: ${r.json.map(c=>c.name).join(', ')}`);
+      }
+    }
+  } catch(_) {}
+
+  // 4. Summary
+  const fails = log.querySelectorAll('.fail').length;
+  const warns = log.querySelectorAll('.warn').length;
+  if (fails === 0 && warns === 0) {
+    add('ok', '🎉 SEMUA OK! Refresh index.html — data harus sudah muncul.');
+  } else if (fails === 0) {
+    add('warn', `${warns} peringatan ditemukan — lihat instruksi di atas.`);
+  } else {
+    add('fail', `${fails} error ditemukan — ikuti instruksi di atas lalu klik "Jalankan Ulang".`);
+  }
+}
+
+runDiag();
+</script>
+</body>
+</html>

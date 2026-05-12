@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales - UD.DIANA</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* TomSelect overrides */
+    .ts-wrapper .ts-control { border:1.5px solid #e2e8f0; border-radius:8px; padding:8px 10px; box-shadow:none; min-height:unset; font-size:14px; background:#fff; }
+    .ts-wrapper.focus .ts-control,.ts-wrapper.single.input-active .ts-control { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,.1); }
+    .ts-dropdown { border-radius:8px; border:1.5px solid #e2e8f0; box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; }
+    .ts-dropdown .option { padding:9px 12px; }
+    .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
+    .ts-dropdown-content { max-height:220px; }
+    .ts-dropdown { z-index:9999 !important; }
+    .ts-wrapper { margin-bottom:10px; }
+    .ts-wrapper .ts-control input { font-size:14px !important; }
+  </style>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1d4ed8;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --bg: #f1f5f9;
+      --card: #fff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* TOP NAV */
+    .topnav {
+      background: #0f172a;
+      color: #fff;
+      padding: 0 16px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topnav-brand { display: flex; align-items: center; gap: 10px; }
+    .topnav-brand .icon { font-size: 20px; }
+    .topnav-brand h1 { font-size: 16px; font-weight: 700; }
+    .topnav-brand span { font-size: 11px; color: #94a3b8; }
+    .topnav-right { display: flex; align-items: center; gap: 8px; }
+    .user-chip {
+      background: rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 4px 12px 4px 8px;
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px;
+    }
+    .user-chip .avatar {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700;
+    }
+    .btn-signout {
+      background: rgba(255,255,255,0.08);
+      border: none; color: #94a3b8;
+      padding: 6px 10px; border-radius: 6px;
+      font-size: 12px; cursor: pointer;
+    }
+
+    /* TABS */
+    .tabs {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      position: sticky;
+      top: 56px;
+      z-index: 99;
+    }
+    .tab-btn {
+      flex: 1; padding: 14px 8px;
+      border: none; background: none;
+      font-size: 13px; font-weight: 600;
+      color: var(--muted); cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: color .2s, border-color .2s;
+    }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+    /* CONTENT */
+    .tab-content { display: none; padding: 16px; }
+    .tab-content.active { display: block; }
+
+    /* CARDS */
+    .card { background: var(--card); border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); overflow: hidden; margin-bottom: 16px; }
+    .card-header { padding: 14px 16px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: space-between; }
+    .card-body { padding: 16px; }
+
+    /* FORM */
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 5px; }
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%; padding: 10px 12px;
+      border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 14px; color: var(--text);
+      outline: none; transition: border-color .2s;
+      background: #fff;
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+      border-color: var(--primary);
+    }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    /* ITEMS */
+    .items-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+    .item-row {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .item-label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .btn-remove-item {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: #fee2e2; color: #dc2626;
+      border: none; cursor: pointer; font-size: 14px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .item-product-sel { width: 100%; margin-bottom: 10px; border: 1.5px solid var(--border);border-radius: 8px;font-size: 14px;color: var(--text);outline: none;transition: border-color .2s;background: #fff;}
+    .item-fields { display: grid; grid-template-columns: 80px 1fr; gap: 10px; align-items: end; }
+    .item-field label { font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 4px; }
+    .item-field input {
+      width: 100%; padding: 9px 10px;
+      border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 14px; outline: none; background: #fff;
+    }
+    .item-field input:focus { border-color: var(--primary); }
+    .item-field input.readonly { background: #f1f5f9; color: #475569; }
+    .item-subtotal-row {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);
+    }
+    .item-subtotal-label { font-size: 12px; color: var(--muted); }
+    .item-subtotal { font-size: 15px; color: var(--primary); font-weight: 700; }
+
+    /* TOTALS */
+    .totals-box { background: #f8fafc; border-radius: 8px; padding: 12px; margin-top: 4px; }
+    .totals-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
+    .totals-row.grand { font-weight: 700; font-size: 16px; color: var(--primary); border-top: 1px solid var(--border); margin-top: 6px; padding-top: 8px; }
+
+    /* BUTTONS */
+    .btn { padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 600; border: none; cursor: pointer; transition: opacity .2s; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-ghost { background: #f1f5f9; color: #475569; }
+    .btn-full { width: 100%; padding: 13px; font-size: 15px; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    /* INVOICE LIST */
+    .invoice-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 10px;
+      background: #fff;
+    }
+    .invoice-item-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+    .invoice-num { font-size: 13px; font-weight: 700; color: var(--primary); }
+    .invoice-date { font-size: 11px; color: var(--muted); }
+    .invoice-customer { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+    .invoice-total { font-size: 15px; font-weight: 700; }
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-warning { background: #fef3c7; color: #92400e; }
+    .badge-success { background: #dcfce7; color: #15803d; }
+    .badge-danger { background: #fee2e2; color: #b91c1c; }
+    .badge-info { background: #dbeafe; color: #1d4ed8; }
+    .badge-secondary { background: #f1f5f9; color: #475569; }
+
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+    .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state h4 { font-size: 15px; margin-bottom: 4px; }
+    .empty-state p { font-size: 13px; }
+
+    /* MODAL */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.5);
+      z-index: 200;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: 20px 20px 0 0;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 20px 16px 32px;
+    }
+    .modal-handle {
+      width: 40px; height: 4px;
+      background: #e2e8f0; border-radius: 2px;
+      margin: 0 auto 16px;
+    }
+    .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+
+    /* TOAST */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #1e293b; color: #fff;
+      padding: 10px 20px; border-radius: 24px;
+      font-size: 13px; font-weight: 500;
+      transition: transform .3s; z-index: 999;
+      white-space: nowrap;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.error { background: #dc2626; }
+
+    .reject-reason-box {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: #b91c1c;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<nav class="topnav">
+  <div class="topnav-brand">
+    <span class="icon">📦</span>
+    <div>
+      <h1>UD.DIANA</h1>
+    </div>
+  </div>
+  <div class="topnav-right">
+    <div class="user-chip">
+      <div class="avatar" id="user-initial">?</div>
+      <span id="user-name-nav">...</span>
+    </div>
+    <button class="btn-signout" onclick="doSignOut()">Keluar</button>
+  </div>
+</nav>
+
+<!-- OMZET BAR (shown if admin enables it) -->
+<div id="omzet-bar-wrap" style="display:none; background:#fff; border-bottom:1px solid var(--border); padding:10px 16px;">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; flex-wrap:wrap; gap:4px;">
+    <div style="font-size:12px; font-weight:700; color:#374151;">
+      🎯 Target Omzet Bulan Ini
+      <span id="omzet-month-label" style="font-weight:400; color:var(--muted); margin-left:6px;"></span>
+    </div>
+    <div style="font-size:12px; color:var(--muted);">
+      <span id="omzet-achieved-label" style="font-weight:700; color:#2563eb;"></span>
+      <span id="omzet-target-label"></span>
+    </div>
+  </div>
+  <div style="height:20px; background:#e2e8f0; border-radius:10px; overflow:hidden;">
+    <div id="omzet-bar-fill" style="height:100%; background:#2563eb; border-radius:10px; transition:width .6s; width:0%"></div>
+  </div>
+  <div style="display:flex; justify-content:space-between; margin-top:4px;">
+    <div style="font-size:11px; color:var(--muted);" id="omzet-invoices-label"></div>
+    <div style="font-size:11px; font-weight:700;" id="omzet-pct-label"></div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('tab-new')">+ Buat Faktur</button>
+  <button class="tab-btn" onclick="switchTab('tab-history')">📋 Riwayat</button>
+</div>
+
+<!-- TAB: BUAT FAKTUR -->
+<div class="tab-content active" id="tab-new">
+
+  <div class="card">
+    <div class="card-header">Info Faktur</div>
+    <div class="card-body">
+      <div class="form-group">
+        <label>Customer</label>
+        <select id="inv-customer"></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Tanggal</label>
+          <input type="date" id="inv-date">
+        </div>
+        <div class="form-group">
+          <label>Termin</label>
+          <select id="inv-term">
+            <option value="cod">COD</option>
+            <option value="7">7 Hari</option>
+            <option value="15">15 Hari</option>
+            <option value="30">30 Hari</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Catatan (opsional)</label>
+        <textarea id="inv-notes" rows="2" placeholder="Catatan tambahan..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      Items
+      <button class="btn btn-ghost btn-sm" onclick="addItem()">+ Tambah</button>
+    </div>
+    <div class="card-body">
+      <div class="items-list" id="items-list"></div>
+
+      <div class="totals-box">
+        <div class="totals-row"><span>Subtotal</span><span id="t-subtotal">Rp 0</span></div>
+        <div class="totals-row grand"><span>TOTAL</span><span id="t-total">Rp 0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary btn-full" id="btn-submit" onclick="submitInvoice()">Kirim Faktur</button>
+  <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:8px; margin-left: 20px;">Faktur akan menunggu verifikasi admin</p>
+</div>
+
+<!-- TAB: RIWAYAT -->
+<div class="tab-content" id="tab-history">
+  <div style="margin-bottom:12px">
+    <input type="text" id="search-history" placeholder="🔍 Cari nomor / customer..." oninput="filterHistory()" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none">
+  </div>
+  <div id="history-list">
+    <div class="empty-state"><div class="icon">📋</div><h4>Memuat...</h4></div>
+  </div>
+</div>
+
+<!-- MODAL: DETAIL FAKTUR -->
+<div class="modal-overlay" id="modal-detail">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="detail-title">Detail Faktur</div>
+    <div id="detail-body"></div>
+    <div style="padding:0 16px 16px;display:flex;gap:8px;margin-top: 20px;">
+      <button class="btn btn-ghost btn-full" onclick="closeModal('modal-detail')">Tutup</button>
+      <button class="btn btn-primary btn-full" id="btn-resubmit" style="display:none" onclick="resubmitInvoice()">🔄 Buat Ulang</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CUSTOMER BARU -->
+<div class="modal-overlay" id="modal-new-customer">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">➕ Tambah Customer Baru</div>
+    <div style="padding:0 16px 16px">
+      <div class="form-group">
+        <label>Nama Customer <span style="color:#dc2626">*</span></label>
+        <input type="text" id="nc-name" placeholder="Nama lengkap customer...">
+      </div>
+      <div class="form-group">
+        <label>Nama Toko <span style="color:#94a3b8;font-weight:400">(opsional)</span></label>
+        <input type="text" id="nc-store" placeholder="Nama toko / outlet...">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-ghost" style="flex:1" onclick="closeNewCustomerModal()">Batal</button>
+        <button class="btn btn-primary" style="flex:2" id="btn-save-customer" onclick="confirmNewCustomer()">Simpan & Pilih</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script>
+  let currentUser = null;
+  let products = [];
+  let customers = [];
+  let priceMode = 'normal';
+  let itemCount = 0;
+  let allInvoices = [];
+
+  async function init() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { window.location.href = 'login.html'; return; }
+
+    const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).single();
+    if (!profile || !profile.is_active) { await supabase.auth.signOut(); window.location.href = 'login.html'; return; }
+
+    currentUser = { session, profile };
+
+    document.getElementById('user-initial').textContent = profile.name.charAt(0).toUpperCase();
+    document.getElementById('user-name-nav').textContent = profile.name;
+
+    document.getElementById('inv-date').value = new Date().toISOString().split('T')[0];
+
+    await Promise.all([loadProducts(), loadCustomers(), loadHistory(), loadOmzetBar()]);
+    addItem();
+  }
+
+  async function loadOmzetBar() {
+    // Check if admin has enabled the bar
+    const { data: setting, error: settingErr } = await supabase
+      .from('app_settings').select('value').eq('key','show_omzet_bar').single();
+    if (settingErr || setting?.value !== 'true') return; // hidden or table not set up
+
+    const wrap = document.getElementById('omzet-bar-wrap');
+    wrap.style.display = 'block';
+
+    const salesName = currentUser.profile.name;
+    const now       = new Date();
+    const month     = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const firstDay  = `${month}-01`;
+    const lastDay   = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0];
+
+    // Fetch this month's invoices for this sales person + target in parallel
+    const [invRes, targetRes] = await Promise.all([
+      supabase.from('invoices')
+        .select('total, status')
+        .eq('sales_name', salesName)
+        .or('verification_status.is.null,verification_status.eq.approved')
+        .neq('status', 'cancelled')
+        .gte('invoice_date', firstDay)
+        .lte('invoice_date', lastDay),
+      supabase.from('sales_targets')
+        .select('target_amount')
+        .eq('sales_name', salesName)
+        .eq('month', month)
+        .single()
+    ]);
+
+    const invoices   = invRes.data || [];
+    const target     = targetRes.data?.target_amount || 0;
+    const achieved   = invoices.reduce((s, inv) => s + Number(inv.total || 0), 0);
+    const paidOnly   = invoices.filter(i => i.status === 'paid').reduce((s, i) => s + Number(i.total), 0);
+    const totalCount = invoices.length;
+    const pct        = target > 0 ? Math.min(100, (achieved / target * 100)).toFixed(1) : null;
+
+    // Month label
+    const mNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+    document.getElementById('omzet-month-label').textContent =
+      `${mNames[now.getMonth()]} ${now.getFullYear()}`;
+
+    // Achieved label
+    document.getElementById('omzet-achieved-label').textContent = formatRupiah(achieved);
+
+    // Target label
+    document.getElementById('omzet-target-label').textContent =
+      target > 0 ? ` dari target ${formatRupiah(target)}` : ' (belum ada target)';
+
+    // Invoice count
+    document.getElementById('omzet-invoices-label').textContent =
+      `${totalCount} faktur · lunas ${formatRupiah(paidOnly)}`;
+
+    // Percentage & bar color
+    if (pct !== null) {
+      const pctNum = parseFloat(pct);
+      const barColor = pctNum >= 100 ? '#16a34a' : pctNum >= 70 ? '#2563eb' : pctNum >= 40 ? '#d97706' : '#dc2626';
+      document.getElementById('omzet-bar-fill').style.width  = pct + '%';
+      document.getElementById('omzet-bar-fill').style.background = barColor;
+      document.getElementById('omzet-pct-label').textContent = pct + '%';
+      document.getElementById('omzet-pct-label').style.color = barColor;
+    } else {
+      document.getElementById('omzet-bar-fill').style.width = '0%';
+      document.getElementById('omzet-pct-label').textContent = '';
+    }
+  }
+
+  function formatRupiah(n) {
+    if (n >= 1e9) return 'Rp ' + (n/1e9).toFixed(1) + 'M';
+    if (n >= 1e6) return 'Rp ' + (n/1e6).toFixed(1) + 'jt';
+    if (n >= 1e3) return 'Rp ' + (n/1e3).toFixed(0) + 'rb';
+    return 'Rp ' + Math.round(n).toLocaleString('id-ID');
+  }
+
+  async function loadProducts() {
+    const { data } = await supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit').eq('is_active', true).order('name');
+    products = data || [];
+  }
+
+  let customerTS = null;
+  let newCustomerCallback = null;
+
+  async function loadCustomers() {
+    const { data } = await supabase.from('customers').select('id,name,store_name').order('name');
+    customers = data || [];
+
+    if (customerTS) { customerTS.destroy(); customerTS = null; }
+
+    customerTS = new TomSelect(document.getElementById('inv-customer'), {
+      placeholder: '— Cari atau tambah customer —',
+      maxOptions: 300,
+      dropdownParent: 'body',
+      create: function(input, callback) {
+        openNewCustomerModal(input, callback);
+      },
+      createFilter: function(input) { return input.trim().length >= 1; },
+      render: {
+        option_create: function(data, escape) {
+          return `<div class="create" style="color:#2563eb">➕ Tambah customer baru: <strong>${escape(data.input)}</strong></div>`;
+        }
+      },
+      options: customers.map(c => ({
+        value: c.id,
+        text: c.name + (c.store_name ? ' — ' + c.store_name : '')
+      }))
+    });
+  }
+
+  function openNewCustomerModal(input, callback) {
+    newCustomerCallback = callback;
+    document.getElementById('nc-name').value = input.trim();
+    document.getElementById('nc-store').value = '';
+    document.getElementById('modal-new-customer').classList.add('open');
+    setTimeout(() => document.getElementById('nc-name').focus(), 150);
+  }
+
+  function closeNewCustomerModal() {
+    document.getElementById('modal-new-customer').classList.remove('open');
+    newCustomerCallback = null;
+  }
+
+  async function confirmNewCustomer() {
+    const name = document.getElementById('nc-name').value.trim();
+    const store = document.getElementById('nc-store').value.trim();
+    if (!name) { showToast('Nama customer wajib diisi', 'error'); return; }
+
+    const btn = document.getElementById('btn-save-customer');
+    btn.disabled = true; btn.textContent = 'Menyimpan...';
+
+    const { data, error } = await supabase
+      .from('customers')
+      .insert({ name, store_name: store || null })
+      .select('id,name,store_name')
+      .single();
+
+    btn.disabled = false; btn.textContent = 'Simpan & Pilih';
+
+    if (error) { showToast('Gagal menambah customer: ' + error.message, 'error'); return; }
+
+    customers.push(data);
+    const label = data.name + (data.store_name ? ' — ' + data.store_name : '');
+    if (newCustomerCallback) newCustomerCallback({ value: data.id, text: label });
+
+    closeNewCustomerModal();
+    showToast('✅ Customer baru berhasil ditambahkan');
+  }
+
+  async function loadHistory() {
+    const { data } = await supabase
+      .from('invoices')
+      .select('id,invoice_number,invoice_date,customer_id,store_name,total,status,verification_status,reject_reason,notes,payment_term,invoice_items(id,product_id,quantity,price,subtotal,products(name))')
+      .eq('created_by_id', currentUser.session.user.id)
+      .order('created_at', { ascending: false });
+    allInvoices = data || [];
+    renderHistory();
+  }
+
+  function renderHistory() {
+    const search = (document.getElementById('search-history').value || '').toLowerCase();
+    const filtered = allInvoices.filter(inv =>
+      !search ||
+      (inv.invoice_number || '').toLowerCase().includes(search) ||
+      (inv.store_name || '').toLowerCase().includes(search)
+    );
+
+    const el = document.getElementById('history-list');
+    if (!filtered.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">📋</div><h4>Belum ada faktur</h4><p>Buat faktur baru di tab "Buat Faktur"</p></div>`;
+      return;
+    }
+
+    el.innerHTML = filtered.map(inv => {
+      const vstatus = inv.verification_status;
+      let vbadge = '';
+      if (!vstatus) vbadge = `<span class="badge badge-secondary">Draft</span>`;
+      else if (vstatus === 'pending') vbadge = `<span class="badge badge-warning">Menunggu</span>`;
+      else if (vstatus === 'approved') vbadge = `<span class="badge badge-success">Disetujui</span>`;
+      else if (vstatus === 'rejected') vbadge = `<span class="badge badge-danger">Ditolak</span>`;
+
+      return `<div class="invoice-item" onclick="showDetail('${inv.id}')">
+        <div class="invoice-item-top">
+          <div>
+            <div class="invoice-num">${escapeHtml(inv.invoice_number || '—')}</div>
+            <div class="invoice-date">${formatDate(inv.invoice_date)}</div>
+          </div>
+          ${vbadge}
+        </div>
+        <div class="invoice-customer">${escapeHtml(inv.store_name || '—')}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+          <div class="invoice-total">${formatCurrency(inv.total)}</div>
+          <span class="badge ${inv.status === 'paid' ? 'badge-success' : 'badge-warning'}">${inv.status === 'paid' ? 'Lunas' : 'Belum Lunas'}</span>
+        </div>
+        ${inv.reject_reason ? `<div class="reject-reason-box">❌ Ditolak: ${escapeHtml(inv.reject_reason)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  function filterHistory() { renderHistory(); }
+
+  function showDetail(id) {
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv) return;
+    document.getElementById('detail-title').textContent = inv.invoice_number || 'Detail Faktur';
+    const items = inv.invoice_items || [];
+    document.getElementById('detail-body').innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:13px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Tanggal</span><span>${formatDate(inv.invoice_date)}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Customer</span><span>${escapeHtml(inv.store_name || '—')}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Termin</span><span>${inv.payment_term || '—'}</span></div>
+        ${inv.notes ? `<div style="display:flex;justify-content:space-between"><span style="color:#64748b">Catatan</span><span>${escapeHtml(inv.notes)}</span></div>` : ''}
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="border-bottom:1px solid #e2e8f0">
+          <th style="text-align:left;padding:6px 0">Produk</th>
+          <th style="text-align:right;padding:6px 0">Qty</th>
+          <th style="text-align:right;padding:6px 0">Harga</th>
+          <th style="text-align:right;padding:6px 0">Subtotal</th>
+        </tr></thead>
+        <tbody>${items.map(it => `<tr style="border-bottom:1px solid #f1f5f9">
+          <td style="padding:6px 0">${escapeHtml(it.products?.name || '—')}</td>
+          <td style="text-align:right;padding:6px 0">${it.quantity}</td>
+          <td style="text-align:right;padding:6px 0">${formatCurrency(it.price)}</td>
+          <td style="text-align:right;padding:6px 0">${formatCurrency(it.subtotal)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+      <div style="text-align:right;font-weight:700;font-size:16px;color:#2563eb;margin-top:12px">${formatCurrency(inv.total)}</div>
+      ${inv.reject_reason ? `<div class="reject-reason-box" style="margin-top:12px">❌ Alasan ditolak: ${escapeHtml(inv.reject_reason)}</div>` : ''}
+    `;
+
+    // Tampilkan tombol "Buat Ulang" hanya untuk faktur yang ditolak
+    document.getElementById('btn-resubmit').style.display =
+      inv.verification_status === 'rejected' ? '' : 'none';
+    document.getElementById('btn-resubmit').dataset.invId = inv.id;
+
+    openModal('modal-detail');
+  }
+
+  function resubmitInvoice() {
+    const id = document.getElementById('btn-resubmit').dataset.invId;
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv) return;
+    closeModal('modal-detail');
+
+    // Reset form buat faktur
+    if (customerTS) customerTS.clear();
+    document.getElementById('inv-notes').value = inv.notes || '';
+    document.getElementById('inv-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('inv-term').value = inv.payment_term || 'cod';
+
+    // Set customer
+    if (inv.customer_id && customerTS) {
+      // Coba set customer yang sama
+      const exists = customers.find(c => c.id === inv.customer_id);
+      if (exists) customerTS.setValue(inv.customer_id);
+    }
+
+    // Reset item rows
+    document.querySelectorAll('.item-row .item-product-sel').forEach(sel => {
+      if (sel.tomselect) sel.tomselect.destroy();
+    });
+    document.getElementById('items-list').innerHTML = '';
+    itemCount = 0;
+
+    // Isi ulang item dari faktur yang ditolak
+    const items = inv.invoice_items || [];
+    if (items.length === 0) {
+      addItem();
+    } else {
+      items.forEach(it => {
+        addItem();
+        // Setelah addItem(), set product, qty, price di row terakhir
+        const rows = document.querySelectorAll('.item-row');
+        const lastRow = rows[rows.length - 1];
+        const sel = lastRow.querySelector('.item-product-sel');
+        if (sel && sel.tomselect && it.product_id) {
+          sel.tomselect.setValue(it.product_id);
+        }
+        lastRow.querySelector('.item-qty-input').value = it.quantity;
+        lastRow.querySelector('.item-price-input').value = it.price;
+        recalcItem(lastRow.id.replace('item-', ''));
+      });
+    }
+
+    recalcTotal();
+    switchTab('tab-new');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast('Data faktur ditolak sudah di-copy ke form baru');
+  }
+
+  function addItem() {
+    const id = ++itemCount;
+    const div = document.createElement('div');
+    div.className = 'item-row';
+    div.id = 'item-' + id;
+    div.innerHTML = `
+      <div class="item-header">
+        <span class="item-label">Item ${id}</span>
+        <button class="btn-remove-item" onclick="removeItem(${id})" title="Hapus">✕</button>
+      </div>
+      <select class="item-product-sel">
+        <option value="">— Pilih Produk —</option>
+        ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost || 0}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)} · Stok ${p.stock_quantity} ${p.unit || 'pcs'}</option>`).join('')}
+      </select>
+      <div class="item-fields">
+        <div class="item-field">
+          <label>Qty</label>
+          <input type="number" class="item-qty-input" value="1" min="1" oninput="recalcItem(${id})">
+        </div>
+        <div class="item-field">
+          <label>Harga Satuan</label>
+          <input type="number" class="item-price-input" value="0" min="0" oninput="recalcItem(${id})">
+        </div>
+      </div>
+      <div class="item-subtotal-row">
+        <span class="item-subtotal-label">Subtotal</span>
+        <span class="item-subtotal" id="sub-${id}">Rp 0</span>
+      </div>
+    `;
+    document.getElementById('items-list').appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    const sel = div.querySelector('.item-product-sel');
+    new TomSelect(sel, {
+      placeholder: '— Cari & pilih produk —',
+      maxOptions: 200,
+      dropdownParent: 'body',
+      onChange: () => updateItemPrice(sel)
+    });
+
+    recalcTotal();
+  }
+
+  function removeItem(id) {
+    const el = document.getElementById('item-' + id);
+    if (el) {
+      const sel = el.querySelector('.item-product-sel');
+      if (sel && sel.tomselect) sel.tomselect.destroy();
+      el.remove();
+    }
+    recalcTotal();
+  }
+
+  function updateItemPrice(sel) {
+    const row = sel.closest('.item-row');
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt.value) return;
+    row.querySelector('.item-price-input').value = parseFloat(opt.dataset.price) || 0;
+    const id = row.id.replace('item-', '');
+    recalcItem(id);
+  }
+
+  function recalcItem(id) {
+    const row = document.getElementById('item-' + id);
+    if (!row) return;
+    const qty = parseFloat(row.querySelector('.item-qty-input').value) || 0;
+    const price = parseFloat(row.querySelector('.item-price-input').value) || 0;
+    const sub = qty * price;
+    document.getElementById('sub-' + id).textContent = formatCurrency(sub);
+    recalcTotal();
+  }
+
+  function recalcTotal() {
+    let total = 0;
+    document.querySelectorAll('.item-row').forEach(row => {
+      const qty = parseFloat(row.querySelector('.item-qty-input')?.value) || 0;
+      const price = parseFloat(row.querySelector('.item-price-input')?.value) || 0;
+      total += qty * price;
+    });
+    document.getElementById('t-subtotal').textContent = formatCurrency(total);
+    document.getElementById('t-total').textContent = formatCurrency(total);
+  }
+
+  async function submitInvoice() {
+    const btn = document.getElementById('btn-submit');
+    const customerId = customerTS ? customerTS.getValue() : document.getElementById('inv-customer').value;
+    const date = document.getElementById('inv-date').value;
+    const term = document.getElementById('inv-term').value;
+    const notes = document.getElementById('inv-notes').value.trim();
+
+    if (!customerId) { showToast('Pilih customer terlebih dahulu', 'error'); return; }
+    if (!date) { showToast('Isi tanggal faktur', 'error'); return; }
+
+    const rows = document.querySelectorAll('.item-row');
+    const items = [];
+    for (const row of rows) {
+      const sel = row.querySelector('.item-product-sel');
+      const qty = parseFloat(row.querySelector('.item-qty-input').value) || 0;
+      const price = parseFloat(row.querySelector('.item-price-input').value) || 0;
+      if (!sel.value) continue;
+      if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); return; }
+      const opt = sel.options[sel.selectedIndex];
+      const stock = parseFloat(opt.dataset.stock) || 0;
+      if (qty > stock) { showToast(`Stok ${opt.text.split(' (')[0]} tidak cukup (stok: ${stock})`, 'error'); return; }
+      items.push({
+        product_id: sel.value,
+        product_name: opt.text.split(' (Stok:')[0].trim(),
+        quantity: qty,
+        price: price,
+        subtotal: qty * price,
+        cost_price: parseFloat(opt.dataset.cost) || 0
+      });
+    }
+
+    if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); return; }
+
+    const customer = customers.find(c => c.id === customerId);
+    const total = items.reduce((s, i) => s + i.subtotal, 0);
+
+    btn.disabled = true;
+    btn.textContent = 'Menyimpan...';
+
+    const { data: inv, error: invErr } = await supabase.from('invoices').insert({
+      invoice_date: date,
+      customer_id: customerId,
+      customer_name: customer?.name || '',
+      store_name: customer?.store_name || customer?.name || '',
+      payment_term: term,
+      price_mode: priceMode,
+      total: total,
+      status: 'pending',
+      notes: notes || null,
+      created_by_id: currentUser.session.user.id,
+      sales_name: currentUser.profile.name,
+      verification_status: 'pending'
+    }).select().single();
+
+    if (invErr) { showToast('Gagal: ' + invErr.message, 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
+
+    const itemsPayload = items.map(it => ({ ...it, invoice_id: inv.id }));
+    const { error: itemsErr } = await supabase.from('invoice_items').insert(itemsPayload);
+
+    if (itemsErr) {
+      await supabase.from('invoices').delete().eq('id', inv.id);
+      showToast('Gagal simpan items: ' + itemsErr.message, 'error');
+      btn.disabled = false; btn.textContent = 'Kirim Faktur';
+      return;
+    }
+
+    showToast('Faktur berhasil dikirim! Menunggu verifikasi admin.');
+    btn.disabled = false;
+    btn.textContent = 'Kirim Faktur';
+
+    // reset form
+    if (customerTS) customerTS.clear();
+    document.getElementById('inv-notes').value = '';
+    document.getElementById('items-list').innerHTML = '';
+    itemCount = 0;
+    addItem();
+    recalcTotal();
+
+    await loadHistory();
+    switchTab('tab-history');
+  }
+
+  function switchTab(id) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.querySelectorAll('.tab-btn')[id === 'tab-new' ? 0 : 1].classList.add('active');
+    if (id === 'tab-history') loadHistory();
+  }
+
+  function openModal(id) { document.getElementById(id).classList.add('open'); }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+  async function doSignOut() {
+    await supabase.auth.signOut();
+    window.location.href = 'login.html';
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>
