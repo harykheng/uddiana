@@ -283,7 +283,7 @@
         <div class="invoice-summary-row"><span>Subtotal</span><span id="inv-subtotal">Rp 0</span></div>
         <div class="invoice-summary-row" style="align-items:center;gap:8px">
           <span>Diskon (Rp)</span>
-          <input type="number" id="inv-discount" value="0" min="0" style="width:140px;text-align:right;padding:5px 8px" oninput="recalcTotal()">
+          <input type="text" id="inv-discount" inputmode="numeric" data-number value="0" style="width:140px;text-align:right;padding:5px 8px" oninput="recalcTotal()">
         </div>
         <div class="invoice-summary-row total"><span>TOTAL</span><span id="inv-total" style="color:var(--primary)">Rp 0</span></div>
       </div>
@@ -559,9 +559,9 @@
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
-      <td style="padding:5px 6px"><input type="number" id="qty-${id}" value="1" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
-      <td style="padding:5px 6px"><input type="number" id="price-${id}" value="0" min="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
-      <td style="padding:5px 6px"><input type="number" id="sub-${id}" readonly value="0" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="qty-${id}" value="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="price-${id}" value="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" id="sub-${id}" readonly value="0" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 4px"><button onclick="removeItemRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
@@ -586,15 +586,16 @@
     // custom = leave as is
 
     document.getElementById(`stock-${rowId}`).value = stock;
-    document.getElementById(`price-${rowId}`).value = price;
+    document.getElementById(`price-${rowId}`).value = price > 0 ? price.toLocaleString('id-ID') : '0';
     recalcRow(rowId);
   }
 
   function recalcRow(rowId) {
-    const qty   = parseInt(document.getElementById(`qty-${rowId}`)?.value) || 0;
-    const price = parseFloat(document.getElementById(`price-${rowId}`)?.value) || 0;
+    const qty   = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value);
+    const price = parseFormattedNumber(document.getElementById(`price-${rowId}`)?.value);
     const sub   = document.getElementById(`sub-${rowId}`);
-    if (sub) sub.value = (qty * price).toFixed(0);
+    const total = qty * price;
+    if (sub) sub.value = total > 0 ? total.toLocaleString('id-ID') : '0';
     recalcTotal();
   }
 
@@ -607,9 +608,9 @@
     let subtotal = 0;
     document.querySelectorAll('#invoice-items-body tr').forEach(tr => {
       const subEl = tr.querySelector('[id^="sub-"]');
-      subtotal += parseFloat(subEl?.value) || 0;
+      subtotal += parseFormattedNumber(subEl?.value);
     });
-    const discount = parseFloat(document.getElementById('inv-discount').value) || 0;
+    const discount = parseFormattedNumber(document.getElementById('inv-discount').value);
     const total = Math.max(0, subtotal - discount);
     document.getElementById('inv-subtotal').textContent = formatCurrency(subtotal);
     document.getElementById('inv-total').textContent    = formatCurrency(total);
@@ -631,8 +632,8 @@
       const stockEl = tr.querySelector('[id^="stock-"]');
       if (!sel?.value) return;
 
-      const qty   = parseInt(qtyEl?.value) || 0;
-      const price = parseFloat(priceEl?.value) || 0;
+      const qty   = Math.round(parseFormattedNumber(qtyEl?.value));
+      const price = parseFormattedNumber(priceEl?.value);
       const stock = parseInt(stockEl?.value) || 0;
       const prod  = products.find(p => p.id === sel.value);
 
@@ -648,7 +649,7 @@
     if (!valid) return;
     if (!items.length) { showToast('Tambahkan minimal 1 produk', 'error'); return; }
 
-    const discount = parseFloat(document.getElementById('inv-discount').value) || 0;
+    const discount = parseFormattedNumber(document.getElementById('inv-discount').value);
     const total = Math.max(0, subtotal - discount);
     const customerId = document.getElementById('inv-customer-select').value || null;
 
