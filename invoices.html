@@ -40,6 +40,22 @@
     .pay-method-btn:hover { border-color:var(--primary); color:var(--primary); }
     .pay-method-btn.active { border-color:var(--primary); background:var(--primary-light); color:var(--primary); }
     .pay-method-btn .method-icon { font-size:22px; display:block; margin-bottom:4px; }
+    .pay-amount-wrap { position:relative; }
+    .pay-amount-wrap input { padding-right:70px; font-size:16px; font-weight:700; }
+    .btn-pay-lunas {
+      position:absolute; right:8px; top:50%; transform:translateY(-50%);
+      background:var(--primary); color:#fff; border:none; border-radius:6px;
+      padding:4px 10px; font-size:11px; font-weight:700; cursor:pointer;
+      white-space:nowrap;
+    }
+    .btn-pay-lunas:hover { opacity:.85; }
+    .pay-sisa-box {
+      background:#fef9c3; border:1px solid #fbbf24; border-radius:8px;
+      padding:10px 14px; font-size:13px; margin-top:8px;
+    }
+    .pay-sisa-box.lunas { background:#dcfce7; border-color:#86efac; }
+    .pay-sisa-box .sisa-label { color:#92400e; font-weight:600; }
+    .pay-sisa-box.lunas .sisa-label { color:#166534; }
 
     /* ── PRINT STYLES ── */
     @page {
@@ -295,8 +311,21 @@
     </div>
     <div class="modal-body">
       <input type="hidden" id="pay-invoice-id">
+      <input type="hidden" id="pay-invoice-total">
       <div style="background:#f8fafc;border-radius:8px;padding:12px 14px;margin-bottom:16px">
         <div id="pay-invoice-info" style="font-size:13px"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Jumlah Pembayaran *</label>
+        <div class="pay-amount-wrap">
+          <input type="number" id="pay-amount" placeholder="0" min="0" step="1000"
+            oninput="onPayAmountChange()">
+          <button class="btn-pay-lunas" onclick="fillLunas()">✓ Lunas</button>
+        </div>
+        <div id="pay-sisa-info" style="display:none" class="pay-sisa-box">
+          <span class="sisa-label" id="pay-sisa-label"></span>
+        </div>
       </div>
 
       <div class="form-group">
@@ -321,7 +350,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-payment')">Batal</button>
-      <button class="btn btn-success" id="btn-confirm-payment" onclick="confirmPayment()">✓ Konfirmasi Lunas</button>
+      <button class="btn btn-success" id="btn-confirm-payment" onclick="confirmPayment()">✓ Konfirmasi Bayar</button>
     </div>
   </div>
 </div>
@@ -667,38 +696,92 @@
   function openPayment(id) {
     const inv = allInvoices.find(x => x.id === id);
     if (!inv) return;
-    document.getElementById('pay-invoice-id').value = id;
-    document.getElementById('pay-date').value = todayISO();
-    document.getElementById('pay-notes').value = '';
+
+    const remaining = Number(inv.total) - Number(inv.paid_amount || 0);
+
+    document.getElementById('pay-invoice-id').value    = id;
+    document.getElementById('pay-invoice-total').value = remaining;
+    document.getElementById('pay-amount').value        = '';
+    document.getElementById('pay-date').value          = todayISO();
+    document.getElementById('pay-notes').value         = '';
+    document.getElementById('pay-sisa-info').style.display = 'none';
     setPayMethod('cash');
 
     const terminMap = { cod:'COD', '7_days':'7 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
+    const sisaLabel = Number(inv.paid_amount || 0) > 0
+      ? `<span style="color:#d97706;font-size:11px;font-weight:700;">⚠️ Sudah dibayar ${formatCurrency(inv.paid_amount)} — sisa ${formatCurrency(remaining)}</span>`
+      : '';
     document.getElementById('pay-invoice-info').innerHTML = `
       <div style="font-weight:700;font-size:15px;margin-bottom:4px">${escapeHtml(inv.invoice_number)}</div>
       <div style="color:var(--text-muted)">${escapeHtml(inv.customer_name)}${inv.store_name ? ` &mdash; ${escapeHtml(inv.store_name)}` : ''}</div>
       <div style="font-size:18px;font-weight:800;color:var(--primary);margin-top:6px">${formatCurrency(inv.total)}</div>
       <div style="font-size:12px;color:var(--text-muted)">Termin: ${terminMap[inv.payment_term] || inv.payment_term}</div>
+      ${sisaLabel}
     `;
     openModal('modal-payment');
+    setTimeout(() => document.getElementById('pay-amount').focus(), 150);
+  }
+
+  function fillLunas() {
+    const total = parseFloat(document.getElementById('pay-invoice-total').value) || 0;
+    document.getElementById('pay-amount').value = total;
+    onPayAmountChange();
+  }
+
+  function onPayAmountChange() {
+    const total  = parseFloat(document.getElementById('pay-invoice-total').value) || 0;
+    const amount = parseFloat(document.getElementById('pay-amount').value) || 0;
+    const sisakotak = document.getElementById('pay-sisa-info');
+    const sisaLabel = document.getElementById('pay-sisa-label');
+    const btn       = document.getElementById('btn-confirm-payment');
+
+    if (!amount) { sisakotak.style.display = 'none'; return; }
+
+    sisakotak.style.display = 'block';
+    const sisa = total - amount;
+
+    if (amount >= total) {
+      sisakotak.className = 'pay-sisa-box lunas';
+      sisaLabel.textContent = '✓ Pembayaran lunas';
+      btn.textContent = '✓ Konfirmasi Lunas';
+    } else {
+      sisakotak.className = 'pay-sisa-box';
+      sisaLabel.textContent = `Bayar sebagian — sisa ${formatCurrency(sisa)}`;
+      btn.textContent = '✓ Konfirmasi Bayar Sebagian';
+    }
   }
 
   async function confirmPayment() {
-    const btn = document.getElementById('btn-confirm-payment');
-    const id  = document.getElementById('pay-invoice-id').value;
-    const date  = document.getElementById('pay-date').value;
-    const notes = document.getElementById('pay-notes').value.trim();
+    const btn    = document.getElementById('btn-confirm-payment');
+    const id     = document.getElementById('pay-invoice-id').value;
+    const total  = parseFloat(document.getElementById('pay-invoice-total').value) || 0;
+    const amount = parseFloat(document.getElementById('pay-amount').value) || 0;
+    const date   = document.getElementById('pay-date').value;
+    const notes  = document.getElementById('pay-notes').value.trim();
 
-    setLoading(btn, true);
-    const { error } = await supabase.from('invoices').update({
-      status: 'paid',
+    if (!amount || amount <= 0) { showToast('Masukkan jumlah pembayaran', 'error'); return; }
+
+    // Find existing paid_amount
+    const inv = allInvoices.find(x => x.id === id);
+    const alreadyPaid   = Number(inv?.paid_amount || 0);
+    const newTotalPaid  = alreadyPaid + amount;
+    const isFullyPaid   = newTotalPaid >= Number(inv?.total || total);
+
+    const updateData = {
+      paid_amount:    newTotalPaid,
       payment_method: currentPayMethod,
       payment_date:   date || todayISO(),
       payment_notes:  notes || null,
-    }).eq('id', id);
+    };
+    if (isFullyPaid) updateData.status = 'paid';
+
+    setLoading(btn, true);
+    const { error } = await supabase.from('invoices').update(updateData).eq('id', id);
     setLoading(btn, false);
 
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
-    showToast('Faktur berhasil dilunasi ✓');
+
+    showToast(isFullyPaid ? 'Faktur berhasil dilunasi ✓' : `Pembayaran ${formatCurrency(amount)} tercatat, sisa ${formatCurrency(Number(inv.total) - newTotalPaid)}`);
     closeModal('modal-payment');
     loadInvoices();
   }
