@@ -42,13 +42,17 @@
     .pay-method-btn .method-icon { font-size:22px; display:block; margin-bottom:4px; }
 
     /* ── PRINT STYLES ── */
+    @page {
+      size: 9.5in 11in;
+      margin: 0.4in 0.6in;
+    }
     @media print {
       body > .layout, .modal-overlay { display:none !important; }
       #print-area { display:block !important; }
     }
     #print-area { display:none; }
     .print-invoice {
-      font-family: Arial, sans-serif; padding:32px; max-width:700px; margin:0 auto;
+      font-family: Arial, sans-serif; padding:20px; width:100%; max-width:100%;
       font-size:13px; color:#111;
     }
     .print-header { display:flex; justify-content:space-between; margin-bottom:20px; }
