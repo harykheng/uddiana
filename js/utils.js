@@ -92,3 +92,27 @@ function debounce(fn, delay = 400) {
   let timer;
   return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
 }
+
+// ── NUMBER FORMAT (1.000 / 10.000 / 100.000) ─────────────────
+// Tambahkan atribut data-number pada input untuk auto-format
+// Gunakan parseFormattedNumber() saat membaca nilainya
+function parseFormattedNumber(val) {
+  return parseFloat(String(val || '').replace(/\./g, '').replace(',', '.')) || 0;
+}
+
+function applyNumberFormat(input) {
+  const raw = input.value.replace(/[^0-9]/g, '');
+  if (!raw) { input.value = ''; return; }
+  // Simpan posisi cursor relatif dari kanan agar tidak loncat
+  const rightOffset = input.value.length - (input.selectionStart || 0);
+  const formatted = parseInt(raw, 10).toLocaleString('id-ID');
+  input.value = formatted;
+  // Kembalikan posisi cursor
+  const newPos = Math.max(0, formatted.length - rightOffset);
+  try { input.setSelectionRange(newPos, newPos); } catch (_) {}
+}
+
+// Global handler: input dengan data-number otomatis diformat
+document.addEventListener('input', e => {
+  if (e.target.hasAttribute('data-number')) applyNumberFormat(e.target);
+});

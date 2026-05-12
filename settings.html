@@ -543,10 +543,11 @@ alter table sales_targets disable row level security;`;
         </div>
         <div class="target-input-wrap">
           <span>Rp</span>
-          <input type="number" class="target-input" id="target-${s.id}"
+          <input type="text" inputmode="numeric" class="target-input" id="target-${s.id}"
             data-sales-name="${escapeHtml(s.name)}"
-            placeholder="Contoh: 15000000"
-            min="0" step="100000" value="${val}">
+            data-number
+            placeholder="Contoh: 15.000.000"
+            value="${val ? Number(val).toLocaleString('id-ID') : ''}">
         </div>
       </div>`;
     }).join('');
@@ -571,7 +572,7 @@ alter table sales_targets disable row level security;`;
     const upserts = [];
     rows.forEach(input => {
       const salesName = input.dataset.salesName;
-      const amount    = parseFloat(input.value) || 0;
+      const amount    = parseFormattedNumber(input.value);
       if (amount > 0) {
         upserts.push({ sales_name: salesName, month, target_amount: amount });
       }
