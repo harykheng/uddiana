@@ -319,8 +319,8 @@
       <div class="form-group">
         <label>Jumlah Pembayaran *</label>
         <div class="pay-amount-wrap">
-          <input type="number" id="pay-amount" placeholder="0" min="0" step="1000"
-            oninput="onPayAmountChange()">
+          <input type="text" id="pay-amount" inputmode="numeric" placeholder="0"
+            data-number oninput="onPayAmountChange()">
           <button class="btn-pay-lunas" onclick="fillLunas()">✓ Lunas</button>
         </div>
         <div id="pay-sisa-info" style="display:none" class="pay-sisa-box">
@@ -479,8 +479,17 @@
 
     tbody.innerHTML = filtered.map(inv => {
       const [label, color] = statusMap[inv.status] || ['—', 'gray'];
-      const termin = terminMap[inv.payment_term] || inv.payment_term || '—';
-      const faded = inv.status === 'cancelled' ? 'style="opacity:.55"' : '';
+      const termin  = terminMap[inv.payment_term] || inv.payment_term || '—';
+      const faded   = inv.status === 'cancelled' ? 'style="opacity:.55"' : '';
+      const paidAmt = Number(inv.paid_amount || 0);
+      const sisa    = Number(inv.total) - paidAmt;
+      const sisaHtml = inv.status === 'pending' && paidAmt > 0
+        ? `<div style="font-size:11px;margin-top:3px;">
+             <span style="color:#16a34a;">✓ ${formatCurrency(paidAmt)}</span>
+             <span style="color:#94a3b8;"> / </span>
+             <span style="color:#d97706;font-weight:700;">sisa ${formatCurrency(sisa)}</span>
+           </div>`
+        : '';
       return `<tr ${faded}>
         <td>
           <strong style="color:var(--primary)">${escapeHtml(inv.invoice_number)}</strong>
@@ -490,11 +499,14 @@
         <td>${inv.store_name ? `<span class="badge badge-info">${escapeHtml(inv.store_name)}</span>` : '—'}</td>
         <td>${formatDate(inv.invoice_date)}</td>
         <td><span class="badge badge-gray">${termin}</span></td>
-        <td class="text-right font-bold">${formatCurrency(inv.total)}</td>
+        <td class="text-right font-bold">
+          ${formatCurrency(inv.total)}
+          ${sisaHtml}
+        </td>
         <td><span class="badge badge-${color}">${label}</span></td>
         <td>
           <div class="table-actions">
-            ${inv.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="openPayment('${inv.id}')">💳 Lunasi</button>` : ''}
+            ${inv.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="openPayment('${inv.id}')">💳 ${paidAmt > 0 ? 'Bayar Lagi' : 'Lunasi'}</button>` : ''}
             <button class="btn btn-ghost btn-sm" onclick="viewInvoice('${inv.id}')">👁</button>
           </div>
         </td>
@@ -724,13 +736,14 @@
 
   function fillLunas() {
     const total = parseFloat(document.getElementById('pay-invoice-total').value) || 0;
-    document.getElementById('pay-amount').value = total;
+    const input = document.getElementById('pay-amount');
+    input.value = total.toLocaleString('id-ID');
     onPayAmountChange();
   }
 
   function onPayAmountChange() {
     const total  = parseFloat(document.getElementById('pay-invoice-total').value) || 0;
-    const amount = parseFloat(document.getElementById('pay-amount').value) || 0;
+    const amount = parseFormattedNumber(document.getElementById('pay-amount').value);
     const sisakotak = document.getElementById('pay-sisa-info');
     const sisaLabel = document.getElementById('pay-sisa-label');
     const btn       = document.getElementById('btn-confirm-payment');
@@ -755,7 +768,7 @@
     const btn    = document.getElementById('btn-confirm-payment');
     const id     = document.getElementById('pay-invoice-id').value;
     const total  = parseFloat(document.getElementById('pay-invoice-total').value) || 0;
-    const amount = parseFloat(document.getElementById('pay-amount').value) || 0;
+    const amount = parseFormattedNumber(document.getElementById('pay-amount').value);
     const date   = document.getElementById('pay-date').value;
     const notes  = document.getElementById('pay-notes').value.trim();
 
