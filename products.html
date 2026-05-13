@@ -210,27 +210,27 @@
       <div class="form-row">
         <div class="form-group">
           <label>Harga Jual Biasa (Rp) *</label>
-          <input type="number" id="product-price" placeholder="0" min="0">
+          <input type="text" inputmode="numeric" data-number id="product-price" placeholder="0">
         </div>
         <div class="form-group">
           <label>Harga Jual Shopee (Rp)</label>
-          <input type="number" id="product-price-shopee" placeholder="0" min="0">
+          <input type="text" inputmode="numeric" data-number id="product-price-shopee" placeholder="0">
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
           <label>Harga Modal (Rp)</label>
-          <input type="number" id="product-cost" placeholder="0" min="0">
+          <input type="text" inputmode="numeric" data-number id="product-cost" placeholder="0">
         </div>
         <div class="form-group">
           <label>Stok Awal</label>
-          <input type="number" id="product-stock" placeholder="0" min="0">
+          <input type="text" inputmode="numeric" data-number id="product-stock" placeholder="0">
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
           <label>Minimum Stok</label>
-          <input type="number" id="product-min-stock" placeholder="0" min="0">
+          <input type="text" inputmode="numeric" data-number id="product-min-stock" placeholder="0">
         </div>
         <div class="form-group"></div>
       </div>
@@ -326,7 +326,7 @@
         </div>
         <div class="form-group">
           <label>Jumlah</label>
-          <input type="number" id="adjust-qty" placeholder="0" min="1">
+          <input type="text" inputmode="numeric" data-number id="adjust-qty" placeholder="0">
         </div>
       </div>
       <div class="form-group mb-0">
@@ -500,11 +500,11 @@
     document.getElementById('product-sku').value = p.sku;
     document.getElementById('product-category').value = p.category_id || '';
     document.getElementById('product-unit').value = p.unit;
-    document.getElementById('product-price').value = p.price;
-    document.getElementById('product-price-shopee').value = p.price_shopee || 0;
-    document.getElementById('product-cost').value = p.cost;
-    document.getElementById('product-stock').value = p.stock_quantity;
-    document.getElementById('product-min-stock').value = p.min_stock;
+    document.getElementById('product-price').value = Number(p.price || 0).toLocaleString('id-ID');
+    document.getElementById('product-price-shopee').value = Number(p.price_shopee || 0).toLocaleString('id-ID');
+    document.getElementById('product-cost').value = Number(p.cost || 0).toLocaleString('id-ID');
+    document.getElementById('product-stock').value = Number(p.stock_quantity || 0).toLocaleString('id-ID');
+    document.getElementById('product-min-stock').value = Number(p.min_stock || 0).toLocaleString('id-ID');
     document.getElementById('product-desc').value = p.description || '';
     document.getElementById('modal-product-title').textContent = 'Edit Produk';
     openModal('modal-product');
@@ -515,7 +515,7 @@
     const id = document.getElementById('product-id').value;
     const name = document.getElementById('product-name').value.trim();
     const sku  = document.getElementById('product-sku').value.trim();
-    const price = parseFloat(document.getElementById('product-price').value) || 0;
+    const price = parseFormattedNumber(document.getElementById('product-price').value);
     if (!name || !sku) { showToast('Nama dan SKU wajib diisi', 'error'); return; }
     if (price <= 0) { showToast('Harga jual harus lebih dari 0', 'error'); return; }
 
@@ -524,10 +524,10 @@
       category_id: document.getElementById('product-category').value || null,
       unit: document.getElementById('product-unit').value,
       price,
-      price_shopee: parseFloat(document.getElementById('product-price-shopee').value) || 0,
-      cost: parseFloat(document.getElementById('product-cost').value) || 0,
-      stock_quantity: parseInt(document.getElementById('product-stock').value) || 0,
-      min_stock: parseInt(document.getElementById('product-min-stock').value) || 0,
+      price_shopee: parseFormattedNumber(document.getElementById('product-price-shopee').value),
+      cost: parseFormattedNumber(document.getElementById('product-cost').value),
+      stock_quantity: Math.round(parseFormattedNumber(document.getElementById('product-stock').value)),
+      min_stock: Math.round(parseFormattedNumber(document.getElementById('product-min-stock').value)),
       description: document.getElementById('product-desc').value.trim() || null,
     };
 
@@ -606,7 +606,7 @@
     const btn = document.getElementById('btn-save-adjust');
     const id = document.getElementById('adjust-product-id').value;
     const type = document.getElementById('adjust-type').value;
-    const qty = parseInt(document.getElementById('adjust-qty').value);
+    const qty = Math.round(parseFormattedNumber(document.getElementById('adjust-qty').value));
     const notes = document.getElementById('adjust-notes').value.trim();
     const currentStock = parseInt(document.getElementById('adjust-current-stock').value);
     const productName = document.getElementById('adjust-product-name').value;
