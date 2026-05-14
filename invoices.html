@@ -57,12 +57,12 @@
     .pay-sisa-box .sisa-label { color:#92400e; font-weight:600; }
     .pay-sisa-box.lunas .sisa-label { color:#166534; }
 
-    /* ── PRINT SETUP: Epson LQ-310, Continuous Form 241mm x 292mm ── */
-    /* margin: top right bottom left
-       right 1.1in memastikan konten tidak melewati batas 8" print head LQ-310 */
+    /* ── PRINT SETUP: Epson LQ-310 ──
+       @page width = 8in (203mm) = lebar print head LQ-310, bukan lebar kertas.
+       Browser render konten sesuai lebar ini, printer cetak tepat di area yang bisa dijangkau. */
     @page {
-      size: 241mm 292mm;
-      margin: 0.3in 1.1in 0.3in 0.75in;
+      size: 8in 11.5in;
+      margin: 0.3in 0.4in;
     }
     @media print {
       body > .layout, .modal-overlay { display:none !important; }
