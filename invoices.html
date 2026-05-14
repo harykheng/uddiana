@@ -237,7 +237,7 @@
         </div>
       </div>
 
-      <!-- DATE & TERMIN -->
+      <!-- DATE & TERMIN & SALES -->
       <div class="form-row" style="margin-bottom:14px">
         <div class="form-group mb-0">
           <label>Tanggal Faktur</label>
@@ -250,6 +250,12 @@
             <option value="7_days">7 Hari</option>
             <option value="15_days">15 Hari</option>
             <option value="30_days">30 Hari</option>
+          </select>
+        </div>
+        <div class="form-group mb-0">
+          <label>Sales (Opsional)</label>
+          <select id="inv-sales">
+            <option value="">— Tanpa Sales —</option>
           </select>
         </div>
       </div>
@@ -270,12 +276,13 @@
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
             <tr style="background:#f8fafc">
-              <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);white-space:nowrap;width:38%">Produk</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Stok</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Qty</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:18%">Harga Satuan</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:16%">Subtotal</th>
-              <th style="padding:8px 6px;width:8%"></th>
+              <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);white-space:nowrap;width:34%">Produk</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Stok</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Qty</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:16%">Harga Satuan</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Disc %</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Subtotal</th>
+              <th style="padding:8px 6px;width:6%"></th>
             </tr>
           </thead>
           <tbody id="invoice-items-body"></tbody>
@@ -404,7 +411,7 @@
     const auth = await requireAdmin(); if (!auth) return;
     document.getElementById('inv-date').value = todayISO();
     document.getElementById('pay-date').value  = todayISO();
-    await Promise.all([loadProducts(), loadCustomers(), loadInvoices()]);
+    await Promise.all([loadProducts(), loadCustomers(), loadSales(), loadInvoices()]);
   }
 
   async function loadProducts() {
@@ -424,6 +431,13 @@
     ).join('');
     document.getElementById('inv-customer-select').innerHTML =
       '<option value="">— Ketik manual / pilih customer —</option>' + opts;
+  }
+
+  async function loadSales() {
+    const { data } = await supabase.from('user_profiles').select('id,name').eq('role','sales').eq('is_active',true).order('name');
+    const sel = document.getElementById('inv-sales');
+    sel.innerHTML = '<option value="">— Tanpa Sales —</option>' +
+      (data||[]).map(u => `<option value="${u.id}" data-name="${escapeHtml(u.name)}">${escapeHtml(u.name)}</option>`).join('');
   }
 
   async function loadInvoices() {
@@ -532,6 +546,7 @@
     document.getElementById('inv-customer-select').value = '';
     document.getElementById('inv-date').value = todayISO();
     document.getElementById('inv-payment-term').value = 'cod';
+    document.getElementById('inv-sales').value = '';
     document.getElementById('inv-discount').value = '0';
     document.getElementById('invoice-items-body').innerHTML = '';
     itemRowCount = 0;
@@ -575,10 +590,11 @@
           ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}" data-unit="${p.unit}">${escapeHtml(p.name)}</option>`).join('')}
         </select>
       </td>
-      <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
-      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="qty-${id}" value="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
-      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="price-${id}" value="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
-      <td style="padding:5px 6px"><input type="text" id="sub-${id}" readonly value="0" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="qty-${id}" value="1" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="price-${id}" value="0" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="disc-${id}" value="0" style="width:50px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')" placeholder="0"></td>
+      <td style="padding:5px 6px"><input type="text" id="sub-${id}" readonly value="0" style="background:#f8fafc;width:95px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 4px"><button onclick="removeItemRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
@@ -610,8 +626,9 @@
   function recalcRow(rowId) {
     const qty   = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value);
     const price = parseFormattedNumber(document.getElementById(`price-${rowId}`)?.value);
+    const disc  = parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0;
     const sub   = document.getElementById(`sub-${rowId}`);
-    const total = qty * price;
+    const total = qty * price * (1 - disc / 100);
     if (sub) sub.value = total > 0 ? total.toLocaleString('id-ID') : '0';
     recalcTotal();
   }
@@ -651,16 +668,17 @@
 
       const qty   = Math.round(parseFormattedNumber(qtyEl?.value));
       const price = parseFormattedNumber(priceEl?.value);
+      const disc  = parseFormattedNumber(tr.querySelector('[id^="disc-"]')?.value) || 0;
       const stock = parseInt(stockEl?.value) || 0;
       const prod  = products.find(p => p.id === sel.value);
 
       if (qty <= 0)     { showToast('Jumlah item harus > 0', 'error'); valid = false; return; }
       if (qty > stock)  { showToast(`Stok "${prod?.name}" tidak cukup (sisa: ${stock})`, 'error'); valid = false; return; }
 
-      const sub = qty * price;
+      const sub = qty * price * (1 - disc / 100);
       subtotal += sub;
       const costPrice = parseFloat(sel.options[sel.selectedIndex].dataset.cost) || 0;
-      items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, price, subtotal: sub, cost_price: costPrice });
+      items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, price, item_discount: disc, subtotal: sub, cost_price: costPrice });
     });
 
     if (!valid) return;
@@ -669,6 +687,11 @@
     const discount = parseFormattedNumber(document.getElementById('inv-discount').value);
     const total = Math.max(0, subtotal - discount);
     const customerId = document.getElementById('inv-customer-select').value || null;
+
+    const salesSel = document.getElementById('inv-sales');
+    const salesOpt = salesSel.options[salesSel.selectedIndex];
+    const salesName = salesSel.value ? (salesOpt?.dataset.name || null) : null;
+    const salesId   = salesSel.value || null;
 
     setLoading(btn, true);
     const { data: invData, error: invErr } = await supabase.from('invoices').insert({
@@ -682,7 +705,9 @@
       price_mode:     currentPriceMode,
       subtotal, discount, tax_percent: 0, tax: 0, total,
       status: 'pending',
-      notes: document.getElementById('inv-notes').value.trim() || null,
+      notes:          document.getElementById('inv-notes').value.trim() || null,
+      sales_name:     salesName,
+      created_by_id:  salesId,
     }).select().single();
 
     if (invErr) { setLoading(btn, false); showToast('Gagal buat faktur: ' + invErr.message, 'error'); return; }
