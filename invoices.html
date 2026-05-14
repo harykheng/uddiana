@@ -63,39 +63,11 @@
       margin: 0.3in 0.5in;
     }
     @media print {
-      body > .layout, .modal-overlay, .print-toolbar { display:none !important; }
+      body > .layout, .modal-overlay { display:none !important; }
       #print-area { display:block !important; }
-      .print-invoice { margin-top:0 !important; }
     }
-
-    /* Preview mode (screen) */
-    body.print-preview > .layout,
-    body.print-preview .modal-overlay { display:none !important; }
-    body.print-preview #print-area {
-      display:block; background:#fff; min-height:100vh;
-      padding:16px 20px 40px; box-sizing:border-box;
-    }
-    body.print-preview .print-toolbar { display:flex !important; }
 
     #print-area { display:none; }
-
-    /* Toolbar — screen only, hidden on actual print */
-    .print-toolbar {
-      display:none;
-      position:fixed; top:0; left:0; right:0; z-index:9999;
-      background:#1e293b; color:#fff; padding:10px 20px;
-      align-items:center; justify-content:space-between; gap:12px;
-      font-family:Arial,sans-serif; font-size:13px;
-    }
-    .print-toolbar-btns { display:flex; gap:8px; }
-    .btn-print-action {
-      border:none; padding:7px 16px; border-radius:6px;
-      font-size:13px; font-weight:700; cursor:pointer;
-    }
-    .btn-print-go  { background:#2563eb; color:#fff; }
-    .btn-print-go:hover  { background:#1d4ed8; }
-    .btn-print-close { background:#475569; color:#fff; }
-    .btn-print-close:hover { background:#334155; }
 
     /* ── DOT MATRIX INVOICE STYLES ── */
     .print-invoice {
@@ -103,7 +75,6 @@
       font-size: 11pt;
       color: #000;
       width: 100%;
-      margin-top: 44px; /* beri ruang untuk toolbar saat preview */
     }
     .pi-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6pt; }
     .pi-company-name { font-size:16pt; font-weight:bold; line-height:1.2; }
@@ -408,18 +379,7 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
-     PRINT TOOLBAR (hanya tampil saat preview / print)
-════════════════════════════════════════════════════════════ -->
-<div class="print-toolbar" id="print-toolbar">
-  <div style="font-weight:700" id="print-toolbar-title">Preview Faktur</div>
-  <div class="print-toolbar-btns">
-    <button class="btn-print-action btn-print-go" onclick="window.print()">🖨 Print / Save PDF</button>
-    <button class="btn-print-action btn-print-close" onclick="closePrintPreview()">✕ Tutup</button>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════
-     PRINT AREA (tersembunyi, hanya tampil saat print / preview)
+     PRINT AREA (tersembunyi, hanya tampil saat print)
 ════════════════════════════════════════════════════════════ -->
 <div id="print-area"></div>
 
@@ -1024,15 +984,7 @@
 
       </div>`;
 
-    document.getElementById('print-toolbar-title').textContent =
-      'Preview: ' + inv.invoice_number;
-    document.body.classList.add('print-preview');
-    closeModal('modal-view-invoice');
-  }
-
-  function closePrintPreview() {
-    document.body.classList.remove('print-preview');
-    document.getElementById('print-area').innerHTML = '';
+    window.print();
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
