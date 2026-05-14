@@ -81,14 +81,16 @@
       position: sticky;
       top: 56px;
       z-index: 99;
+      overflow-x: auto;
     }
     .tab-btn {
-      flex: 1; padding: 14px 8px;
+      flex: none; min-width: 80px; padding: 12px 10px;
       border: none; background: none;
-      font-size: 13px; font-weight: 600;
+      font-size: 12px; font-weight: 600;
       color: var(--muted); cursor: pointer;
       border-bottom: 2px solid transparent;
       transition: color .2s, border-color .2s;
+      white-space: nowrap;
     }
     .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
 
@@ -289,6 +291,8 @@
 <div class="tabs">
   <button class="tab-btn active" onclick="switchTab('tab-new')">+ Buat Faktur</button>
   <button class="tab-btn" onclick="switchTab('tab-history')">📋 Riwayat</button>
+  <button class="tab-btn" onclick="switchTab('tab-products')">📦 Produk</button>
+  <button class="tab-btn" onclick="switchTab('tab-wishlist')">⭐ Wishlist</button>
 </div>
 
 <!-- TAB: BUAT FAKTUR -->
@@ -310,15 +314,19 @@
           <label>Termin</label>
           <select id="inv-term">
             <option value="cod">COD</option>
-            <option value="7">7 Hari</option>
-            <option value="15">15 Hari</option>
-            <option value="30">30 Hari</option>
+            <option value="7_days">7 Hari</option>
+            <option value="15_days">15 Hari</option>
+            <option value="30_days">30 Hari</option>
           </select>
         </div>
       </div>
       <div class="form-group">
         <label>Catatan (opsional)</label>
         <textarea id="inv-notes" rows="2" placeholder="Catatan tambahan..."></textarea>
+      </div>
+      <div id="unpaid-warning" style="display:none;background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:10px 12px;margin-top:-4px;font-size:13px;color:#92400e;">
+        ⚠️ Customer ini punya <strong id="unpaid-count">0</strong> faktur belum lunas:<br>
+        <span id="unpaid-codes" style="font-size:12px;font-weight:600;"></span>
       </div>
     </div>
   </div>
@@ -353,6 +361,41 @@
   </div>
 </div>
 
+<!-- TAB: LIST PRODUK -->
+<div class="tab-content" id="tab-products">
+  <div class="card">
+    <div class="card-header">Daftar Produk</div>
+    <div id="product-list-container">
+      <div class="empty-state"><div class="icon">📦</div><h4>Memuat...</h4></div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: WISHLIST -->
+<div class="tab-content" id="tab-wishlist">
+  <div class="card">
+    <div class="card-header">Minta Produk Baru</div>
+    <div class="card-body">
+      <p style="font-size:12px;color:#64748b;margin-bottom:14px;">Produk yang belum ada di gudang — admin akan melihat daftar ini.</p>
+      <div class="form-group">
+        <label>Nama Produk <span style="color:#dc2626">*</span></label>
+        <input type="text" id="wish-name" placeholder="Nama produk yang diminta...">
+      </div>
+      <div class="form-group">
+        <label>Brand / Merek <span style="color:#94a3b8;font-weight:400">(opsional)</span></label>
+        <input type="text" id="wish-brand" placeholder="Brand atau merek produk...">
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-submit-wish" onclick="submitWishlist()">Kirim Permintaan</button>
+    </div>
+  </div>
+  <div class="card" style="margin-top:0">
+    <div class="card-header">Permintaan Saya</div>
+    <div id="my-wishlist-list">
+      <div class="empty-state"><div class="icon">⭐</div><h4>Belum ada permintaan</h4></div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: DETAIL FAKTUR -->
 <div class="modal-overlay" id="modal-detail">
   <div class="modal">
@@ -379,6 +422,14 @@
       <div class="form-group">
         <label>Nama Toko <span style="color:#94a3b8;font-weight:400">(opsional)</span></label>
         <input type="text" id="nc-store" placeholder="Nama toko / outlet...">
+      </div>
+      <div class="form-group">
+        <label>No. Telepon <span style="color:#94a3b8;font-weight:400">(opsional)</span></label>
+        <input type="tel" id="nc-phone" placeholder="08xx...">
+      </div>
+      <div class="form-group">
+        <label>Alamat <span style="color:#94a3b8;font-weight:400">(opsional)</span></label>
+        <textarea id="nc-address" rows="2" placeholder="Alamat lengkap..."></textarea>
       </div>
       <div style="display:flex;gap:8px;margin-top:4px">
         <button class="btn btn-ghost" style="flex:1" onclick="closeNewCustomerModal()">Batal</button>
@@ -503,7 +554,7 @@
   let newCustomerCallback = null;
 
   async function loadCustomers() {
-    const { data } = await supabase.from('customers').select('id,name,store_name').order('name');
+    const { data } = await supabase.from('customers').select('id,name,store_name,phone,address').order('name');
     customers = data || [];
 
     if (customerTS) { customerTS.destroy(); customerTS = null; }
@@ -516,6 +567,7 @@
         openNewCustomerModal(input, callback);
       },
       createFilter: function(input) { return input.trim().length >= 1; },
+      onChange: function(value) { checkUnpaidInvoices(value); },
       render: {
         option_create: function(data, escape) {
           return `<div class="create" style="color:#2563eb">➕ Tambah customer baru: <strong>${escape(data.input)}</strong></div>`;
@@ -532,6 +584,8 @@
     newCustomerCallback = callback;
     document.getElementById('nc-name').value = input.trim();
     document.getElementById('nc-store').value = '';
+    document.getElementById('nc-phone').value = '';
+    document.getElementById('nc-address').value = '';
     document.getElementById('modal-new-customer').classList.add('open');
     setTimeout(() => document.getElementById('nc-name').focus(), 150);
   }
@@ -542,8 +596,10 @@
   }
 
   async function confirmNewCustomer() {
-    const name = document.getElementById('nc-name').value.trim();
-    const store = document.getElementById('nc-store').value.trim();
+    const name    = document.getElementById('nc-name').value.trim();
+    const store   = document.getElementById('nc-store').value.trim();
+    const phone   = document.getElementById('nc-phone').value.trim();
+    const address = document.getElementById('nc-address').value.trim();
     if (!name) { showToast('Nama customer wajib diisi', 'error'); return; }
 
     const btn = document.getElementById('btn-save-customer');
@@ -551,8 +607,8 @@
 
     const { data, error } = await supabase
       .from('customers')
-      .insert({ name, store_name: store || null })
-      .select('id,name,store_name')
+      .insert({ name, store_name: store || null, phone: phone || null, address: address || null })
+      .select('id,name,store_name,phone,address')
       .single();
 
     btn.disabled = false; btn.textContent = 'Simpan & Pilih';
@@ -618,6 +674,81 @@
   }
 
   function filterHistory() { renderHistory(); }
+
+  async function checkUnpaidInvoices(customerId) {
+    const warn = document.getElementById('unpaid-warning');
+    if (!customerId) { warn.style.display = 'none'; return; }
+    const { data } = await supabase.from('invoices')
+      .select('invoice_number')
+      .eq('customer_id', customerId)
+      .eq('status', 'pending')
+      .or('verification_status.is.null,verification_status.eq.approved');
+    if (!data || !data.length) { warn.style.display = 'none'; return; }
+    document.getElementById('unpaid-count').textContent = data.length;
+    document.getElementById('unpaid-codes').textContent = data.map(i => i.invoice_number).join(', ');
+    warn.style.display = 'block';
+  }
+
+  function renderProductList() {
+    const el = document.getElementById('product-list-container');
+    if (!products.length) {
+      el.innerHTML = '<div class="empty-state"><div class="icon">📦</div><h4>Tidak ada produk</h4></div>';
+      return;
+    }
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+        <th style="text-align:left;padding:10px 14px;">Nama Produk</th>
+        <th style="text-align:center;padding:10px 8px;">Stok</th>
+        <th style="text-align:right;padding:10px 14px;">Harga Jual</th>
+      </tr></thead>
+      <tbody>${products.map(p => `<tr style="border-bottom:1px solid #f1f5f9;">
+        <td style="padding:9px 14px;">${escapeHtml(p.name)}</td>
+        <td style="text-align:center;padding:9px 8px;">${p.stock_quantity} ${p.unit || 'pcs'}</td>
+        <td style="text-align:right;padding:9px 14px;font-weight:600;">${formatCurrency(p.price)}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
+  }
+
+  let myWishlists = [];
+
+  async function submitWishlist() {
+    const name  = document.getElementById('wish-name').value.trim();
+    const brand = document.getElementById('wish-brand').value.trim();
+    if (!name) { showToast('Nama produk wajib diisi', 'error'); return; }
+    const btn = document.getElementById('btn-submit-wish');
+    btn.disabled = true; btn.textContent = 'Mengirim...';
+    const { error } = await supabase.from('wishlist_items').insert({
+      product_name: name,
+      brand: brand || null,
+      submitted_by_id: currentUser.session.user.id,
+      submitted_by_name: currentUser.profile.name
+    });
+    btn.disabled = false; btn.textContent = 'Kirim Permintaan';
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Permintaan berhasil dikirim!');
+    document.getElementById('wish-name').value = '';
+    document.getElementById('wish-brand').value = '';
+    await renderWishlist();
+  }
+
+  async function renderWishlist() {
+    const { data } = await supabase.from('wishlist_items')
+      .select('*')
+      .eq('submitted_by_id', currentUser.session.user.id)
+      .order('created_at', { ascending: false });
+    myWishlists = data || [];
+    const el = document.getElementById('my-wishlist-list');
+    if (!myWishlists.length) {
+      el.innerHTML = '<div class="empty-state"><div class="icon">⭐</div><h4>Belum ada permintaan</h4></div>';
+      return;
+    }
+    el.innerHTML = myWishlists.map(w => `
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);">
+        <div style="font-weight:600;font-size:13px;">${escapeHtml(w.product_name)}</div>
+        ${w.brand ? `<div style="font-size:12px;color:#64748b;">Brand: ${escapeHtml(w.brand)}</div>` : ''}
+        <div style="font-size:11px;color:#94a3b8;margin-top:2px;">${formatDate(w.created_at)}</div>
+      </div>`).join('');
+  }
 
   function showDetail(id) {
     const inv = allInvoices.find(x => x.id === id);
@@ -721,16 +852,20 @@
       </div>
       <select class="item-product-sel">
         <option value="">— Pilih Produk —</option>
-        ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost || 0}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)} · Stok ${p.stock_quantity} ${p.unit || 'pcs'}</option>`).join('')}
+        ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost || 0}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`).join('')}
       </select>
-      <div class="item-fields">
+      <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:end;">
         <div class="item-field">
           <label>Qty</label>
           <input type="number" class="item-qty-input" value="1" min="1" oninput="recalcItem(${id})">
         </div>
         <div class="item-field">
+          <label>Stok</label>
+          <input type="text" class="item-stock-input readonly" value="—" disabled style="background:#f1f5f9;color:#475569;">
+        </div>
+        <div class="item-field" style="grid-column:1/-1;">
           <label>Harga Satuan</label>
-          <input type="number" class="item-price-input" value="0" min="0" oninput="recalcItem(${id})">
+          <input type="number" class="item-price-input readonly" value="0" disabled style="background:#f1f5f9;color:#475569;">
         </div>
       </div>
       <div class="item-subtotal-row">
@@ -765,7 +900,13 @@
   function updateItemPrice(sel) {
     const row = sel.closest('.item-row');
     const opt = sel.options[sel.selectedIndex];
-    if (!opt.value) return;
+    if (!opt.value) {
+      row.querySelector('.item-stock-input').value = '—';
+      row.querySelector('.item-price-input').value = 0;
+      recalcItem(row.id.replace('item-', ''));
+      return;
+    }
+    row.querySelector('.item-stock-input').value = `${opt.dataset.stock} ${opt.dataset.unit}`;
     row.querySelector('.item-price-input').value = parseFloat(opt.dataset.price) || 0;
     const id = row.id.replace('item-', '');
     recalcItem(id);
@@ -878,8 +1019,12 @@
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     document.getElementById(id).classList.add('active');
-    document.querySelectorAll('.tab-btn')[id === 'tab-new' ? 0 : 1].classList.add('active');
+    const tabIds = ['tab-new', 'tab-history', 'tab-products', 'tab-wishlist'];
+    const btn = document.querySelectorAll('.tab-btn')[tabIds.indexOf(id)];
+    if (btn) btn.classList.add('active');
     if (id === 'tab-history') loadHistory();
+    if (id === 'tab-products') renderProductList();
+    if (id === 'tab-wishlist') renderWishlist();
   }
 
   function openModal(id) { document.getElementById(id).classList.add('open'); }

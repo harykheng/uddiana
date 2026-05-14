@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wishlist Produk - UD.DIANA</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="sidebar-placeholder"></div>
+
+<div class="main-content">
+  <div class="page-header">
+    <div>
+      <h2>Wishlist Produk</h2>
+      <p class="page-subtitle">Permintaan produk baru dari sales</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <span>Daftar Wishlist</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select id="filter-status" onchange="loadWishlists()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;">
+          <option value="">Semua Status</option>
+          <option value="false">Belum Dipenuhi</option>
+          <option value="true">Sudah Dipenuhi</option>
+        </select>
+        <select id="filter-sales" onchange="loadWishlists()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;">
+          <option value="">Semua Sales</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Nama Produk</th>
+            <th>Brand</th>
+            <th>Diajukan Oleh</th>
+            <th>Tanggal</th>
+            <th>Status</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody id="wishlist-table">
+          <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">⭐</div><h4>Memuat...</h4></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let wishlists = [];
+
+  async function init() {
+    const auth = await requireAdmin();
+    if (!auth) return;
+    await loadWishlists();
+  }
+
+  async function loadWishlists() {
+    const statusFilter = document.getElementById('filter-status').value;
+    const salesFilter  = document.getElementById('filter-sales').value;
+
+    let q = supabase.from('wishlist_items').select('*').order('created_at', { ascending: false });
+    if (statusFilter !== '') q = q.eq('is_fulfilled', statusFilter === 'true');
+    if (salesFilter)         q = q.eq('submitted_by_name', salesFilter);
+
+    const { data, error } = await q;
+    if (error) { showToast('Gagal memuat wishlist', 'error'); return; }
+    wishlists = data || [];
+
+    // Populate sales filter
+    const salesNames = [...new Set(wishlists.map(w => w.submitted_by_name).filter(Boolean))].sort();
+    const selSales = document.getElementById('filter-sales');
+    const prev = selSales.value;
+    selSales.innerHTML = '<option value="">Semua Sales</option>' +
+      salesNames.map(n => `<option value="${escapeHtml(n)}"${n === prev ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('');
+
+    renderWishlists();
+  }
+
+  function renderWishlists() {
+    const tbody = document.getElementById('wishlist-table');
+    if (!wishlists.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">⭐</div><h4>Belum ada wishlist</h4><p>Sales belum mengajukan produk baru.</p></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = wishlists.map(w => `
+      <tr style="${w.is_fulfilled ? 'opacity:.55;' : ''}">
+        <td><strong>${escapeHtml(w.product_name)}</strong></td>
+        <td>${w.brand ? escapeHtml(w.brand) : '<span style="color:#94a3b8">—</span>'}</td>
+        <td>${w.submitted_by_name ? escapeHtml(w.submitted_by_name) : '—'}</td>
+        <td>${formatDate(w.created_at)}</td>
+        <td>
+          ${w.is_fulfilled
+            ? '<span class="badge badge-success">Dipenuhi</span>'
+            : '<span class="badge badge-warning">Belum Dipenuhi</span>'}
+        </td>
+        <td>
+          <div class="table-actions">
+            ${!w.is_fulfilled
+              ? `<button class="btn btn-success btn-sm" onclick="markFulfilled('${w.id}')">✓ Penuhi</button>`
+              : `<button class="btn btn-ghost btn-sm" onclick="markFulfilled('${w.id}', false)">↩ Batal</button>`}
+            <button class="btn btn-danger btn-sm" onclick="deleteWishlist('${w.id}')">Hapus</button>
+          </div>
+        </td>
+      </tr>`).join('');
+  }
+
+  async function markFulfilled(id, fulfilled = true) {
+    const { error } = await supabase.from('wishlist_items').update({ is_fulfilled: fulfilled }).eq('id', id);
+    if (error) { showToast('Gagal update', 'error'); return; }
+    showToast(fulfilled ? 'Ditandai sudah dipenuhi' : 'Dibatalkan');
+    await loadWishlists();
+  }
+
+  async function deleteWishlist(id) {
+    if (!confirm('Hapus wishlist ini?')) return;
+    const { error } = await supabase.from('wishlist_items').delete().eq('id', id);
+    if (error) { showToast('Gagal hapus', 'error'); return; }
+    showToast('Wishlist dihapus');
+    await loadWishlists();
+  }
+
+  init();
+</script>
+</body>
+</html>
