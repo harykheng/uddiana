@@ -401,9 +401,6 @@
   let customers   = [];
   let currentInvoice = null;
 
-  // Preload logo saat halaman dibuka agar sudah di-cache saat print
-  const _printLogoPreload = new Image();
-  _printLogoPreload.src = 'logo2.png';
   let currentPriceMode = 'regular';
   let currentPayMethod = 'cash';
   let itemRowCount = 0;
@@ -952,8 +949,8 @@
         <!-- BARIS 2: UD.DIANA + Tanggal (kiri) | Info customer (kanan) -->
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4pt;">
           <div>
-            <img src="logo2.png" alt="UD.DIANA" style="height:40pt;width:auto;display:block;">
-            <div style="font-size:9pt;margin-top:2pt;">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
+            <div class="pi-company-name">UD. DIANA</div>
+            <div style="font-size:9pt;margin-top:1pt;">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
           </div>
           <div style="text-align:right;font-size:9pt;">
             <div style="font-weight:bold;">${customerLine}</div>
@@ -1001,13 +998,7 @@
 
       </div>`;
 
-    // Logo sudah preloaded saat halaman dibuka — langsung print
-    if (_printLogoPreload.complete) {
-      window.print();
-    } else {
-      _printLogoPreload.onload  = () => window.print();
-      _printLogoPreload.onerror = () => window.print();
-    }
+    window.print();
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
