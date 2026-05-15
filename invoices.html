@@ -942,22 +942,20 @@
     document.getElementById('print-area').innerHTML = `
       <div class="print-invoice">
 
-        <!-- BARIS 1: Nomor faktur (kiri) | Detail toko pembeli (kanan atas) -->
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3pt;">
-          <div style="font-size:12pt;font-weight:bold;">FAKTUR NO: ${escapeHtml(inv.invoice_number)}</div>
+        <!-- HEADER: kiri = nomor+company+tanggal+sales | kanan = info toko pembeli -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6pt;">
+          <div>
+            <div style="font-size:12pt;font-weight:bold;">FAKTUR NO: ${escapeHtml(inv.invoice_number)}</div>
+            <div class="pi-company-name">UD. DIANA</div>
+            <div style="font-size:9pt;margin-top:1pt;">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
+            ${inv.sales_name ? `<div style="font-size:9pt;margin-top:1pt;">Sales: <strong>${escapeHtml(inv.sales_name)}</strong></div>` : ''}
+          </div>
           <div style="text-align:right;font-size:9pt;">
             <div style="font-weight:bold;">${customerLine}</div>
-            ${inv.customer_phone   ? `<div>Telp: ${escapeHtml(inv.customer_phone)}</div>`  : ''}
-            ${inv.customer_address ? `<div>${escapeHtml(inv.customer_address)}</div>`      : ''}
+            <div>Telp: ${escapeHtml(inv.customer_phone || '')}</div>
+            <div>${escapeHtml(inv.customer_address || '')}</div>
             <div>Jatuh Tempo: <strong>${terminMap[inv.payment_term] || inv.payment_term || '—'}</strong></div>
           </div>
-        </div>
-
-        <!-- BARIS 2: UD.DIANA + Tanggal + Sales (kiri) -->
-        <div style="margin-bottom:6pt;">
-          <div class="pi-company-name">UD. DIANA</div>
-          <div style="font-size:9pt;margin-top:1pt;">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
-          ${inv.sales_name ? `<div style="font-size:9pt;margin-top:1pt;">Sales: <strong>${escapeHtml(inv.sales_name)}</strong></div>` : ''}
         </div>
 
         <!-- TABEL ITEM (tanpa garis antar baris) -->
