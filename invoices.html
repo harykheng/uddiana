@@ -400,6 +400,10 @@
   let products    = [];
   let customers   = [];
   let currentInvoice = null;
+
+  // Preload logo saat halaman dibuka agar sudah di-cache saat print
+  const _printLogoPreload = new Image();
+  _printLogoPreload.src = 'logo2.png';
   let currentPriceMode = 'regular';
   let currentPayMethod = 'cash';
   let itemRowCount = 0;
@@ -997,13 +1001,12 @@
 
       </div>`;
 
-    // Tunggu logo selesai load sebelum print agar tidak kosong
-    const logoImg = document.getElementById('print-area').querySelector('img');
-    if (logoImg && !logoImg.complete) {
-      logoImg.onload  = () => window.print();
-      logoImg.onerror = () => window.print();
-    } else {
+    // Logo sudah preloaded saat halaman dibuka — langsung print
+    if (_printLogoPreload.complete) {
       window.print();
+    } else {
+      _printLogoPreload.onload  = () => window.print();
+      _printLogoPreload.onerror = () => window.print();
     }
   }
 
