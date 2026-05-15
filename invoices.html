@@ -997,7 +997,14 @@
 
       </div>`;
 
-    window.print();
+    // Tunggu logo selesai load sebelum print agar tidak kosong
+    const logoImg = document.getElementById('print-area').querySelector('img');
+    if (logoImg && !logoImg.complete) {
+      logoImg.onload  = () => window.print();
+      logoImg.onerror = () => window.print();
+    } else {
+      window.print();
+    }
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
