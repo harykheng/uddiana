@@ -135,6 +135,7 @@
                 <th>Min.</th>
                 <th>Satuan</th>
                 <th>Status</th>
+                <th>Deskripsi</th>
                 <th>Aksi</th>
               </tr>
             </thead>
@@ -386,7 +387,7 @@
     const search = document.getElementById('search-input').value.toLowerCase();
     const stockFilter = document.getElementById('filter-stock').value;
     let filtered = allProducts.filter(p => {
-      const matchSearch = !search || p.name.toLowerCase().includes(search) || p.sku.toLowerCase().includes(search);
+      const matchSearch = !search || p.name.toLowerCase().includes(search) || (p.sku||'').toLowerCase().includes(search) || (p.description||'').toLowerCase().includes(search);
       let matchStock = true;
       if (stockFilter === 'low') matchStock = p.stock_quantity > 0 && p.stock_quantity <= p.min_stock;
       if (stockFilter === 'out') matchStock = p.stock_quantity <= 0;
@@ -398,7 +399,7 @@
     const tbody = document.getElementById('products-table');
 
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">📦</div><h4>Tidak ada produk</h4><p>Tambah produk baru atau ubah filter</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">📦</div><h4>Tidak ada produk</h4><p>Tambah produk baru atau ubah filter</p></div></td></tr>`;
       document.getElementById('pagination-bar').style.display = 'none';
       return;
     }
@@ -428,6 +429,7 @@
         <td class="text-right">${p.min_stock}</td>
         <td>${escapeHtml(p.unit)}</td>
         <td>${stockBadge(p.stock_quantity, p.min_stock)}</td>
+        <td style="font-size:12px;color:var(--text-muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(p.description||'')}">${escapeHtml(p.description || '—')}</td>
         <td>
           <div class="table-actions">
             <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}','${escapeHtml(p.name)}',${p.stock_quantity})" title="Sesuaikan Stok">📊</button>
