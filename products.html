@@ -276,7 +276,7 @@
     </div>
     <div class="modal-body">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <p style="font-size:13px;color:var(--text-muted)">Kolom: <code>sku, nama, kategori, satuan, harga_biasa, harga_shopee, harga_modal, stok, min_stok, deskripsi</code></p>
+        <p style="font-size:13px;color:var(--text-muted)">Kolom: <code>nama, sku <span style="font-weight:400">(opsional)</span>, kategori, satuan, harga_biasa, harga_shopee, harga_modal, stok, min_stok, deskripsi</code></p>
         <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()">📄 Download Template</button>
       </div>
       <div class="import-drop" id="import-drop" onclick="document.getElementById('import-file').click()"
@@ -716,9 +716,9 @@
         return norm;
       });
 
-      // Validasi minimal ada kolom sku & nama
-      if (!importRows[0].hasOwnProperty('sku') || !importRows[0].hasOwnProperty('nama')) {
-        showToast('Kolom "sku" dan "nama" wajib ada di CSV', 'error');
+      // Validasi minimal ada kolom nama
+      if (!importRows[0].hasOwnProperty('nama')) {
+        showToast('Kolom "nama" wajib ada di CSV', 'error');
         importRows = [];
         return;
       }
@@ -730,7 +730,7 @@
 
   function showImportPreview() {
     const preview = document.getElementById('import-preview');
-    const skuSet = new Set(allProducts.map(p => p.sku.toLowerCase()));
+    const skuSet = new Set(allProducts.filter(p => p.sku).map(p => p.sku.toLowerCase()));
     const previewRows = importRows.slice(0, 5);
     const moreCount = importRows.length - previewRows.length;
 
@@ -743,7 +743,7 @@
       </tr></thead><tbody>`;
 
     previewRows.forEach(r => {
-      const isUpdate = skuSet.has((r.sku||'').toLowerCase());
+      const isUpdate = r.sku && skuSet.has(r.sku.toLowerCase());
       const badge = isUpdate
         ? `<span style="background:#fef9c3;color:#854d0e;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700">🔄 Update</span>`
         : `<span style="background:#f0fdf4;color:#166534;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:700">✨ Baru</span>`;
@@ -761,7 +761,7 @@
     html += `</tbody></table></div>`;
     preview.innerHTML = html;
 
-    const newCount    = importRows.filter(r => !skuSet.has((r.sku||'').toLowerCase())).length;
+    const newCount    = importRows.filter(r => !r.sku || !skuSet.has(r.sku.toLowerCase())).length;
     const updateCount = importRows.length - newCount;
     document.getElementById('import-result').innerHTML = `
       <div class="import-result success">
@@ -785,7 +785,7 @@
       try {
         const sku  = (row.sku || '').trim();
         const nama = (row.nama || '').trim();
-        if (!sku || !nama) { errors.push(`Baris SKU "${sku||'?'}": sku/nama kosong`); continue; }
+        if (!nama) { errors.push(`Baris "${nama||'?'}": kolom nama kosong`); continue; }
 
         // Resolve category
         let catId = null;
@@ -812,7 +812,7 @@
           is_active:      true,
         };
 
-        const existing = allProducts.find(p => p.sku.toLowerCase() === sku.toLowerCase());
+        const existing = sku ? allProducts.find(p => p.sku && p.sku.toLowerCase() === sku.toLowerCase()) : null;
         if (existing) {
           const { error } = await supabase.from('products').update(payload).eq('id', existing.id);
           if (error) throw error;
