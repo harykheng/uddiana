@@ -833,8 +833,8 @@
 
     for (const row of importRows) {
       try {
-        const rawSku = (row.sku || '').trim();
-        const nama   = (row.nama || '').trim();
+        const sku  = (row.sku || '').trim() || null;
+        const nama = (row.nama || '').trim();
         if (!nama) { errors.push(`Baris "${nama||'?'}": kolom nama kosong`); continue; }
         const sku = rawSku || generateSKU(nama, batchSkus);
         batchSkus.add(sku.toLowerCase());
@@ -852,7 +852,7 @@
 
         const payload = {
           name:           nama,
-          sku:            sku,
+          sku:            sku || null,
           category_id:    catId,
           unit:           row.satuan || 'pcs',
           price:          parseFloat(row.harga_biasa)  || 0,
