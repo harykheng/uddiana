@@ -19,6 +19,14 @@
     }
     .btn-add-cat:hover { background:var(--primary); color:#fff; border-color:var(--primary); }
 
+    /* ── SORT ── */
+    th.sortable { cursor:pointer; user-select:none; white-space:nowrap; }
+    th.sortable:hover { color:var(--primary); }
+    th.sortable .sort-icon { font-size:10px; margin-left:3px; opacity:.4; }
+    th.sortable.asc .sort-icon::after  { content:'▲'; opacity:1; }
+    th.sortable.desc .sort-icon::after { content:'▼'; opacity:1; }
+    th.sortable:not(.asc):not(.desc) .sort-icon::after { content:'↕'; }
+
     /* ── PAGINATION ── */
     .pagination { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:8px; }
     .pagination-info { font-size:13px; color:var(--text-muted); }
@@ -126,12 +134,12 @@
               <tr>
                 <th>#</th>
                 <th>SKU</th>
-                <th>Nama Produk</th>
+                <th class="sortable" id="th-name" onclick="setSort('name')">Nama Produk <span class="sort-icon"></span></th>
                 <th>Kategori</th>
                 <th>Harga Biasa</th>
                 <th>Harga Shopee</th>
                 <th>Harga Modal</th>
-                <th>Stok</th>
+                <th class="sortable" id="th-stock" onclick="setSort('stock_quantity')">Stok <span class="sort-icon"></span></th>
                 <th>Min.</th>
                 <th>Satuan</th>
                 <th>Status</th>
@@ -350,6 +358,8 @@
   let categories = [];
   let currentPage = 1;
   let pageSize = 50;
+  let sortBy  = 'name';
+  let sortDir = 1; // 1=asc, -1=desc
   const handleSearch = debounce(() => { currentPage = 1; renderProducts(); }, 350);
 
   async function init() {
@@ -383,6 +393,20 @@
     renderProducts();
   }
 
+  function setSort(col) {
+    if (sortBy === col) { sortDir *= -1; }
+    else { sortBy = col; sortDir = 1; }
+    // Update header classes
+    ['name','stock_quantity'].forEach(c => {
+      const th = document.getElementById('th-' + (c === 'name' ? 'name' : 'stock'));
+      if (!th) return;
+      th.classList.remove('asc','desc');
+      if (c === sortBy) th.classList.add(sortDir === 1 ? 'asc' : 'desc');
+    });
+    currentPage = 1;
+    renderProducts();
+  }
+
   function renderProducts() {
     const search = document.getElementById('search-input').value.toLowerCase();
     const stockFilter = document.getElementById('filter-stock').value;
@@ -393,6 +417,13 @@
       if (stockFilter === 'out') matchStock = p.stock_quantity <= 0;
       if (stockFilter === 'ok') matchStock = p.stock_quantity > p.min_stock;
       return matchSearch && matchStock;
+    });
+
+    // Sort
+    filtered.sort((a, b) => {
+      if (sortBy === 'name') return sortDir * a.name.localeCompare(b.name, 'id');
+      if (sortBy === 'stock_quantity') return sortDir * (a.stock_quantity - b.stock_quantity);
+      return 0;
     });
 
     document.getElementById('product-count').textContent = filtered.length;

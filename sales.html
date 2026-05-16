@@ -363,8 +363,11 @@
 
 <!-- TAB: LIST PRODUK -->
 <div class="tab-content" id="tab-products">
-  <div class="card">
-    <div class="card-header">Daftar Produk</div>
+  <div style="padding:12px 16px 0;">
+    <input type="text" id="search-products" placeholder="🔍 Cari nama produk..." oninput="renderProductList()"
+      style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none;">
+  </div>
+  <div class="card" style="margin-top:12px;">
     <div id="product-list-container">
       <div class="empty-state"><div class="icon">📦</div><h4>Memuat...</h4></div>
     </div>
@@ -691,8 +694,10 @@
 
   function renderProductList() {
     const el = document.getElementById('product-list-container');
-    if (!products.length) {
-      el.innerHTML = '<div class="empty-state"><div class="icon">📦</div><h4>Tidak ada produk</h4></div>';
+    const search = (document.getElementById('search-products')?.value || '').toLowerCase();
+    const filtered = products.filter(p => !search || p.name.toLowerCase().includes(search));
+    if (!filtered.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">📦</div><h4>${search ? 'Produk tidak ditemukan' : 'Tidak ada produk'}</h4></div>`;
       return;
     }
     el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -701,7 +706,7 @@
         <th style="text-align:center;padding:10px 8px;">Stok</th>
         <th style="text-align:right;padding:10px 14px;">Harga Jual</th>
       </tr></thead>
-      <tbody>${products.map(p => `<tr style="border-bottom:1px solid #f1f5f9;">
+      <tbody>${filtered.map(p => `<tr style="border-bottom:1px solid #f1f5f9;">
         <td style="padding:9px 14px;">${escapeHtml(p.name)}</td>
         <td style="text-align:center;padding:9px 8px;">${p.stock_quantity} ${p.unit || 'pcs'}</td>
         <td style="text-align:right;padding:9px 14px;font-weight:600;">${formatCurrency(p.price)}</td>
