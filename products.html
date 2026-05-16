@@ -547,15 +547,13 @@
     const btn = document.getElementById('btn-save-product');
     const id = document.getElementById('product-id').value;
     const name = document.getElementById('product-name').value.trim();
-    const skuInput = document.getElementById('product-sku').value.trim();
-    const sku = skuInput || (!id ? generateSKU(name) : null);
+    const sku  = document.getElementById('product-sku').value.trim();
     const price = parseFormattedNumber(document.getElementById('product-price').value);
     if (!name) { showToast('Nama produk wajib diisi', 'error'); return; }
     if (price <= 0) { showToast('Harga jual harus lebih dari 0', 'error'); return; }
 
     const payload = {
-      name,
-      ...(sku ? { sku } : {}),
+      name, sku,
       category_id: document.getElementById('product-category').value || null,
       unit: document.getElementById('product-unit').value,
       price,
@@ -700,19 +698,6 @@
     showToast(`✅ Exported ${rows.length} produk`);
   }
 
-  // ── AUTO-GENERATE SKU ─────────────────────────────────────
-  function generateSKU(nama, alreadyUsed = null) {
-    const prefix = (nama || '').replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'PRD';
-    const dbUsed = new Set(allProducts.map(p => (p.sku || '').toLowerCase()));
-    let sku, tries = 0;
-    do {
-      const num = Math.floor(1000 + Math.random() * 9000);
-      sku = `${prefix}-${num}`;
-      tries++;
-    } while (tries < 100 && (dbUsed.has(sku.toLowerCase()) || (alreadyUsed && alreadyUsed.has(sku.toLowerCase()))));
-    return sku;
-  }
-
   // ── IMPORT CSV ─────────────────────────────────────────────
   let importRows = [];
 
@@ -829,15 +814,11 @@
     const catMap = {};
     for (const c of categories) catMap[c.name.toLowerCase()] = c.id;
 
-    const batchSkus = new Set(); // track SKUs generated within this import batch
-
     for (const row of importRows) {
       try {
         const sku  = (row.sku || '').trim() || null;
         const nama = (row.nama || '').trim();
         if (!nama) { errors.push(`Baris "${nama||'?'}": kolom nama kosong`); continue; }
-        const sku = rawSku || generateSKU(nama, batchSkus);
-        batchSkus.add(sku.toLowerCase());
 
         // Resolve category
         let catId = null;
