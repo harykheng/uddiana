@@ -874,8 +874,10 @@
         </div>
       </div>
       <div class="item-subtotal-row">
-        <span class="item-subtotal-label">Subtotal</span>
-        <span class="item-subtotal" id="sub-${id}">Rp 0</span>
+        <span class="item-subtotal-label">Subtotal <span style="font-size:10px;color:var(--muted)">(bisa diedit)</span></span>
+        <input type="text" inputmode="numeric" data-number class="item-subtotal-input" id="sub-${id}" value="0"
+          oninput="recalcItemFromSubtotal(${id})"
+          style="font-size:15px;font-weight:700;color:var(--primary);text-align:right;border:1.5px solid var(--primary);border-radius:7px;padding:5px 10px;width:150px;outline:none;background:#fff;">
       </div>
     `;
     document.getElementById('items-list').appendChild(div);
@@ -920,19 +922,29 @@
   function recalcItem(id) {
     const row = document.getElementById('item-' + id);
     if (!row) return;
-    const qty = parseFloat(row.querySelector('.item-qty-input').value) || 0;
+    const qty   = parseFloat(row.querySelector('.item-qty-input').value) || 0;
     const price = parseFloat(row.querySelector('.item-price-input').value) || 0;
-    const sub = qty * price;
-    document.getElementById('sub-' + id).textContent = formatCurrency(sub);
+    const sub   = qty * price;
+    const subInput = document.getElementById('sub-' + id);
+    if (subInput) subInput.value = Number(sub).toLocaleString('id-ID');
+    recalcTotal();
+  }
+
+  function recalcItemFromSubtotal(id) {
+    const row = document.getElementById('item-' + id);
+    if (!row) return;
+    const qty = parseFloat(row.querySelector('.item-qty-input').value) || 1;
+    const sub = parseFormattedNumber(document.getElementById('sub-' + id).value) || 0;
+    // Back-calculate price from subtotal ÷ qty
+    const price = qty > 0 ? Math.round(sub / qty) : 0;
+    row.querySelector('.item-price-input').value = price;
     recalcTotal();
   }
 
   function recalcTotal() {
     let total = 0;
     document.querySelectorAll('.item-row').forEach(row => {
-      const qty = parseFloat(row.querySelector('.item-qty-input')?.value) || 0;
-      const price = parseFloat(row.querySelector('.item-price-input')?.value) || 0;
-      total += qty * price;
+      total += parseFormattedNumber(row.querySelector('.item-subtotal-input')?.value) || 0;
     });
     document.getElementById('t-subtotal').textContent = formatCurrency(total);
     document.getElementById('t-total').textContent = formatCurrency(total);
@@ -952,8 +964,9 @@
     const items = [];
     for (const row of rows) {
       const sel = row.querySelector('.item-product-sel');
-      const qty = parseFloat(row.querySelector('.item-qty-input').value) || 0;
-      const price = parseFloat(row.querySelector('.item-price-input').value) || 0;
+      const qty      = parseFloat(row.querySelector('.item-qty-input').value) || 0;
+      const price    = parseFloat(row.querySelector('.item-price-input').value) || 0;
+      const subtotal = parseFormattedNumber(row.querySelector('.item-subtotal-input')?.value) || (qty * price);
       if (!sel.value) continue;
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); return; }
       const opt = sel.options[sel.selectedIndex];
@@ -964,7 +977,7 @@
         product_name: opt.text.split(' (Stok:')[0].trim(),
         quantity: qty,
         price: price,
-        subtotal: qty * price,
+        subtotal: subtotal,
         cost_price: parseFloat(opt.dataset.cost) || 0
       });
     }
