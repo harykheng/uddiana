@@ -193,8 +193,78 @@ Minor fixes (typo, favicon, logo) boleh langsung push ke main.
 |---|---|---|
 | `feat/invoice-improvements` | **Pending PR** | Sisa pembayaran di list faktur + data-number untuk pay-amount |
 | `feat/number-format-forms` | **Pending PR** | data-number untuk form buat faktur & modal produk |
+| `fix/print-layout-v4` | **Pending PR** | Layout print invoice untuk dot matrix Epson LQ-310 |
+| `feat/product-sort-search` | **Pending PR** | Sort nama & stok di list produk; search input di tab Produk sales.html |
+| `feat/auto-sku-generate` | **Pending** | Auto-generate SKU saat import/tambah produk tanpa SKU — saat ini isinya sama dengan `feat/product-sort-search` (belum ada kode baru, perlu diimplementasi) |
 
 Merge `feat/invoice-improvements` **dulu** sebelum `feat/number-format-forms` untuk menghindari conflict kecil di `js/utils.js`.
+
+## Known Bug — WAJIB DIPERBAIKI
+
+### `main:products.html` — SyntaxError duplicate `const sku`
+**Gejala:** Halaman products.html di Vercel stuck "Memuat data...", tidak ada Fetch/XHR request ke Supabase, console error: `Uncaught SyntaxError: Identifier 'sku' has already been declared (products.html:839)`.
+
+**Root cause:** Ada dua deklarasi `const sku` di scope yang sama di dalam `products.html` — kemungkinan hasil dari merge dua PR sekaligus (`feat/import-sku-optional` + `feat/product-list-description`) yang masing-masing menambahkan `const sku` di area yang sama. SyntaxError mencegah seluruh inline script dieksekusi.
+
+**Fix:** Cari di `main:products.html` semua baris `const sku` / `let sku` dalam satu function scope, hapus/rename yang duplikat. Setelah fix, push langsung ke `main` (ini hotfix).
+
+## Pending Tasks (prioritas)
+
+1. **[HOTFIX] Fix duplicate `const sku` di `main:products.html`** — products.html broken di Vercel
+2. **Auto-generate SKU** di `feat/auto-sku-generate`: saat import produk tanpa SKU, generate otomatis dari nama produk (misal `"Baju Batik"` → prefix 3 huruf + 4 digit random = `BAJ-4721`). Cek uniqueness vs `allProducts`. Berlaku juga di form tambah manual. Fungsi: `generateSKU(nama, alreadyUsed=null)`.
+3. Merge PR-PR pending setelah fix bug
+
+## Fitur Terbaru (diimplementasi sesi ini)
+
+### sales.html — Major Overhaul (sudah merged ke main)
+- 4 tab: **Buat Faktur**, **Riwayat**, **Produk**, **Wishlist**
+- Tab Produk: search input, filter real-time nama produk
+- Tab Wishlist: sales bisa ajukan produk baru (nama + brand), tersimpan ke tabel `wishlist_items`
+- Form customer: field telepon + alamat
+- Item row: stok ditampilkan (disabled), harga auto-fill dari produk (disabled)
+- `checkUnpaidInvoices(customerId)` — warning jika customer punya faktur belum lunas
+- Payment term values: `'cod'` | `'7_days'` | `'15_days'` | `'30_days'`
+
+### wishlist.html — Halaman Admin Baru (sudah merged ke main)
+- Filter by status (belum/sudah dipenuhi) dan by sales
+- Admin bisa mark wishlist sebagai "Dipenuhi" atau hapus
+- Membutuhkan tabel `wishlist_items` (lihat `supabase_migration5.sql`)
+
+### products.html — Fitur Tambahan (di branch `feat/product-sort-search`)
+- Kolom **Deskripsi** di tabel produk (truncated 160px, full text on hover)
+- Search juga menelusuri deskripsi
+- Sort by **Nama** dan **Stok** (klik header, toggle asc/desc, indikator ▲▼↕)
+- Import: SKU opsional — kolom `sku` di CSV tidak wajib diisi
+- Import: empty SKU → `null` (bukan `""`) agar tidak melanggar unique constraint PostgreSQL
+
+### reset_demo_data.sql (sudah push ke main)
+- TRUNCATE semua tabel transaksi + master data
+- Yang dipertahankan: `user_profiles`, `app_settings`
+- Jalankan di Supabase SQL Editor saat demo reset
+
+### invoices.html — Print Layout (di branch `fix/print-layout-v4`)
+- Optimized untuk dot matrix Epson LQ-310 (continuous form)
+- `@page { size: 9.5in 11in; margin: 0.4in 0.6in; }`
+- Minimal borders (border lambatkan LQ-310): hanya `border-bottom` pada `<th>` dan `border-top` pada grand total
+- Header: Nomor invoice (bold) → nama toko "UD. DIANA" → tanggal cetak (bold) → nama sales
+- Info pembeli di pojok kanan atas (nama toko, telp, alamat, jatuh tempo)
+- TTD + totals dalam 1 baris flex (TTD kiri, totals kanan)
+- Angka tanpa prefix "Rp" di baris item; "Rp" hanya di subtotal, diskon, total
+
+### Tabel Baru — wishlist_items
+```sql
+-- Sudah ada di supabase_migration5.sql
+create table wishlist_items (
+  id uuid default gen_random_uuid() primary key,
+  product_name text not null,
+  brand text,
+  submitted_by_id uuid references auth.users(id),
+  submitted_by_name text,
+  is_fulfilled boolean default false,
+  created_at timestamptz default now()
+);
+-- DISABLE ROW LEVEL SECURITY
+```
 
 ## Page–Role Matrix
 
