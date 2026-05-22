@@ -627,7 +627,7 @@
     const price = parseFormattedNumber(document.getElementById(`price-${rowId}`)?.value);
     const disc  = parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0;
     const sub   = document.getElementById(`sub-${rowId}`);
-    const total = qty * price * (1 - disc / 100);
+    const total = Math.round((qty * price * (1 - disc / 100)) / 100) * 100; // bulatkan ke kelipatan 100
     if (sub) sub.value = total > 0 ? total.toLocaleString('id-ID') : '0';
     recalcTotal();
   }
