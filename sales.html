@@ -924,7 +924,7 @@
     if (!row) return;
     const qty   = parseFloat(row.querySelector('.item-qty-input').value) || 0;
     const price = parseFloat(row.querySelector('.item-price-input').value) || 0;
-    const sub   = qty * price;
+    const sub   = Math.round((qty * price) / 100) * 100; // bulatkan ke kelipatan 100
     const subInput = document.getElementById('sub-' + id);
     if (subInput) subInput.value = Number(sub).toLocaleString('id-ID');
     recalcTotal();
