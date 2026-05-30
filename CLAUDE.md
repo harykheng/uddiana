@@ -250,29 +250,18 @@ Minor fixes (typo, favicon, logo) boleh langsung push ke main.
 
 | Branch | Status | Keterangan |
 |---|---|---|
-| `feat/subtotal-editable` | **Active / Pending PR** | Branch utama saat ini — berisi semua fitur terbaru (lihat daftar di bawah) |
-| `feat/product-sort-search` | **Pending PR** | Sort & search di list produk; search di tab produk sales.html — sudah ter-include di `feat/subtotal-editable` |
+| `feat/subtotal-editable` | **Merged** | Semua fitur terbaru sudah di main |
+| `feat/auto-sku-generate` | **Merged** | Auto-generate SKU UDD-0001, fix import error handling |
+| `feat/product-sort-search` | **Pending PR** | Sort & search di list produk; search di tab produk sales.html |
 | `fix/print-layout-v4` | **Pending PR** | Layout print invoice untuk dot matrix Epson LQ-310 |
 | `feat/invoice-improvements` | **Pending PR** | Sisa pembayaran di list faktur + data-number untuk pay-amount |
 | `feat/number-format-forms` | **Pending PR** | data-number untuk form buat faktur & modal produk |
-| `feat/auto-sku-generate` | **Pending** | Auto-generate SKU — belum diimplementasi, masih sama dengan `feat/product-sort-search` |
 
-**Urutan merge yang aman:** `feat/invoice-improvements` → `feat/number-format-forms` → `feat/product-sort-search` → `feat/subtotal-editable`
-
-## Known Bug — WAJIB DIPERBAIKI
-
-### `main:products.html` — SyntaxError duplicate `const sku`
-**Gejala:** Halaman products.html di Vercel stuck "Memuat data...", tidak ada Fetch/XHR ke Supabase, console error: `Uncaught SyntaxError: Identifier 'sku' has already been declared (products.html:839)`.
-
-**Root cause:** Dua deklarasi `const sku` di scope yang sama di `products.html` — hasil merge dua PR bersamaan. SyntaxError mencegah seluruh inline `<script>` dieksekusi.
-
-**Fix:** Cari semua `const sku` / `let sku` dalam satu function scope di `main:products.html`, hapus yang duplikat. Hotfix langsung ke `main`.
+**Urutan merge yang aman:** `feat/invoice-improvements` → `feat/number-format-forms` → `feat/product-sort-search`
 
 ## Pending Tasks
 
-1. **[HOTFIX]** Fix duplicate `const sku` di `main:products.html` — products.html broken di Vercel
-2. **Auto-generate SKU** (`feat/auto-sku-generate`): saat import atau tambah produk tanpa SKU, generate otomatis dari nama produk. Format: 3 huruf pertama + 4 digit random (contoh: `BAJ-4721`). Cek uniqueness vs `allProducts` dan vs batch import. Berlaku di `runImport()` dan `saveProduct()`.
-3. Merge PR-PR pending setelah hotfix
+1. Merge PR-PR pending: `feat/invoice-improvements` → `feat/number-format-forms` → `feat/product-sort-search`
 
 ## Fitur yang Sudah Diimplementasi (branch feat/subtotal-editable)
 
