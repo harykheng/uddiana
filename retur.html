@@ -556,18 +556,32 @@ create table if not exists return_items (
     const btn = document.getElementById('btn-search-inv');
     setLoading(btn, true);
 
+    // Cari faktur dulu tanpa filter verification_status
     const { data, error } = await supabase
       .from('invoices')
       .select(`*, invoice_items(*, products(name, sku))`)
       .ilike('invoice_number', inv_no)
-      .in('verification_status', ['approved'])
       .neq('status', 'cancelled')
-      .single();
+      .maybeSingle();
 
     setLoading(btn, false);
 
-    if (error || !data) {
-      showToast('Faktur tidak ditemukan atau belum diverifikasi', 'error');
+    if (error) {
+      showToast('Gagal mencari faktur: ' + error.message, 'error');
+      document.getElementById('inv-found-box').style.display = 'none';
+      document.getElementById('btn-submit-retur').style.display = 'none';
+      selectedInvoice = null;
+      return;
+    }
+    if (!data) {
+      showToast('Faktur tidak ditemukan atau sudah dibatalkan', 'error');
+      document.getElementById('inv-found-box').style.display = 'none';
+      document.getElementById('btn-submit-retur').style.display = 'none';
+      selectedInvoice = null;
+      return;
+    }
+    if (data.verification_status && data.verification_status !== 'approved') {
+      showToast(`Faktur belum disetujui — status verifikasi: ${data.verification_status}`, 'error');
       document.getElementById('inv-found-box').style.display = 'none';
       document.getElementById('btn-submit-retur').style.display = 'none';
       selectedInvoice = null;
