@@ -355,24 +355,26 @@
       </div>
       <div id="edit-items-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
         ${items.map((it, idx) => `
-          <div class="edit-item-row" data-item-id="${it.id}" data-original-qty="${it.quantity}" style="display:grid;grid-template-columns:2fr 80px 120px auto;gap:8px;align-items:end;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px">
-            <div>
-              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Produk</label>
-              <select class="edit-product-sel" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
-                ${allProducts.map(p => `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}"${p.id===it.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
-              </select>
-            </div>
-            <div>
-              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Qty</label>
-              <input type="number" class="edit-qty" value="${it.quantity}" min="1" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
-            </div>
-            <div>
-              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga</label>
-              <input type="text" inputmode="numeric" class="edit-price" value="${Number(it.price||0).toLocaleString('id-ID')}" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
-            </div>
-            <div style="text-align:right">
-              <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Sub</label>
-              <span class="edit-sub" style="font-size:13px;font-weight:600;color:#2563eb">${formatCurrency(it.subtotal)}</span>
+          <div class="edit-item-row" data-item-id="${it.id}" data-original-qty="${it.quantity}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:4px">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 150px 130px;gap:8px;align-items:end">
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Produk</label>
+                <select class="edit-product-sel" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
+                  ${allProducts.map(p => `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}"${p.id===it.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Qty</label>
+                <input type="number" class="edit-qty" value="${it.quantity}" min="1" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga</label>
+                <input type="text" inputmode="numeric" data-number class="edit-price" value="${Number(it.price||0).toLocaleString('id-ID')}" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Subtotal</label>
+                <input type="text" class="edit-sub" readonly value="${Number(it.subtotal||0).toLocaleString('id-ID')}" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;font-weight:700;color:#2563eb;background:#eff6ff;outline:none">
+              </div>
             </div>
           </div>`).join('')}
       </div>
@@ -406,7 +408,7 @@
     const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
     const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
     const sub = Math.round((qty * price) / 100) * 100;
-    row.querySelector('.edit-sub').textContent = formatCurrency(sub);
+    row.querySelector('.edit-sub').value = sub.toLocaleString('id-ID');
     recalcEditTotal();
   }
 
