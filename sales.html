@@ -874,10 +874,9 @@
         </div>
       </div>
       <div class="item-subtotal-row">
-        <span class="item-subtotal-label">Subtotal <span style="font-size:10px;color:var(--muted)">(bisa diedit)</span></span>
-        <input type="text" inputmode="numeric" data-number class="item-subtotal-input" id="sub-${id}" value="0"
-          oninput="recalcItemFromSubtotal(${id})"
-          style="font-size:15px;font-weight:700;color:var(--primary);text-align:right;border:1.5px solid var(--primary);border-radius:7px;padding:5px 10px;width:150px;outline:none;background:#fff;">
+        <span class="item-subtotal-label">Subtotal</span>
+        <input type="text" class="item-subtotal-input" id="sub-${id}" value="0" readonly
+          style="font-size:15px;font-weight:700;color:var(--primary);text-align:right;border:none;background:transparent;width:150px;pointer-events:none;">
       </div>
     `;
     document.getElementById('items-list').appendChild(div);
@@ -930,18 +929,7 @@
     recalcTotal();
   }
 
-  function recalcItemFromSubtotal(id) {
-    const row = document.getElementById('item-' + id);
-    if (!row) return;
-    const qty = parseFloat(row.querySelector('.item-qty-input').value) || 1;
-    const sub = parseFormattedNumber(document.getElementById('sub-' + id).value) || 0;
-    // Back-calculate price from subtotal ÷ qty
-    const price = qty > 0 ? Math.round(sub / qty) : 0;
-    row.querySelector('.item-price-input').value = price;
-    recalcTotal();
-  }
-
-  function recalcTotal() {
+function recalcTotal() {
     let total = 0;
     document.querySelectorAll('.item-row').forEach(row => {
       total += parseFormattedNumber(row.querySelector('.item-subtotal-input')?.value) || 0;
