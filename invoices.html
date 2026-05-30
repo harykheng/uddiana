@@ -822,11 +822,17 @@
     const newTotalPaid  = alreadyPaid + amount;
     const isFullyPaid   = newTotalPaid >= Number(inv?.total || total);
 
+    // Akumulasi per metode pembayaran (untuk laporan laba rugi)
+    const prevCash     = Number(inv?.cash_paid     || 0);
+    const prevTransfer = Number(inv?.transfer_paid || 0);
+
     const updateData = {
       paid_amount:    newTotalPaid,
       payment_method: currentPayMethod,
       payment_date:   date || todayISO(),
       payment_notes:  notes || null,
+      cash_paid:     currentPayMethod === 'cash'     ? prevCash + amount     : prevCash,
+      transfer_paid: currentPayMethod === 'transfer' ? prevTransfer + amount : prevTransfer,
     };
     if (isFullyPaid) updateData.status = 'paid';
 
