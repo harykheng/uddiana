@@ -136,7 +136,7 @@
                 <th>SKU</th>
                 <th class="sortable" id="th-name" onclick="setSort('name')">Nama Produk <span class="sort-icon"></span></th>
                 <th>Kategori</th>
-                <th>Harga Biasa</th>
+                <th>Harga Biasa<br><span style="font-weight:400;font-size:10px;opacity:.6">pcs / lusin</span></th>
                 <th>Harga Shopee</th>
                 <th>Harga Modal</th>
                 <th class="sortable" id="th-stock" onclick="setSort('stock_quantity')">Stok <span class="sort-icon"></span></th>
@@ -453,7 +453,10 @@
         <td><code style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px">${escapeHtml(p.sku)}</code></td>
         <td><strong>${escapeHtml(p.name)}</strong></td>
         <td>${escapeHtml(cat)}</td>
-        <td class="text-right">${formatCurrency(p.price)}</td>
+        <td class="text-right">
+          <div>${formatCurrency(p.price)}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(Math.round((p.price * 12) / 100) * 100)}/lsn</div>
+        </td>
         <td class="text-right">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
         <td class="text-right">${formatCurrency(p.cost)}</td>
         <td class="text-right font-bold ${stockClass}">${p.stock_quantity}</td>
@@ -680,6 +683,7 @@
       'Kategori':      p.categories?.name || '',
       'Satuan':        p.unit,
       'Harga Biasa':   p.price,
+      'Harga Lusin':   Math.round((p.price * 12) / 100) * 100,
       'Harga Shopee':  p.price_shopee || 0,
       'Harga Modal':   p.cost || 0,
       'Stok':          p.stock_quantity,
@@ -689,7 +693,7 @@
 
     const ws = XLSX.utils.json_to_sheet(rows);
     // Lebar kolom
-    ws['!cols'] = [8,30,16,8,14,14,14,8,8,30].map(w => ({ wch: w }));
+    ws['!cols'] = [8,30,16,8,14,14,14,14,8,8,30].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Produk');
     const now = new Date();
