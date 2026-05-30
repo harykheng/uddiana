@@ -321,26 +321,36 @@
   async function loadInvoiceData(from, to) {
     // Get paid invoices in range
     const { data: invoices } = await supabase
-      .from('invoices').select('id,total,invoice_date,payment_method')
+      .from('invoices').select('id,total,invoice_date,payment_method,cash_paid,transfer_paid')
       .eq('status', 'paid')
       .gte('invoice_date', from).lte('invoice_date', to);
+
+    // Helper: ambil cash/transfer per invoice dengan fallback untuk data lama
+    const getCash = i => {
+      const c = Number(i.cash_paid || 0), t = Number(i.transfer_paid || 0);
+      if (c === 0 && t === 0) return i.payment_method === 'cash' ? Number(i.total) : 0;
+      return c;
+    };
+    const getTransfer = i => {
+      const c = Number(i.cash_paid || 0), t = Number(i.transfer_paid || 0);
+      if (c === 0 && t === 0) return i.payment_method === 'transfer' ? Number(i.total) : 0;
+      return t;
+    };
 
     const invIds = (invoices||[]).map(i => i.id);
     reportData.txnCount      = invIds.length;
     reportData.revenue       = (invoices||[]).reduce((s,i) => s + Number(i.total), 0);
-    reportData.cashTotal     = (invoices||[]).filter(i => i.payment_method === 'cash').reduce((s,i) => s + Number(i.total), 0);
-    reportData.transferTotal = (invoices||[]).filter(i => i.payment_method === 'transfer').reduce((s,i) => s + Number(i.total), 0);
+    reportData.cashTotal     = (invoices||[]).reduce((s,i) => s + getCash(i), 0);
+    reportData.transferTotal = (invoices||[]).reduce((s,i) => s + getTransfer(i), 0);
 
     // Monthly breakdown (cash vs transfer per bulan)
     const monthlyMap = {};
     (invoices||[]).forEach(inv => {
       const m = inv.invoice_date.substring(0, 7); // YYYY-MM
       if (!monthlyMap[m]) monthlyMap[m] = { cash:0, transfer:0, other:0, total:0 };
-      const amt = Number(inv.total);
-      monthlyMap[m].total += amt;
-      if (inv.payment_method === 'cash')         monthlyMap[m].cash     += amt;
-      else if (inv.payment_method === 'transfer') monthlyMap[m].transfer += amt;
-      else                                        monthlyMap[m].other    += amt;
+      monthlyMap[m].total    += Number(inv.total);
+      monthlyMap[m].cash     += getCash(inv);
+      monthlyMap[m].transfer += getTransfer(inv);
     });
     reportData.monthly = Object.entries(monthlyMap)
       .sort((a,b) => a[0].localeCompare(b[0]))
