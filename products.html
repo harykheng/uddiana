@@ -8,6 +8,14 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+  <style>
+    .ts-wrapper .ts-control { border:1px solid var(--border); border-radius:7px; padding:7px 12px; box-shadow:none; min-height:unset; font-size:13.5px; }
+    .ts-wrapper.focus .ts-control { border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.1); }
+    .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; z-index:9999 !important; }
+    .ts-dropdown .option { padding:8px 12px; }
+    .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
+  </style>
   <style>
     .category-wrap { display:flex; gap:6px; align-items:center; }
     .category-wrap select { flex:1; }
@@ -351,6 +359,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
@@ -375,12 +384,24 @@
     refreshCategorySelects();
   }
 
+  let categoryTomSelect = null;
+
   function refreshCategorySelects() {
     const opts = categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
     document.getElementById('filter-category').innerHTML = '<option value="">Semua Kategori</option>' + opts;
-    const currentVal = document.getElementById('product-category').value;
+
+    const currentVal = categoryTomSelect ? categoryTomSelect.getValue() : '';
     document.getElementById('product-category').innerHTML = '<option value="">-- Pilih Kategori --</option>' + opts;
-    document.getElementById('product-category').value = currentVal;
+
+    if (categoryTomSelect) {
+      categoryTomSelect.destroy();
+    }
+    categoryTomSelect = new TomSelect('#product-category', {
+      placeholder: '— Cari atau pilih kategori —',
+      maxOptions: 200,
+      dropdownParent: 'body',
+    });
+    if (currentVal) categoryTomSelect.setValue(currentVal, true);
   }
 
   async function loadProducts() {
@@ -523,7 +544,7 @@
     ['product-price','product-price-shopee','product-cost'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('product-stock').value = '0';
     document.getElementById('product-min-stock').value = '0';
-    document.getElementById('product-category').value = '';
+    if (categoryTomSelect) categoryTomSelect.setValue('', true);
     document.getElementById('product-unit').value = 'pcs';
     document.getElementById('modal-product-title').textContent = 'Tambah Produk';
     openModal('modal-product');
@@ -535,7 +556,7 @@
     document.getElementById('product-id').value = p.id;
     document.getElementById('product-name').value = p.name;
     document.getElementById('product-sku').value = p.sku;
-    document.getElementById('product-category').value = p.category_id || '';
+    if (categoryTomSelect) categoryTomSelect.setValue(p.category_id || '', true);
     document.getElementById('product-unit').value = p.unit;
     document.getElementById('product-price').value = Number(p.price || 0).toLocaleString('id-ID');
     document.getElementById('product-price-shopee').value = Number(p.price_shopee || 0).toLocaleString('id-ID');
@@ -567,7 +588,7 @@
 
     const payload = {
       name, sku,
-      category_id: document.getElementById('product-category').value || null,
+      category_id: categoryTomSelect ? (categoryTomSelect.getValue() || null) : (document.getElementById('product-category').value || null),
       unit: document.getElementById('product-unit').value,
       price,
       price_shopee: parseFormattedNumber(document.getElementById('product-price-shopee').value),
@@ -635,7 +656,7 @@
     showToast(`Kategori "${name}" ditambahkan`);
     closeModal('modal-add-category');
     await loadCategories();
-    document.getElementById('product-category').value = data.id;
+    if (categoryTomSelect) { categoryTomSelect.addOption({ value: data.id, text: data.name }); categoryTomSelect.setValue(data.id, true); }
   }
 
   // ── ADJUST STOCK ───────────────────────────────────────────
