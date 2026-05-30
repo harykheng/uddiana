@@ -368,7 +368,7 @@
             </div>
             <div>
               <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga</label>
-              <input type="number" class="edit-price" value="${it.price}" min="0" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
+              <input type="text" inputmode="numeric" class="edit-price" value="${Number(it.price||0).toLocaleString('id-ID')}" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
             </div>
             <div style="text-align:right">
               <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Sub</label>
@@ -397,15 +397,16 @@
   function updateEditProduct(sel, idx) {
     const row = sel.closest('.edit-item-row');
     const opt = sel.options[sel.selectedIndex];
-    row.querySelector('.edit-price').value = opt.dataset.price || 0;
+    row.querySelector('.edit-price').value = Number(opt.dataset.price || 0).toLocaleString('id-ID');
     recalcEditRow(row.querySelector('.edit-qty'));
   }
 
   function recalcEditRow(input) {
     const row = input.closest('.edit-item-row');
     const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
-    const price = parseFloat(row.querySelector('.edit-price').value) || 0;
-    row.querySelector('.edit-sub').textContent = formatCurrency(qty * price);
+    const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
+    const sub = Math.round((qty * price) / 100) * 100;
+    row.querySelector('.edit-sub').textContent = formatCurrency(sub);
     recalcEditTotal();
   }
 
@@ -413,8 +414,8 @@
     let total = 0;
     document.querySelectorAll('.edit-item-row').forEach(row => {
       const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
-      const price = parseFloat(row.querySelector('.edit-price').value) || 0;
-      total += qty * price;
+      const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
+      total += Math.round((qty * price) / 100) * 100;
     });
     document.getElementById('edit-total').textContent = formatCurrency(total);
   }
@@ -432,8 +433,8 @@
       const originalQty = parseFloat(row.dataset.originalQty) || 0;
       const productId = row.querySelector('.edit-product-sel').value;
       const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
-      const price = parseFloat(row.querySelector('.edit-price').value) || 0;
-      const sub = qty * price;
+      const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
+      const sub = Math.round((qty * price) / 100) * 100;
       const opt = row.querySelector('.edit-product-sel').options[row.querySelector('.edit-product-sel').selectedIndex];
       const cost = parseFloat(opt.dataset.cost) || 0;
       const productName = opt.text || '';

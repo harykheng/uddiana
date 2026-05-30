@@ -234,13 +234,13 @@
         </div>
         <div class="form-group">
           <label>Stok Awal</label>
-          <input type="text" inputmode="numeric" data-number id="product-stock" placeholder="0">
+          <input type="number" id="product-stock" placeholder="0" min="0" style="width:100%">
         </div>
       </div>
       <div class="form-row">
         <div class="form-group">
           <label>Minimum Stok</label>
-          <input type="text" inputmode="numeric" data-number id="product-min-stock" placeholder="0">
+          <input type="number" id="product-min-stock" placeholder="0" min="0" style="width:100%">
         </div>
         <div class="form-group"></div>
       </div>
@@ -540,8 +540,8 @@
     document.getElementById('product-price').value = Number(p.price || 0).toLocaleString('id-ID');
     document.getElementById('product-price-shopee').value = Number(p.price_shopee || 0).toLocaleString('id-ID');
     document.getElementById('product-cost').value = Number(p.cost || 0).toLocaleString('id-ID');
-    document.getElementById('product-stock').value = Number(p.stock_quantity || 0).toLocaleString('id-ID');
-    document.getElementById('product-min-stock').value = Number(p.min_stock || 0).toLocaleString('id-ID');
+    document.getElementById('product-stock').value = p.stock_quantity || 0;
+    document.getElementById('product-min-stock').value = p.min_stock || 0;
     document.getElementById('product-desc').value = p.description || '';
     document.getElementById('modal-product-title').textContent = 'Edit Produk';
     openModal('modal-product');
@@ -572,8 +572,8 @@
       price,
       price_shopee: parseFormattedNumber(document.getElementById('product-price-shopee').value),
       cost: parseFormattedNumber(document.getElementById('product-cost').value),
-      stock_quantity: Math.round(parseFormattedNumber(document.getElementById('product-stock').value)),
-      min_stock: Math.round(parseFormattedNumber(document.getElementById('product-min-stock').value)),
+      stock_quantity: parseInt(document.getElementById('product-stock').value) || 0,
+      min_stock: parseInt(document.getElementById('product-min-stock').value) || 0,
       description: document.getElementById('product-desc').value.trim() || null,
     };
 
