@@ -312,6 +312,47 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
+     MODAL: EDIT FAKTUR
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-edit-invoice">
+  <div class="modal modal-xl">
+    <div class="modal-header">
+      <h3 id="edit-invoice-title">Edit Faktur</h3>
+      <button class="modal-close" onclick="closeModal('modal-edit-invoice')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="edit-invoice-items-wrap">
+        <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">Item Penjualan</div>
+        <div class="table-wrap" style="margin-bottom:8px">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead>
+              <tr style="background:#f8fafc">
+                <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:34%">Produk</th>
+                <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Stok</th>
+                <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Qty</th>
+                <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:16%">Harga Satuan</th>
+                <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Disc %</th>
+                <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Subtotal</th>
+                <th style="padding:8px 6px;width:6%"></th>
+              </tr>
+            </thead>
+            <tbody id="edit-invoice-items-body"></tbody>
+          </table>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="addEditItemRow()" style="margin-bottom:14px">+ Tambah Item</button>
+        <div class="invoice-summary">
+          <div class="invoice-summary-row total"><span>TOTAL</span><span id="edit-inv-total" style="color:var(--primary)">Rp 0</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-invoice')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-edit-invoice" onclick="saveEditInvoice()">💾 Simpan Perubahan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
      MODAL: PELUNASAN
 ════════════════════════════════════════════════════════════ -->
 <div class="modal-overlay" id="modal-payment">
@@ -526,6 +567,7 @@
         <td>
           <div class="table-actions">
             ${inv.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="openPayment('${inv.id}')">💳 ${paidAmt > 0 ? 'Bayar Lagi' : 'Lunasi'}</button>` : ''}
+            ${inv.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openEditInvoice('${inv.id}')">✏️</button>` : ''}
             <button class="btn btn-ghost btn-sm" onclick="viewInvoice('${inv.id}')">👁</button>
           </div>
         </td>
@@ -736,6 +778,195 @@
 
     showToast(`Faktur ${invData.invoice_number} dibuat! Status: Belum Lunas`);
     closeModal('modal-create-invoice');
+    loadInvoices();
+  }
+
+  // ── EDIT INVOICE ───────────────────────────────────────────
+  let editInvoiceId = null;
+  let editItemRowCount = 0;
+
+  function openEditInvoice(id) {
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv) return;
+    editInvoiceId = id;
+    editItemRowCount = 0;
+    document.getElementById('edit-invoice-title').textContent = `Edit Faktur: ${inv.invoice_number}`;
+    document.getElementById('edit-invoice-items-body').innerHTML = '';
+
+    (inv.invoice_items || []).forEach(it => addEditItemRow(it));
+    addEditItemRow(); // baris kosong untuk tambah item baru
+    recalcEditInvoiceTotal();
+    openModal('modal-edit-invoice');
+  }
+
+  function addEditItemRow(existingItem = null) {
+    const id = `erow-${++editItemRowCount}`;
+    const tbody = document.getElementById('edit-invoice-items-body');
+    const tr = document.createElement('tr');
+    tr.id = id;
+    if (existingItem) {
+      tr.dataset.itemId = existingItem.id;
+      tr.dataset.originalQty = existingItem.quantity;
+      tr.dataset.originalProductId = existingItem.product_id;
+    }
+    tr.innerHTML = `
+      <td style="padding:5px 6px">
+        <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
+          <option value="">-- Pilih Produk --</option>
+          ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}"${existingItem && p.id===existingItem.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingItem ? (products.find(p=>p.id===existingItem.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eqty-${id}" value="${existingItem ? existingItem.quantity : '1'}" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eprice-${id}" value="${existingItem ? Number(existingItem.price||0).toLocaleString('id-ID') : '0'}" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="edisc-${id}" value="${existingItem ? (existingItem.item_discount||0) : '0'}" style="width:50px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')" placeholder="0"></td>
+      <td style="padding:5px 6px"><input type="text" id="esub-${id}" readonly value="${existingItem ? Number(existingItem.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:95px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)"></td>
+      <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcEditInvoiceTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
+    `;
+    tbody.appendChild(tr);
+    const sel = tr.querySelector('select');
+    new TomSelect(sel, {
+      placeholder: '— Cari & pilih produk —',
+      maxOptions: 200,
+      dropdownParent: 'body',
+      onChange: () => {
+        const opt = sel.options[sel.selectedIndex];
+        document.getElementById(`estock-${id}`).value = opt.dataset.stock || 0;
+        document.getElementById(`eprice-${id}`).value = Number(opt.dataset.price || 0).toLocaleString('id-ID');
+        recalcEditInvoiceRow(id);
+      }
+    });
+  }
+
+  function recalcEditInvoiceRow(rowId) {
+    const qty   = parseFormattedNumber(document.getElementById(`eqty-${rowId}`)?.value || '0');
+    const price = parseFormattedNumber(document.getElementById(`eprice-${rowId}`)?.value || '0');
+    const disc  = parseFormattedNumber(document.getElementById(`edisc-${rowId}`)?.value || '0');
+    const sub   = Math.round((qty * price * (1 - disc / 100)) / 100) * 100;
+    const subEl = document.getElementById(`esub-${rowId}`);
+    if (subEl) subEl.value = sub > 0 ? sub.toLocaleString('id-ID') : '0';
+    recalcEditInvoiceTotal();
+  }
+
+  function recalcEditInvoiceTotal() {
+    let total = 0;
+    document.querySelectorAll('#edit-invoice-items-body tr').forEach(tr => {
+      const subEl = tr.querySelector('[id^="esub-"]');
+      total += parseFormattedNumber(subEl?.value || '0');
+    });
+    document.getElementById('edit-inv-total').textContent = formatCurrency(total);
+  }
+
+  async function saveEditInvoice() {
+    const btn = document.getElementById('btn-save-edit-invoice');
+    const inv = allInvoices.find(x => x.id === editInvoiceId);
+    if (!inv) return;
+
+    const rows = document.querySelectorAll('#edit-invoice-items-body tr');
+    const newItems = [];
+    let total = 0;
+    let valid = true;
+
+    for (const tr of rows) {
+      const sel = tr.querySelector('select');
+      if (!sel?.value) continue;
+      const qty   = Math.round(parseFormattedNumber(tr.querySelector('[id^="eqty-"]')?.value || '0'));
+      const price = parseFormattedNumber(tr.querySelector('[id^="eprice-"]')?.value || '0');
+      const disc  = parseFormattedNumber(tr.querySelector('[id^="edisc-"]')?.value || '0');
+      const sub   = Math.round((qty * price * (1 - disc / 100)) / 100) * 100;
+      const prod  = products.find(p => p.id === sel.value);
+      const cost  = parseFloat(sel.options[sel.selectedIndex].dataset.cost) || 0;
+      const stockEl = tr.querySelector('[id^="estock-"]');
+      const stockAvail = parseInt(stockEl?.value || '0');
+      const originalQty = parseInt(tr.dataset.originalQty || '0');
+      const isSameProduct = tr.dataset.originalProductId === sel.value;
+
+      if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); valid = false; break; }
+
+      // Stok cukup untuk penambahan qty (qty baru - qty lama, hanya untuk produk sama)
+      const qtyDiff = isSameProduct ? qty - originalQty : qty;
+      if (qtyDiff > stockAvail) {
+        showToast(`Stok "${prod?.name}" tidak cukup (tersedia: ${stockAvail})`, 'error');
+        valid = false; break;
+      }
+
+      newItems.push({
+        itemId: tr.dataset.itemId || null,
+        originalProductId: tr.dataset.originalProductId || null,
+        originalQty,
+        product_id: sel.value,
+        product_name: prod?.name || '',
+        quantity: qty,
+        price,
+        item_discount: disc,
+        subtotal: sub,
+        cost_price: cost,
+        isSameProduct,
+      });
+      total += sub;
+    }
+
+    if (!valid) return;
+    if (!newItems.length) { showToast('Tambahkan minimal 1 produk', 'error'); return; }
+
+    setLoading(btn, true);
+
+    // Kumpulkan item ID lama untuk mendeteksi item yang dihapus
+    const oldItemIds = new Set((inv.invoice_items || []).map(it => it.id));
+    const keptItemIds = new Set(newItems.filter(x => x.itemId).map(x => x.itemId));
+    const deletedItems = (inv.invoice_items || []).filter(it => !keptItemIds.has(it.id));
+
+    // Restore stok untuk item yang dihapus
+    for (const it of deletedItems) {
+      if (!it.product_id) continue;
+      const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', it.product_id).single();
+      if (prod) await supabase.from('products').update({ stock_quantity: prod.stock_quantity + it.quantity }).eq('id', it.product_id);
+      await supabase.from('invoice_items').delete().eq('id', it.id);
+    }
+
+    // Update/insert items
+    for (const item of newItems) {
+      const qtyDiff = item.isSameProduct ? item.quantity - item.originalQty : item.quantity;
+      const payload = {
+        invoice_id: editInvoiceId,
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        price: item.price,
+        item_discount: item.item_discount,
+        subtotal: item.subtotal,
+        cost_price: item.cost_price,
+      };
+
+      if (item.itemId && item.isSameProduct) {
+        // Update item lama — adjust stok jika qty berubah
+        await supabase.from('invoice_items').update(payload).eq('id', item.itemId);
+        if (qtyDiff !== 0) {
+          const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', item.product_id).single();
+          if (prod) await supabase.from('products').update({ stock_quantity: prod.stock_quantity - qtyDiff }).eq('id', item.product_id);
+        }
+      } else {
+        // Item baru atau ganti produk — jika ganti produk restore stok lama dulu
+        if (item.itemId && !item.isSameProduct) {
+          const oldItem = inv.invoice_items.find(x => x.id === item.itemId);
+          if (oldItem) {
+            const { data: oldProd } = await supabase.from('products').select('stock_quantity').eq('id', oldItem.product_id).single();
+            if (oldProd) await supabase.from('products').update({ stock_quantity: oldProd.stock_quantity + oldItem.quantity }).eq('id', oldItem.product_id);
+            await supabase.from('invoice_items').delete().eq('id', item.itemId);
+          }
+        }
+        await supabase.from('invoice_items').insert(payload);
+        const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', item.product_id).single();
+        if (prod) await supabase.from('products').update({ stock_quantity: prod.stock_quantity - item.quantity }).eq('id', item.product_id);
+      }
+    }
+
+    // Update total faktur
+    await supabase.from('invoices').update({ total, subtotal: total }).eq('id', editInvoiceId);
+
+    setLoading(btn, false);
+    showToast('Faktur berhasil diperbarui!', 'success');
+    closeModal('modal-edit-invoice');
     loadInvoices();
   }
 
