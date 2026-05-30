@@ -785,18 +785,27 @@
   let editInvoiceId = null;
   let editItemRowCount = 0;
 
-  function openEditInvoice(id) {
+  async function openEditInvoice(id) {
     const inv = allInvoices.find(x => x.id === id);
     if (!inv) return;
     editInvoiceId = id;
     editItemRowCount = 0;
     document.getElementById('edit-invoice-title').textContent = `Edit Faktur: ${inv.invoice_number}`;
-    document.getElementById('edit-invoice-items-body').innerHTML = '';
-
-    (inv.invoice_items || []).forEach(it => addEditItemRow(it));
-    addEditItemRow(); // baris kosong untuk tambah item baru
-    recalcEditInvoiceTotal();
+    document.getElementById('edit-invoice-items-body').innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-muted)">Memuat item...</td></tr>';
     openModal('modal-edit-invoice');
+
+    // Fetch invoice items dari DB karena loadInvoices tidak include invoice_items
+    const { data, error } = await supabase
+      .from('invoice_items')
+      .select('*')
+      .eq('invoice_id', id);
+
+    if (error) { showToast('Gagal memuat item faktur: ' + error.message, 'error'); return; }
+
+    document.getElementById('edit-invoice-items-body').innerHTML = '';
+    (data || []).forEach(it => addEditItemRow(it));
+    addEditItemRow(); // baris kosong untuk item baru
+    recalcEditInvoiceTotal();
   }
 
   function addEditItemRow(existingItem = null) {
