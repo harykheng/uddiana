@@ -547,11 +547,20 @@
     openModal('modal-product');
   }
 
+  function generateSKU() {
+    let max = 0;
+    for (const p of allProducts) {
+      const m = (p.sku || '').match(/^UDD-(\d+)$/i);
+      if (m) max = Math.max(max, parseInt(m[1]));
+    }
+    return `UDD-${String(max + 1).padStart(4, '0')}`;
+  }
+
   async function saveProduct() {
     const btn = document.getElementById('btn-save-product');
     const id = document.getElementById('product-id').value;
     const name = document.getElementById('product-name').value.trim();
-    const sku  = document.getElementById('product-sku').value.trim();
+    const sku  = document.getElementById('product-sku').value.trim() || generateSKU();
     const price = parseFormattedNumber(document.getElementById('product-price').value);
     if (!name) { showToast('Nama produk wajib diisi', 'error'); return; }
     if (price <= 0) { showToast('Harga jual harus lebih dari 0', 'error'); return; }
@@ -811,7 +820,8 @@
   async function runImport() {
     if (!importRows.length) return;
     const btn = document.getElementById('btn-run-import');
-    btn.disabled = true; btn.textContent = 'Mengimpor...';
+    const total = importRows.length;
+    btn.disabled = true;
 
     let added = 0, updated = 0, errors = [];
 
@@ -819,11 +829,28 @@
     const catMap = {};
     for (const c of categories) catMap[c.name.toLowerCase()] = c.id;
 
-    for (const row of importRows) {
+    // Track SKU counter across batch so generated SKUs don't collide
+    let skuCounter = 0;
+    for (const p of allProducts) {
+      const m = (p.sku || '').match(/^UDD-(\d+)$/i);
+      if (m) skuCounter = Math.max(skuCounter, parseInt(m[1]));
+    }
+    const batchSkus = new Set(allProducts.map(p => (p.sku || '').toUpperCase()));
+
+    for (let i = 0; i < importRows.length; i++) {
+      const row = importRows[i];
+      btn.textContent = `Mengimpor ${i + 1}/${total}...`;
       try {
-        const sku  = (row.sku || '').trim() || null;
+        let sku = (row.sku || '').trim() || null;
         const nama = (row.nama || '').trim();
-        if (!nama) { errors.push(`Baris "${nama||'?'}": kolom nama kosong`); continue; }
+        if (!nama) { errors.push({ nama: '?', sku: row.sku || '—', reason: 'Kolom nama kosong' }); continue; }
+
+        // Auto-generate SKU jika kosong
+        if (!sku) {
+          skuCounter++;
+          sku = `UDD-${String(skuCounter).padStart(4, '0')}`;
+          batchSkus.add(sku.toUpperCase());
+        }
 
         // Resolve category
         let catId = null;
@@ -838,7 +865,7 @@
 
         const payload = {
           name:           nama,
-          sku:            sku || null,
+          sku:            sku,
           category_id:    catId,
           unit:           row.satuan || 'pcs',
           price:          parseFloat(row.harga_biasa)  || 0,
