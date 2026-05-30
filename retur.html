@@ -8,6 +8,22 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+  <style>
+    .ts-wrapper .ts-control { border:1px solid var(--border); border-radius:6px; padding:6px 10px; box-shadow:none; min-height:unset; font-size:13px; }
+    .ts-wrapper.focus .ts-control { border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.1); }
+    .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; z-index:9999 !important; }
+    .ts-dropdown .option { padding:8px 12px; }
+    .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
+    .inv-card {
+      border:1.5px solid var(--border); border-radius:8px; padding:12px 14px;
+      cursor:pointer; transition:all .15s; margin-bottom:8px; background:var(--surface);
+    }
+    .inv-card:hover { border-color:var(--primary); background:#eff6ff; }
+    .inv-card.selected { border-color:var(--primary); background:#eff6ff; }
+    .inv-card-no { font-weight:800; font-size:14px; color:var(--primary); }
+    .inv-card-meta { font-size:12px; color:var(--text-muted); margin-top:3px; }
+  </style>
   <style>
     /* ── SUMMARY CARDS ── */
     .rt-card {
@@ -251,18 +267,16 @@
     </div>
     <div class="modal-body" style="max-height:80vh; overflow-y:auto;">
 
-      <!-- Step 1: Cari Faktur -->
+      <!-- Step 1: Pilih Customer → Pilih Faktur -->
       <div id="create-step1">
-        <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
-          Masukkan nomor faktur penjualan untuk mencari barang yang bisa diretur.
-        </p>
         <div class="form-group">
-          <label class="form-label">Nomor Faktur <span style="color:red">*</span></label>
-          <div class="inv-search-row">
-            <input type="text" id="search-inv-no" class="form-control" placeholder="Contoh: INV-20250101-001"
-              oninput="this.value = this.value.toUpperCase()" onkeydown="if(event.key==='Enter') searchInvoice()">
-            <button class="btn btn-primary" onclick="searchInvoice()" id="btn-search-inv">🔍 Cari</button>
-          </div>
+          <label class="form-label">Pilih Customer <span style="color:red">*</span></label>
+          <select id="retur-customer-select"><option value="">— Ketik nama customer —</option></select>
+        </div>
+
+        <div id="inv-list-box" style="display:none">
+          <label class="form-label" style="margin-bottom:8px;display:block">Pilih Faktur</label>
+          <div id="inv-list-wrap" style="max-height:220px;overflow-y:auto;margin-bottom:14px"></div>
         </div>
 
         <div id="inv-found-box" style="display:none">
@@ -376,6 +390,7 @@
 <!-- Print area -->
 <div id="print-area"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
@@ -419,29 +434,108 @@ create table if not exists return_items (
 );`;
 
   // ── Init ───────────────────────────────────────────────────────────────
+  let customerTomSelect = null;
+
   async function init() {
     const auth = await requireAdmin();
     if (!auth) return;
     currentUser = auth;
 
-    // Update avatar
     const av = document.getElementById('user-avatar-initial');
     if (av) av.textContent = (auth.profile?.name || 'A')[0].toUpperCase();
 
-    // Check if returns table exists
     const { error: tableCheck } = await supabase.from('returns').select('id').limit(1);
     if (tableCheck && (tableCheck.code === '42P01' || tableCheck.message?.includes('does not exist') || tableCheck.message?.includes('relation'))) {
       showSetupNotice();
       return;
     }
 
-    // Set default dates (current month)
     const today = new Date();
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
     document.getElementById('filter-from').value = firstDay.toISOString().split('T')[0];
     document.getElementById('filter-to').value   = today.toISOString().split('T')[0];
 
-    await loadReturns();
+    await Promise.all([loadReturns(), loadCustomersForRetur()]);
+  }
+
+  async function loadCustomersForRetur() {
+    const { data } = await supabase.from('customers').select('id, name, store_name').order('name');
+    const sel = document.getElementById('retur-customer-select');
+    (data || []).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.store_name ? `${c.name} (${c.store_name})` : c.name;
+      sel.appendChild(opt);
+    });
+
+    if (customerTomSelect) customerTomSelect.destroy();
+    customerTomSelect = new TomSelect(sel, {
+      placeholder: '— Ketik nama customer —',
+      maxOptions: 200,
+      onChange: (val) => val ? onReturCustomerSelect(val) : resetInvoiceList(),
+    });
+  }
+
+  async function onReturCustomerSelect(customerId) {
+    document.getElementById('inv-list-box').style.display = 'block';
+    document.getElementById('inv-list-wrap').innerHTML = '<p style="font-size:13px;color:var(--text-muted);padding:8px 0">Memuat faktur...</p>';
+    document.getElementById('inv-found-box').style.display = 'none';
+    document.getElementById('btn-submit-retur').style.display = 'none';
+    selectedInvoice = null;
+
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('id, invoice_number, invoice_date, total, status, verification_status')
+      .eq('customer_id', customerId)
+      .neq('status', 'cancelled')
+      .order('invoice_date', { ascending: false });
+
+    if (error || !data?.length) {
+      document.getElementById('inv-list-wrap').innerHTML = '<p style="font-size:13px;color:var(--text-muted);padding:8px 0">Tidak ada faktur untuk customer ini.</p>';
+      return;
+    }
+
+    document.getElementById('inv-list-wrap').innerHTML = data.map(inv => {
+      const statusBadge = inv.verification_status === 'approved'
+        ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ Terverifikasi</span>'
+        : '<span style="background:#fef9c3;color:#92400e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">Belum Verifikasi</span>';
+      return `<div class="inv-card" onclick="selectInvoiceCard('${inv.id}', this)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span class="inv-card-no">${escapeHtml(inv.invoice_number)}</span>
+          ${statusBadge}
+        </div>
+        <div class="inv-card-meta">${formatDate(inv.invoice_date)} &nbsp;·&nbsp; ${formatRupiah(inv.total)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  async function selectInvoiceCard(invoiceId, cardEl) {
+    document.querySelectorAll('.inv-card').forEach(c => c.classList.remove('selected'));
+    cardEl.classList.add('selected');
+
+    const btn = cardEl;
+    cardEl.style.opacity = '0.7';
+    const { data, error } = await supabase
+      .from('invoices')
+      .select(`*, invoice_items(*, products(name, sku))`)
+      .eq('id', invoiceId)
+      .maybeSingle();
+    cardEl.style.opacity = '1';
+
+    if (error || !data) { showToast('Gagal memuat detail faktur', 'error'); return; }
+    if (data.verification_status && data.verification_status !== 'approved') {
+      showToast(`Faktur belum disetujui — status: ${data.verification_status}`, 'error'); return;
+    }
+
+    selectedInvoice = data;
+    renderFoundInvoice(data);
+  }
+
+  function resetInvoiceList() {
+    document.getElementById('inv-list-box').style.display = 'none';
+    document.getElementById('inv-found-box').style.display = 'none';
+    document.getElementById('btn-submit-retur').style.display = 'none';
+    selectedInvoice = null;
   }
 
   function showSetupNotice() {
@@ -1038,7 +1132,9 @@ create table if not exists return_items (
 
   // ── Modal helpers ───────────────────────────────────────────────────────
   function openCreateModal() {
-    document.getElementById('search-inv-no').value   = '';
+    if (customerTomSelect) customerTomSelect.clear();
+    document.getElementById('inv-list-box').style.display  = 'none';
+    document.getElementById('inv-list-wrap').innerHTML     = '';
     document.getElementById('inv-found-box').style.display = 'none';
     document.getElementById('btn-submit-retur').style.display = 'none';
     document.getElementById('retur-reason').value    = '';
@@ -1047,7 +1143,6 @@ create table if not exists return_items (
     document.querySelectorAll('.reason-chip').forEach(c => c.classList.remove('active'));
     selectedInvoice = null;
     openModal('modal-create');
-    setTimeout(() => document.getElementById('search-inv-no').focus(), 150);
   }
 
   function closeCreateModal() {
