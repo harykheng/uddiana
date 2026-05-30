@@ -455,7 +455,7 @@
         <td>${escapeHtml(cat)}</td>
         <td class="text-right">
           <div>${formatCurrency(p.price)}</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(p.price * 12)}/lsn</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(Math.round((p.price * 12) / 100) * 100)}/lsn</div>
         </td>
         <td class="text-right">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
         <td class="text-right">${formatCurrency(p.cost)}</td>
@@ -683,7 +683,7 @@
       'Kategori':      p.categories?.name || '',
       'Satuan':        p.unit,
       'Harga Biasa':   p.price,
-      'Harga Lusin':   p.price * 12,
+      'Harga Lusin':   Math.round((p.price * 12) / 100) * 100,
       'Harga Shopee':  p.price_shopee || 0,
       'Harga Modal':   p.cost || 0,
       'Stok':          p.stock_quantity,
