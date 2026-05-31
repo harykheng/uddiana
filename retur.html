@@ -1044,7 +1044,7 @@ create table if not exists return_items (
           <div class="rp-no">${escapeHtml(ret.return_number)}</div>
           <div class="rp-co">UD. DIANA</div>
           <div class="rp-sub">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
-          <div class="rp-sub">Dibuat oleh: <strong>${escapeHtml(ret.created_by||'Admin')}</strong></div>
+          <div class="rp-sub" style="margin-bottom:10pt;">Dibuat oleh: <strong>${escapeHtml(ret.created_by||'Admin')}</strong></div>
         </div>
         <div style="text-align:center;padding-top:2pt;">
           <div class="rp-title" style="margin:0 0 2pt;">BUKTI RETUR PEMBELIAN</div>
