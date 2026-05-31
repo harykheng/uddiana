@@ -248,7 +248,7 @@
         <div><span class="text-muted">Sales:</span> <strong>${escapeHtml(inv.sales_name || '—')}</strong></div>
         <div><span class="text-muted">Customer:</span> <strong>${escapeHtml(inv.store_name || '—')}</strong></div>
         <div><span class="text-muted">Tanggal:</span> ${formatDate(inv.invoice_date)}</div>
-        <div><span class="text-muted">Termin:</span> ${{cod:'COD','7_days':'7 Hari','15_days':'15 Hari','30_days':'30 Hari'}[inv.payment_term] || inv.payment_term || '—'}</div>
+        <div><span class="text-muted">Termin:</span> ${{cod:'COD','14_days':'14 Hari','30_days':'30 Hari'}[inv.payment_term] || inv.payment_term || '—'}</div>
         <div><span class="text-muted">Mode Harga:</span> ${inv.price_mode || '—'}</div>
         ${inv.notes ? `<div style="grid-column:1/-1"><span class="text-muted">Catatan:</span> ${escapeHtml(inv.notes)}</div>` : ''}
       </div>

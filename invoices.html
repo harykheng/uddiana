@@ -246,8 +246,7 @@
           <label>Termin Pembayaran</label>
           <select id="inv-payment-term">
             <option value="cod">COD (Bayar di Tempat)</option>
-            <option value="7_days">7 Hari</option>
-            <option value="15_days">15 Hari</option>
+            <option value="14_days">14 Hari</option>
             <option value="30_days">30 Hari</option>
           </select>
         </div>
@@ -533,8 +532,8 @@
       cancelled: ['Dibatalkan',  'danger'],
     };
     const terminMap = {
-      cod:     'COD', '7_days': '7 Hari',
-      '15_days': '15 Hari', '30_days': '30 Hari',
+      cod:     'COD',
+      '14_days': '14 Hari', '30_days': '30 Hari',
     };
 
     tbody.innerHTML = filtered.map(inv => {
@@ -1001,7 +1000,7 @@
     document.getElementById('pay-sisa-info').style.display = 'none';
     setPayMethod('cash');
 
-    const terminMap = { cod:'COD', '7_days':'7 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
+    const terminMap = { cod:'COD', '14_days':'14 Hari', '30_days':'30 Hari' };
     const sisaLabel = Number(inv.paid_amount || 0) > 0
       ? `<span style="color:#d97706;font-size:11px;font-weight:700;">⚠️ Sudah dibayar ${formatCurrency(inv.paid_amount)} — sisa ${formatCurrency(remaining)}</span>`
       : '';
@@ -1096,7 +1095,7 @@
     document.getElementById('view-invoice-title').textContent = `Faktur ${inv.invoice_number}`;
 
     const statusMap = { paid:['Lunas','success'], pending:['Belum Lunas','warning'], cancelled:['Dibatalkan','danger'] };
-    const terminMap = { cod:'COD', '7_days':'7 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
+    const terminMap = { cod:'COD', '14_days':'14 Hari', '30_days':'30 Hari' };
     const modeMap   = { regular:'Harga Biasa', shopee:'Harga Shopee', custom:'Custom' };
     const [statusLabel, statusColor] = statusMap[inv.status] || ['—','gray'];
 
@@ -1174,7 +1173,7 @@
 
     const terminMap = {
       cod: 'COD (Bayar di Tempat)',
-      '7_days': '7 Hari', '15_days': '15 Hari', '30_days': '30 Hari'
+      '14_days': '14 Hari', '30_days': '30 Hari'
     };
     // angka tanpa "Rp" — hanya untuk kolom tabel
     const fmtNum = n => Number(n || 0).toLocaleString('id-ID');

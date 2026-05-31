@@ -322,8 +322,7 @@
           <label>Termin</label>
           <select id="inv-term">
             <option value="cod">COD</option>
-            <option value="7_days">7 Hari</option>
-            <option value="15_days">15 Hari</option>
+            <option value="14_days">14 Hari</option>
             <option value="30_days">30 Hari</option>
           </select>
         </div>
@@ -721,23 +720,25 @@
       el.innerHTML = `<div class="empty-state"><div class="icon">📦</div><h4>${search ? 'Produk tidak ditemukan' : 'Tidak ada produk'}</h4></div>`;
       return;
     }
-    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
-        <th style="text-align:left;padding:10px 14px;">Nama Produk</th>
-        <th style="text-align:center;padding:10px 8px;">Stok</th>
-        <th style="text-align:right;padding:10px 14px;">Harga / pcs</th>
-        <th style="text-align:right;padding:10px 14px;">Harga / lusin</th>
-      </tr></thead>
-      <tbody>${filtered.map(p => {
-        const hargaLusin = Math.round((p.price * 12) / 100) * 100;
-        return `<tr style="border-bottom:1px solid #f1f5f9;">
-          <td style="padding:9px 14px;">${escapeHtml(p.name)}</td>
-          <td style="text-align:center;padding:9px 8px;">${p.stock_quantity} ${p.unit || 'pcs'}</td>
-          <td style="text-align:right;padding:9px 14px;font-weight:600;">${formatCurrency(p.price)}</td>
-          <td style="text-align:right;padding:9px 14px;color:#64748b;">${formatCurrency(hargaLusin)}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>`;
+    el.innerHTML = `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+      <table style="width:100%;min-width:360px;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
+          <th style="text-align:left;padding:10px 14px;white-space:nowrap;">Nama Produk</th>
+          <th style="text-align:center;padding:10px 8px;white-space:nowrap;">Stok</th>
+          <th style="text-align:right;padding:10px 14px;white-space:nowrap;">Harga / pcs</th>
+          <th style="text-align:right;padding:10px 14px;white-space:nowrap;">Harga / lusin</th>
+        </tr></thead>
+        <tbody>${filtered.map(p => {
+          const hargaLusin = Math.round((p.price * 12) / 100) * 100;
+          return `<tr style="border-bottom:1px solid #f1f5f9;">
+            <td style="padding:9px 14px;">${escapeHtml(p.name)}</td>
+            <td style="text-align:center;padding:9px 8px;white-space:nowrap;">${p.stock_quantity} ${p.unit || 'pcs'}</td>
+            <td style="text-align:right;padding:9px 14px;font-weight:600;white-space:nowrap;">${formatCurrency(p.price)}</td>
+            <td style="text-align:right;padding:9px 14px;color:#64748b;white-space:nowrap;">${formatCurrency(hargaLusin)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
   }
 
   let myWishlists = [];
@@ -1029,6 +1030,8 @@ function recalcTotal() {
       customer_id: customerId,
       customer_name: customer?.name || '',
       store_name: customer?.store_name || customer?.name || '',
+      customer_phone: customer?.phone || null,
+      customer_address: customer?.address || null,
       payment_term: term,
       price_mode: priceMode,
       total: total,
