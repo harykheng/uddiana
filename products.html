@@ -780,7 +780,11 @@
       // Normalize header keys (lowercase, trim)
       importRows = raw.map(r => {
         const norm = {};
-        Object.entries(r).forEach(([k, v]) => { norm[k.toLowerCase().trim().replace(/\s+/g,'_')] = String(v).trim(); });
+        Object.entries(r).forEach(([k, v]) => {
+          // Strip BOM dan karakter invisible, normalize key
+          const key = k.replace(/^﻿/, '').toLowerCase().trim().replace(/\s+/g,'_');
+          norm[key] = String(v).trim();
+        });
         // Fallback alias kolom SKU: no_sku, kode, kode_produk, product_code, barcode, no.sku
         if (!norm.sku) {
           norm.sku = norm.no_sku || norm.kode || norm.kode_produk || norm.product_code || norm.barcode || norm['no.sku'] || '';
