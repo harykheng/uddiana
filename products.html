@@ -921,10 +921,25 @@
       }
     }
 
+    // ── Cek duplikat SKU dalam batch, auto-generate SKU baru kalau tabrakan ──
+    const usedSkus = new Set(batchSkus); // sudah include SKU dari DB + yang di-generate
+    const deduped = toInsert.map(p => {
+      const key = p.sku.toLowerCase();
+      if (usedSkus.has(key)) {
+        // SKU sudah dipakai — generate baru
+        skuCounter++;
+        const newSku = `UDD-${String(skuCounter).padStart(4, '0')}`;
+        usedSkus.add(newSku.toLowerCase());
+        return { ...p, sku: newSku };
+      }
+      usedSkus.add(key);
+      return p;
+    });
+
     // ── 3. Batch upsert produk baru (onConflict sku) ───
-    const totalChunks = Math.ceil(toInsert.length / CHUNK);
+    const totalChunks = Math.ceil(deduped.length / CHUNK);
     for (let c = 0; c < totalChunks; c++) {
-      const chunk = toInsert.slice(c * CHUNK, (c + 1) * CHUNK);
+      const chunk = deduped.slice(c * CHUNK, (c + 1) * CHUNK);
       btn.textContent = `Menyimpan ${Math.min((c+1)*CHUNK, toInsert.length)}/${toInsert.length}...`;
       const { error } = await supabase.from('products').upsert(chunk, { onConflict: 'sku', ignoreDuplicates: false });
       if (error) {
