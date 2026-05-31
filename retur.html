@@ -473,7 +473,7 @@ create table if not exists return_items (
   }
 
   async function loadCustomersForRetur() {
-    const { data } = await supabase.from('customers').select('id, name, store_name').order('name');
+    const { data } = await fetchAll(() => supabase.from('customers').select('id, name, store_name').order('name'));
     const sel = document.getElementById('retur-customer-select');
     (data || []).forEach(c => {
       const opt = document.createElement('option');

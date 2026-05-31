@@ -563,7 +563,7 @@
   }
 
   async function loadProducts() {
-    const { data } = await supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit').eq('is_active', true).order('name');
+    const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit').eq('is_active', true).order('name'));
     products = data || [];
   }
 
@@ -571,7 +571,7 @@
   let newCustomerCallback = null;
 
   async function loadCustomers() {
-    const { data } = await supabase.from('customers').select('id,name,store_name,phone,address').order('name');
+    const { data } = await fetchAll(() => supabase.from('customers').select('id,name,store_name,phone,address').order('name'));
     customers = data || [];
 
     if (customerTS) { customerTS.destroy(); customerTS = null; }

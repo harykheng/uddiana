@@ -116,3 +116,19 @@ function applyNumberFormat(input) {
 document.addEventListener('input', e => {
   if (e.target.hasAttribute('data-number')) applyNumberFormat(e.target);
 });
+
+// ── FETCH ALL (bypass Supabase 1000 row limit) ────────────────
+// Usage: const { data, error } = await fetchAll(() =>
+//   supabase.from('products').select('*').eq('is_active', true).order('name')
+// );
+async function fetchAll(queryFn, pageSize = 1000) {
+  let from = 0, all = [];
+  while (true) {
+    const { data, error } = await queryFn().range(from, from + pageSize - 1);
+    if (error) return { data: null, error };
+    all = all.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return { data: all, error: null };
+}

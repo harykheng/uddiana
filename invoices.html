@@ -455,14 +455,14 @@
   }
 
   async function loadProducts() {
-    const { data } = await supabase.from('products')
+    const { data } = await fetchAll(() => supabase.from('products')
       .select('id,name,sku,price,price_shopee,cost,stock_quantity,unit')
-      .eq('is_active', true).order('name');
+      .eq('is_active', true).order('name'));
     products = data || [];
   }
 
   async function loadCustomers() {
-    const { data } = await supabase.from('customers').select('*').order('name');
+    const { data } = await fetchAll(() => supabase.from('customers').select('*').order('name'));
     customers = data || [];
     const opts = customers.map(c =>
       `<option value="${c.id}" data-name="${escapeHtml(c.name)}" data-store="${escapeHtml(c.store_name||'')}" data-phone="${escapeHtml(c.phone||'')}" data-address="${escapeHtml(c.address||'')}">

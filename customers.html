@@ -186,11 +186,11 @@
 
   async function loadCustomers() {
     const [{ data: customers, error }, { data: invoices }] = await Promise.all([
-      supabase.from('customers').select('*').order('name'),
-      supabase.from('invoices')
+      fetchAll(() => supabase.from('customers').select('*').order('name')),
+      fetchAll(() => supabase.from('invoices')
         .select('customer_id,total,status,verification_status')
         .or('verification_status.is.null,verification_status.eq.approved')
-        .neq('status', 'cancelled')
+        .neq('status', 'cancelled'))
     ]);
     if (error) { showToast('Gagal memuat customers: ' + error.message, 'error'); return; }
     allCustomers = customers || [];
