@@ -7,423 +7,594 @@
   <title>Dashboard - StokManager</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link rel="stylesheet" href="css/style.css">
   <style>
-    /* ── OVERRIDE PAGE BG ── */
-    body { background: #f1f5f9; }
-    .page { background: transparent; padding: 28px; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* ── GREETING ── */
-    .greeting { margin-bottom: 28px; }
-    .greeting h2 { font-size: 24px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
-    .greeting h2 span { color: var(--primary); }
-    .greeting p  { font-size: 13px; color: var(--text-muted); }
+    :root {
+      --primary: #2563eb;
+      --sidebar-w: 240px;
+      --bg: #f0f2f8;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e8ecf0;
+      --radius: 18px;
+      --shadow: 0 2px 8px rgba(0,0,0,.06), 0 8px 32px rgba(0,0,0,.04);
+    }
 
-    /* ── METRIC CARDS ── */
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+    }
+
+    /* ─── SIDEBAR ─────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-w);
+      background: #0f172a;
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 100;
+      transition: transform .25s;
+    }
+
+    .sidebar-logo {
+      padding: 24px 20px 18px;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+    .sidebar-logo .logo-wrap {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 0;
+    }
+    .sidebar-logo img {
+      width: 36px; height: 36px; border-radius: 8px; object-fit: contain;
+    }
+    .sidebar-logo h2 { font-size: 15px; font-weight: 800; color: #fff; }
+    .sidebar-logo span { font-size: 10px; color: #475569; display: block; margin-top: 1px; }
+
+    .sidebar-nav { padding: 10px 12px; flex: 1; overflow-y: auto; }
+    .sidebar-nav::-webkit-scrollbar { width: 0; }
+
+    .nav-label {
+      font-size: 9.5px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .1em; color: #334155;
+      padding: 14px 8px 6px;
+    }
+
+    .nav-item {
+      display: flex; align-items: center; gap: 9px;
+      padding: 9px 12px; border-radius: 10px;
+      color: #94a3b8; text-decoration: none;
+      font-size: 13px; font-weight: 500;
+      transition: all .15s; margin-bottom: 1px;
+    }
+    .nav-item .nav-icon { font-size: 15px; width: 18px; text-align: center; flex-shrink: 0; }
+    .nav-item:hover { background: rgba(255,255,255,.06); color: #cbd5e1; }
+    .nav-item.active {
+      background: var(--primary);
+      color: #fff;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(37,99,235,.35);
+    }
+
+    .sidebar-footer {
+      padding: 16px; border-top: 1px solid rgba(255,255,255,.07);
+    }
+    .sidebar-user {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 10px;
+      background: rgba(255,255,255,.05); margin-bottom: 8px;
+    }
+    .sidebar-user-avatar {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-weight: 700; font-size: 13px; flex-shrink: 0;
+    }
+    .sidebar-user-name { font-size: 12px; font-weight: 600; color: #e2e8f0; }
+    .sidebar-user-role { font-size: 10px; color: #475569; text-transform: uppercase; }
+    .btn-signout {
+      width: 100%; padding: 8px; border: none; border-radius: 8px;
+      background: rgba(255,255,255,.06); color: #64748b;
+      font-size: 12px; cursor: pointer; transition: background .15s;
+    }
+    .btn-signout:hover { background: rgba(255,255,255,.12); color: #94a3b8; }
+
+    /* ─── MAIN ────────────────────────────────────────── */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ─── TOPBAR ──────────────────────────────────────── */
+    .topbar {
+      background: transparent;
+      padding: 24px 32px 0;
+      display: flex; align-items: flex-start; justify-content: space-between;
+    }
+    .topbar-greeting h1 {
+      font-size: 26px; font-weight: 800; color: var(--text); line-height: 1.2;
+    }
+    .topbar-greeting h1 span { color: var(--primary); }
+    .topbar-greeting p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .topbar-right { display: flex; align-items: center; gap: 10px; padding-top: 4px; }
+    .btn-refresh {
+      width: 38px; height: 38px; border-radius: 10px;
+      border: 1.5px solid var(--border); background: var(--card);
+      cursor: pointer; font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all .15s; color: var(--muted);
+      box-shadow: var(--shadow);
+    }
+    .btn-refresh:hover { border-color: var(--primary); color: var(--primary); }
+
+    /* ─── PAGE ────────────────────────────────────────── */
+    .page { padding: 24px 32px 40px; flex: 1; }
+
+    /* ─── METRIC CARDS ────────────────────────────────── */
     .metrics-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 16px;
       margin-bottom: 24px;
     }
-    .metric-card {
-      background: #fff;
-      border-radius: 16px;
-      padding: 22px 24px;
-      box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      transition: transform .2s, box-shadow .2s;
-    }
-    .metric-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,.08); }
-    .metric-top { display: flex; justify-content: space-between; align-items: flex-start; }
-    .metric-label { font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: .06em; }
-    .metric-icon {
-      width: 40px; height: 40px; border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; flex-shrink: 0;
-    }
-    .metric-icon.blue   { background: #eff6ff; }
-    .metric-icon.green  { background: #f0fdf4; }
-    .metric-icon.yellow { background: #fffbeb; }
-    .metric-icon.purple { background: #f5f3ff; }
-    .metric-value { font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1; }
-    .metric-value.sm { font-size: 20px; }
-    .metric-sub { font-size: 12px; color: #94a3b8; }
-    .metric-badge {
-      display: inline-flex; align-items: center; gap: 3px;
-      padding: 3px 8px; border-radius: 20px;
-      font-size: 11px; font-weight: 700;
-    }
-    .metric-badge.up   { background: #f0fdf4; color: #16a34a; }
-    .metric-badge.down { background: #fef2f2; color: #dc2626; }
-    .metric-badge.warn { background: #fffbeb; color: #d97706; }
-    .metric-badge.neutral { background: #f1f5f9; color: #64748b; }
 
-    /* ── MAIN GRID ── */
-    .dash-grid {
+    .metric-card {
+      border-radius: var(--radius);
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .metric-card.white {
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .metric-card.blue  { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #fff; }
+    .metric-card.teal  { background: linear-gradient(135deg, #0891b2 0%, #0e7490 100%); color: #fff; }
+    .metric-card.violet { background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%); color: #fff; }
+
+    .metric-card::after {
+      content: '';
+      position: absolute;
+      top: -30px; right: -30px;
+      width: 100px; height: 100px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.08);
+    }
+
+    .metric-label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .07em;
+      opacity: .7; margin-bottom: 12px;
+    }
+    .metric-card.white .metric-label { color: var(--muted); opacity: 1; }
+
+    .metric-value {
+      font-size: 36px; font-weight: 800; line-height: 1;
+      margin-bottom: 8px; letter-spacing: -.5px;
+    }
+    .metric-value.sm { font-size: 24px; }
+
+    .metric-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 12px;
+    }
+    .metric-sub { font-size: 12px; opacity: .7; }
+    .metric-card.white .metric-sub { color: var(--muted); opacity: 1; }
+
+    .metric-chip {
+      font-size: 11px; font-weight: 700;
+      padding: 3px 8px; border-radius: 20px;
+      background: rgba(255,255,255,.2); color: #fff;
+    }
+    .metric-chip.green { background: #dcfce7; color: #15803d; }
+    .metric-chip.yellow { background: #fef9c3; color: #92400e; }
+    .metric-chip.red { background: #fee2e2; color: #b91c1c; }
+
+    .metric-icon-bg {
+      position: absolute; bottom: 16px; right: 20px;
+      font-size: 44px; opacity: .12;
+    }
+
+    /* ─── CONTENT GRID ────────────────────────────────── */
+    .content-grid {
       display: grid;
-      grid-template-columns: 1fr 360px;
+      grid-template-columns: 1fr 320px;
       gap: 20px;
       margin-bottom: 20px;
     }
 
-    /* ── PANEL CARD ── */
+    /* ─── PANEL ───────────────────────────────────────── */
     .panel {
-      background: #fff;
-      border-radius: 16px;
-      box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
       overflow: hidden;
     }
     .panel-header {
-      padding: 18px 24px 14px;
+      padding: 20px 24px 16px;
       display: flex; align-items: center; justify-content: space-between;
-      border-bottom: 1px solid #f1f5f9;
     }
-    .panel-title { font-size: 14px; font-weight: 700; color: #0f172a; }
-    .panel-sub   { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+    .panel-title { font-size: 15px; font-weight: 700; color: var(--text); }
+    .panel-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
     .panel-link  {
       font-size: 12px; font-weight: 600; color: var(--primary);
-      text-decoration: none; padding: 5px 12px;
-      border: 1px solid #dbeafe; border-radius: 8px;
+      text-decoration: none; padding: 6px 14px;
+      background: #eff6ff; border-radius: 8px;
       transition: background .15s;
     }
-    .panel-link:hover { background: #eff6ff; }
-    .panel-body { padding: 16px 24px; }
+    .panel-link:hover { background: #dbeafe; }
 
-    /* ── CHART ── */
-    .chart-wrap { padding: 20px 24px 24px; }
-    .chart-legend { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
-    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
-    .legend-dot  { width: 8px; height: 8px; border-radius: 50%; }
+    /* ─── CHART ───────────────────────────────────────── */
+    .chart-area { padding: 0 24px 24px; }
 
-    /* ── INVOICE ROWS ── */
+    /* ─── INVOICE LIST ────────────────────────────────── */
     .inv-row {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 24px;
-      border-bottom: 1px solid #f8fafc;
-      gap: 12px;
+      padding: 13px 24px; gap: 12px;
+      border-top: 1px solid #f8fafc;
       transition: background .15s;
     }
-    .inv-row:hover { background: #f8fafc; }
-    .inv-row:last-child { border-bottom: none; }
-    .inv-row-left { min-width: 0; }
-    .inv-num  { font-size: 13px; font-weight: 700; color: #0f172a; }
-    .inv-cust { font-size: 12px; color: #94a3b8; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .inv-right { text-align: right; flex-shrink: 0; }
-    .inv-total { font-size: 13px; font-weight: 700; color: #0f172a; }
-    .inv-date  { font-size: 11px; color: #94a3b8; margin-top: 1px; }
-    .status-dot {
+    .inv-row:hover { background: #fafbff; }
+    .inv-num  { font-size: 13px; font-weight: 700; }
+    .inv-cust { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .inv-total { font-size: 14px; font-weight: 700; white-space: nowrap; }
+    .inv-date  { font-size: 11px; color: var(--muted); margin-top: 2px; text-align: right; }
+
+    .dot {
       display: inline-block; width: 7px; height: 7px;
-      border-radius: 50%; margin-right: 5px;
+      border-radius: 50%; margin-right: 5px; flex-shrink: 0;
     }
-    .status-dot.paid    { background: #22c55e; }
-    .status-dot.pending { background: #f59e0b; }
-    .status-dot.cancelled { background: #ef4444; }
+    .dot-green  { background: #22c55e; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-red    { background: #ef4444; }
 
-    /* ── STOCK ALERTS ── */
+    /* ─── BOTTOM GRID ─────────────────────────────────── */
+    .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+    /* ─── STOCK LIST ──────────────────────────────────── */
     .stock-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 24px; border-bottom: 1px solid #f8fafc; gap: 12px;
+      display: flex; align-items: center; gap: 14px;
+      padding: 12px 24px; border-top: 1px solid #f8fafc;
     }
-    .stock-row:last-child { border-bottom: none; }
-    .stock-name { font-size: 13px; font-weight: 600; color: #0f172a; }
-    .stock-meta { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-    .stock-qty  { font-size: 13px; font-weight: 700; }
-    .stock-bar-wrap { height: 4px; background: #f1f5f9; border-radius: 2px; margin-top: 6px; width: 80px; }
-    .stock-bar-fill { height: 100%; border-radius: 2px; }
+    .stock-row:hover { background: #fafbff; }
+    .stock-name { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    .stock-bar-bg { height: 5px; background: #f1f5f9; border-radius: 3px; flex: 1; }
+    .stock-bar-fill { height: 100%; border-radius: 3px; transition: width .6s; }
+    .stock-qty { font-size: 13px; font-weight: 800; white-space: nowrap; }
 
-    /* ── BOTTOM GRID ── */
-    .bottom-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 20px;
-    }
-
-    /* ── MOVEMENT TABLE ── */
+    /* ─── MOVE TABLE ──────────────────────────────────── */
     .move-table { width: 100%; border-collapse: collapse; }
-    .move-table th { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; padding: 0 24px 10px; text-align: left; }
-    .move-table td { font-size: 13px; padding: 10px 24px; border-top: 1px solid #f8fafc; color: #0f172a; }
-    .move-type { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-    .move-type.in   { background: #f0fdf4; color: #16a34a; }
-    .move-type.out  { background: #fef2f2; color: #dc2626; }
-    .move-type.adj  { background: #eff6ff; color: #2563eb; }
-
-    /* ── EMPTY ── */
-    .empty-panel { padding: 40px 24px; text-align: center; color: #94a3b8; }
-    .empty-panel .empty-icon { font-size: 32px; margin-bottom: 8px; }
-    .empty-panel p { font-size: 13px; }
-
-    /* ── RESPONSIVE ── */
-    @media (max-width: 1100px) {
-      .metrics-grid { grid-template-columns: 1fr 1fr; }
-      .dash-grid    { grid-template-columns: 1fr; }
+    .move-table th {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .05em;
+      padding: 0 24px 12px; text-align: left;
     }
-    @media (max-width: 640px) {
-      .metrics-grid { grid-template-columns: 1fr 1fr; }
-      .page { padding: 16px; }
-      .metric-value { font-size: 22px; }
+    .move-table td { font-size: 13px; padding: 11px 24px; border-top: 1px solid #f8fafc; }
+    .move-badge {
+      font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px;
+      display: inline-block;
     }
-    @media (max-width: 400px) {
+    .move-badge.in  { background: #f0fdf4; color: #15803d; }
+    .move-badge.out { background: #fef2f2; color: #b91c1c; }
+    .move-badge.adj { background: #eff6ff; color: #1d4ed8; }
+
+    /* ─── EMPTY ───────────────────────────────────────── */
+    .empty-state {
+      padding: 40px 24px; text-align: center; color: var(--muted);
+    }
+    .empty-state .ico { font-size: 36px; margin-bottom: 10px; }
+    .empty-state p { font-size: 13px; }
+
+    /* ─── MOBILE SIDEBAR ──────────────────────────────── */
+    #sidebar-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.5); z-index: 99;
+    }
+    #sidebar-overlay.show { display: block; }
+    #hamburger {
+      display: none; flex-direction: column; gap: 5px;
+      width: 38px; height: 38px; border-radius: 10px;
+      border: 1.5px solid var(--border); background: var(--card);
+      cursor: pointer; padding: 9px 10px; box-shadow: var(--shadow);
+    }
+    #hamburger span { display: block; height: 2px; background: var(--muted); border-radius: 2px; }
+
+    /* ─── RESPONSIVE ──────────────────────────────────── */
+    @media (max-width: 1200px) {
+      .metrics-grid { grid-template-columns: 1fr 1fr; }
+      .content-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 900px) {
+      .bottom-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 768px) {
+      #hamburger { display: flex; }
+      .sidebar { transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .main { margin-left: 0; }
+      .topbar { padding: 16px 16px 0; }
+      .page { padding: 16px 16px 32px; }
+      .topbar-greeting h1 { font-size: 20px; }
+      .metrics-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+      .metric-value { font-size: 26px; }
+      .metric-value.sm { font-size: 18px; }
+    }
+    @media (max-width: 480px) {
       .metrics-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-<div class="layout">
-  <aside class="sidebar">
-    <div class="sidebar-logo">
-      <div class="logo-icon"><img src="logo.png" alt="UD.DIANA" style="width:100%;height:auto;object-fit:contain;border-radius:6px;"></div>
-      <h2>UD.DIANA</h2>
-      <span>Sistem Manajemen Stok</span>
+
+<!-- SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-wrap">
+      <img src="logo.png" alt="UD.DIANA">
+      <div>
+        <h2>UD.DIANA</h2>
+        <span>Sistem Manajemen Stok</span>
+      </div>
     </div>
-    <nav class="sidebar-nav">
-      <div class="nav-label">Menu Utama</div>
-      <a href="indexnew.html" class="nav-item active"><span class="nav-icon">🏠</span> Dashboard</a>
-      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
-      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
-      <div class="nav-label">Transaksi</div>
-      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
-      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
-      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
-      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
-      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
-      <div class="nav-label">Laporan</div>
-      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
-      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
-      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
-      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
-      <div class="nav-label">Admin</div>
-      <a href="wishlist.html" class="nav-item"><span class="nav-icon">⭐</span> Wishlist</a>
-      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
-    </nav>
-    <div class="sidebar-footer" id="sidebar-footer">© 2025 StokManager</div>
-  </aside>
-
-  <div class="main">
-    <header class="topbar">
-      <div class="topbar-title">
-        <h1>Dashboard</h1>
-        <p id="today-date">Memuat...</p>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Menu Utama</div>
+    <a href="indexnew.html" class="nav-item active"><span class="nav-icon">🏠</span> Dashboard</a>
+    <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+    <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+    <div class="nav-label">Transaksi</div>
+    <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+    <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+    <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+    <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+    <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+    <div class="nav-label">Laporan</div>
+    <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
+    <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
+    <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
+    <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+    <div class="nav-label">Admin</div>
+    <a href="wishlist.html" class="nav-item"><span class="nav-icon">⭐</span> Wishlist</a>
+    <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+  </nav>
+  <div class="sidebar-footer" id="sidebar-footer">
+    <div class="sidebar-user">
+      <div class="sidebar-user-avatar" id="user-initial">A</div>
+      <div>
+        <div class="sidebar-user-name" id="user-name">Admin</div>
+        <div class="sidebar-user-role" id="user-role">admin</div>
       </div>
-      <div class="topbar-right">
-        <button class="btn-icon" onclick="loadDashboard()" title="Refresh">🔄</button>
-        <div class="user-avatar" id="user-avatar">A</div>
-      </div>
-    </header>
+    </div>
+    <button class="btn-signout" onclick="doSignOut()">🚪 Keluar</button>
+  </div>
+</aside>
 
-    <main class="page">
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
 
-      <!-- GREETING -->
-      <div class="greeting">
-        <h2>Selamat datang, <span id="greeting-name">Admin</span> 👋</h2>
+<!-- MAIN -->
+<div class="main">
+  <header class="topbar">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button id="hamburger" onclick="toggleSidebar()">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="topbar-greeting">
+        <h1>Selamat datang, <span id="greeting-name">Admin</span> 👋</h1>
         <p id="greeting-date">Memuat...</p>
       </div>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-refresh" onclick="loadDashboard()" title="Refresh">🔄</button>
+    </div>
+  </header>
 
-      <!-- METRIC CARDS -->
-      <div class="metrics-grid">
-        <div class="metric-card">
-          <div class="metric-top">
-            <div>
-              <div class="metric-label">Total Produk</div>
-            </div>
-            <div class="metric-icon blue">📦</div>
-          </div>
-          <div class="metric-value" id="m-products">—</div>
-          <div style="display:flex;align-items:center;justify-content:space-between">
-            <div class="metric-sub">produk aktif</div>
-            <span class="metric-badge neutral" id="m-products-low">— menipis</span>
+  <main class="page">
+
+    <!-- METRIC CARDS -->
+    <div class="metrics-grid">
+
+      <div class="metric-card blue">
+        <div class="metric-label">Penjualan Bulan Ini</div>
+        <div class="metric-value sm" id="m-monthly">—</div>
+        <div class="metric-footer">
+          <span class="metric-sub" id="m-monthly-count">0 faktur</span>
+          <span class="metric-chip" id="m-monthly-chip">bulan ini</span>
+        </div>
+        <div class="metric-icon-bg">🧾</div>
+      </div>
+
+      <div class="metric-card teal">
+        <div class="metric-label">Penjualan Hari Ini</div>
+        <div class="metric-value sm" id="m-today">—</div>
+        <div class="metric-footer">
+          <span class="metric-sub" id="m-today-count">0 faktur</span>
+          <span class="metric-chip" id="m-today-chip">hari ini</span>
+        </div>
+        <div class="metric-icon-bg">📈</div>
+      </div>
+
+      <div class="metric-card white">
+        <div class="metric-label">Nilai Stok</div>
+        <div class="metric-value sm" id="m-stock">—</div>
+        <div class="metric-footer">
+          <span class="metric-sub">estimasi harga jual</span>
+          <span class="metric-chip green" id="m-prod-count">— produk</span>
+        </div>
+        <div class="metric-icon-bg" style="color:#94a3b8">💰</div>
+      </div>
+
+      <div class="metric-card white">
+        <div class="metric-label">Stok Menipis</div>
+        <div class="metric-value" id="m-low" style="color:#f59e0b">—</div>
+        <div class="metric-footer">
+          <span class="metric-sub">produk perlu restok</span>
+          <span class="metric-chip yellow" id="m-low-chip">cek sekarang</span>
+        </div>
+        <div class="metric-icon-bg" style="color:#94a3b8">⚠️</div>
+      </div>
+
+    </div>
+
+    <!-- CHART + RECENT INVOICES -->
+    <div class="content-grid">
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Omzet 6 Bulan Terakhir</div>
+            <div class="panel-sub" id="chart-subtitle">Memuat...</div>
           </div>
         </div>
-
-        <div class="metric-card">
-          <div class="metric-top">
-            <div>
-              <div class="metric-label">Nilai Stok</div>
-            </div>
-            <div class="metric-icon green">💰</div>
-          </div>
-          <div class="metric-value sm" id="m-stock-value">—</div>
-          <div class="metric-sub">estimasi harga jual</div>
-        </div>
-
-        <div class="metric-card">
-          <div class="metric-top">
-            <div>
-              <div class="metric-label">Penjualan Bulan Ini</div>
-            </div>
-            <div class="metric-icon purple">🧾</div>
-          </div>
-          <div class="metric-value sm" id="m-monthly-sales">—</div>
-          <div style="display:flex;align-items:center;justify-content:space-between">
-            <div class="metric-sub" id="m-monthly-count">0 faktur</div>
-            <span class="metric-badge neutral" id="m-monthly-badge">bulan ini</span>
-          </div>
-        </div>
-
-        <div class="metric-card">
-          <div class="metric-top">
-            <div>
-              <div class="metric-label">Penjualan Hari Ini</div>
-            </div>
-            <div class="metric-icon yellow">📈</div>
-          </div>
-          <div class="metric-value sm" id="m-today-sales">—</div>
-          <div style="display:flex;align-items:center;justify-content:space-between">
-            <div class="metric-sub" id="m-today-count">0 faktur</div>
-            <span class="metric-badge up" id="m-today-badge">hari ini</span>
-          </div>
+        <div class="chart-area">
+          <canvas id="revenue-chart" height="220"></canvas>
         </div>
       </div>
 
-      <!-- DASH GRID: CHART + RECENT INVOICES -->
-      <div class="dash-grid">
-        <!-- CHART -->
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <div class="panel-title">Omzet 6 Bulan Terakhir</div>
-              <div class="panel-sub" id="chart-total-label">Total: —</div>
-            </div>
-            <div class="chart-legend">
-              <div class="legend-item"><div class="legend-dot" style="background:#2563eb"></div>Omzet</div>
-            </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Faktur Terbaru</div>
+            <div class="panel-sub">8 transaksi terakhir</div>
           </div>
-          <div class="chart-wrap">
-            <canvas id="revenue-chart" height="200"></canvas>
-          </div>
+          <a href="invoices.html" class="panel-link">Lihat semua →</a>
         </div>
-
-        <!-- RECENT INVOICES -->
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <div class="panel-title">Faktur Terbaru</div>
-              <div class="panel-sub">8 transaksi terakhir</div>
-            </div>
-            <a href="invoices.html" class="panel-link">Lihat semua →</a>
-          </div>
-          <div id="recent-invoices-list">
-            <div class="empty-panel"><div class="empty-icon">⏳</div><p>Memuat...</p></div>
-          </div>
+        <div id="recent-invoices">
+          <div class="empty-state"><div class="ico">⏳</div><p>Memuat...</p></div>
         </div>
       </div>
 
-      <!-- BOTTOM GRID -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
-        <!-- LOW STOCK -->
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <div class="panel-title">⚠ Stok Perlu Perhatian</div>
-              <div class="panel-sub">Produk di bawah minimum</div>
-            </div>
-            <a href="products.html" class="panel-link">Kelola →</a>
-          </div>
-          <div id="low-stock-panel">
-            <div class="empty-panel"><div class="empty-icon">⏳</div><p>Memuat...</p></div>
-          </div>
-        </div>
+    </div>
 
-        <!-- RECENT MOVEMENTS -->
-        <div class="panel">
-          <div class="panel-header">
-            <div>
-              <div class="panel-title">Pergerakan Stok</div>
-              <div class="panel-sub">10 aktivitas terbaru</div>
-            </div>
+    <!-- BOTTOM: LOW STOCK + MOVEMENTS -->
+    <div class="bottom-grid">
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">⚠ Stok Perlu Perhatian</div>
+            <div class="panel-sub">Produk di bawah minimum stok</div>
           </div>
-          <div style="overflow-x:auto">
-            <table class="move-table">
-              <thead>
-                <tr>
-                  <th>Produk</th>
-                  <th>Tipe</th>
-                  <th style="text-align:right">Qty</th>
-                  <th>Waktu</th>
-                </tr>
-              </thead>
-              <tbody id="movements-body">
-                <tr><td colspan="4" style="text-align:center;padding:30px;color:#94a3b8">Memuat...</td></tr>
-              </tbody>
-            </table>
-          </div>
+          <a href="products.html" class="panel-link">Kelola →</a>
+        </div>
+        <div id="low-stock">
+          <div class="empty-state"><div class="ico">⏳</div><p>Memuat...</p></div>
         </div>
       </div>
 
-    </main>
-  </div>
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Pergerakan Stok</div>
+            <div class="panel-sub">10 aktivitas terbaru</div>
+          </div>
+        </div>
+        <table class="move-table">
+          <thead>
+            <tr><th>Produk</th><th>Tipe</th><th style="text-align:right">Qty</th><th>Waktu</th></tr>
+          </thead>
+          <tbody id="movements">
+            <tr><td colspan="4" style="text-align:center;padding:30px;color:#94a3b8">Memuat...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </main>
 </div>
 
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
 <script>
-  let revenueChart = null;
-
-  // Greeting & date
+  let chart = null;
   const now = new Date();
+  const MONTHS = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+
   document.getElementById('greeting-date').textContent =
     new Intl.DateTimeFormat('id-ID', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }).format(now);
-  document.getElementById('today-date').textContent =
-    new Intl.DateTimeFormat('id-ID', { day:'2-digit', month:'long', year:'numeric' }).format(now);
 
+  // ── SIDEBAR MOBILE ──────────────────────────────────
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('open');
+    document.getElementById('sidebar-overlay').classList.toggle('show');
+    document.body.style.overflow = document.getElementById('sidebar').classList.contains('open') ? 'hidden' : '';
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('show');
+    document.body.style.overflow = '';
+  }
+  document.querySelectorAll('.nav-item').forEach(a => a.addEventListener('click', () => {
+    if (window.innerWidth <= 768) closeSidebar();
+  }));
+
+  async function doSignOut() { await supabase.auth.signOut(); window.location.href = 'login.html'; }
+
+  // ── DASHBOARD ───────────────────────────────────────
   async function loadDashboard() {
     await Promise.all([loadStats(), loadRecentInvoices(), loadLowStock(), loadMovements(), loadChart()]);
   }
 
   async function loadStats() {
     // Products
-    const { data: prods } = await supabase.from('products').select('price,stock_quantity,min_stock').eq('is_active',true);
-    const allProds = prods || [];
-    document.getElementById('m-products').textContent = allProds.length;
-    const lowCount = allProds.filter(p => p.stock_quantity <= p.min_stock).length;
-    const lowBadge = document.getElementById('m-products-low');
-    lowBadge.textContent = `${lowCount} menipis`;
-    lowBadge.className = `metric-badge ${lowCount > 0 ? 'warn' : 'up'}`;
+    const { data: prods } = await supabase.from('products')
+      .select('price,stock_quantity,min_stock').eq('is_active', true);
+    const all = prods || [];
+    const lowCount = all.filter(p => p.stock_quantity <= p.min_stock).length;
+    const stockVal = all.reduce((s,p) => s + p.price * p.stock_quantity, 0);
 
-    const stockVal = allProds.reduce((s,p) => s + p.price * p.stock_quantity, 0);
-    document.getElementById('m-stock-value').textContent = formatCurrency(stockVal);
+    document.getElementById('m-stock').textContent = formatCurrency(stockVal);
+    document.getElementById('m-prod-count').textContent = `${all.length} produk`;
+    document.getElementById('m-low').textContent = lowCount;
+    const lowChip = document.getElementById('m-low-chip');
+    lowChip.textContent = lowCount > 0 ? `${lowCount} produk` : 'semua aman';
+    lowChip.className = `metric-chip ${lowCount > 0 ? 'yellow' : 'green'}`;
 
-    // Monthly sales
+    // Monthly
     const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-    const monthEnd   = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0];
-    const { data: monthInvs } = await supabase.from('invoices').select('total')
+    const monthEnd = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0];
+    const { data: mInvs } = await supabase.from('invoices').select('total')
       .gte('invoice_date', monthStart).lte('invoice_date', monthEnd).neq('status','cancelled');
-    const monthTotal = (monthInvs||[]).reduce((s,i) => s+Number(i.total),0);
-    document.getElementById('m-monthly-sales').textContent = formatCurrency(monthTotal);
-    document.getElementById('m-monthly-count').textContent = `${(monthInvs||[]).length} faktur`;
+    const mTotal = (mInvs||[]).reduce((s,i) => s+Number(i.total), 0);
+    document.getElementById('m-monthly').textContent = formatCurrency(mTotal);
+    document.getElementById('m-monthly-count').textContent = `${(mInvs||[]).length} faktur`;
+    document.getElementById('m-monthly-chip').textContent = MONTHS[now.getMonth()];
 
     // Today
     const today = todayISO();
-    const { data: todayInvs } = await supabase.from('invoices').select('total')
+    const { data: tInvs } = await supabase.from('invoices').select('total')
       .eq('invoice_date', today).neq('status','cancelled');
-    const todayTotal = (todayInvs||[]).reduce((s,i) => s+Number(i.total),0);
-    document.getElementById('m-today-sales').textContent = formatCurrency(todayTotal);
-    document.getElementById('m-today-count').textContent = `${(todayInvs||[]).length} faktur`;
-    const todayBadge = document.getElementById('m-today-badge');
-    todayBadge.textContent = (todayInvs||[]).length > 0 ? `+${(todayInvs||[]).length} faktur` : 'belum ada';
-    todayBadge.className = `metric-badge ${(todayInvs||[]).length > 0 ? 'up' : 'neutral'}`;
+    const tTotal = (tInvs||[]).reduce((s,i) => s+Number(i.total), 0);
+    document.getElementById('m-today').textContent = formatCurrency(tTotal);
+    document.getElementById('m-today-count').textContent = `${(tInvs||[]).length} faktur`;
+    const tChip = document.getElementById('m-today-chip');
+    tChip.textContent = (tInvs||[]).length > 0 ? `+${(tInvs||[]).length} hari ini` : 'belum ada';
   }
 
   async function loadRecentInvoices() {
-    const { data } = await supabase.from('invoices').select('invoice_number,customer_name,invoice_date,total,status')
+    const { data } = await supabase.from('invoices')
+      .select('invoice_number,customer_name,invoice_date,total,status')
       .order('created_at',{ascending:false}).limit(8);
-    const el = document.getElementById('recent-invoices-list');
+    const el = document.getElementById('recent-invoices');
     if (!data?.length) {
-      el.innerHTML = `<div class="empty-panel"><div class="empty-icon">🧾</div><p>Belum ada faktur</p></div>`;
-      return;
+      el.innerHTML = `<div class="empty-state"><div class="ico">🧾</div><p>Belum ada faktur</p></div>`; return;
     }
     el.innerHTML = data.map(inv => {
-      const dotClass = inv.status === 'paid' ? 'paid' : inv.status === 'cancelled' ? 'cancelled' : 'pending';
-      const statusLabel = inv.status === 'paid' ? 'Lunas' : inv.status === 'cancelled' ? 'Batal' : 'Pending';
+      const dotCls = inv.status==='paid' ? 'dot-green' : inv.status==='cancelled' ? 'dot-red' : 'dot-yellow';
+      const stLabel = inv.status==='paid' ? 'Lunas' : inv.status==='cancelled' ? 'Dibatalkan' : 'Pending';
       return `<div class="inv-row">
-        <div class="inv-row-left">
+        <div style="min-width:0">
           <div class="inv-num">${escapeHtml(inv.invoice_number)}</div>
-          <div class="inv-cust"><span class="status-dot ${dotClass}"></span>${statusLabel} · ${escapeHtml(inv.customer_name||'—')}</div>
+          <div class="inv-cust"><span class="dot ${dotCls}"></span>${stLabel} · ${escapeHtml(inv.customer_name||'—')}</div>
         </div>
-        <div class="inv-right">
+        <div style="text-align:right;flex-shrink:0">
           <div class="inv-total">${formatCurrency(inv.total)}</div>
           <div class="inv-date">${formatDate(inv.invoice_date)}</div>
         </div>
@@ -432,84 +603,83 @@
   }
 
   async function loadLowStock() {
-    const { data } = await supabase.from('products').select('name,stock_quantity,min_stock,unit')
-      .eq('is_active',true).order('stock_quantity',{ascending:true}).limit(10);
+    const { data } = await supabase.from('products')
+      .select('name,stock_quantity,min_stock,unit').eq('is_active',true)
+      .order('stock_quantity',{ascending:true}).limit(10);
     const alerts = (data||[]).filter(p => p.stock_quantity <= p.min_stock);
-    const el = document.getElementById('low-stock-panel');
+    const el = document.getElementById('low-stock');
     if (!alerts.length) {
-      el.innerHTML = `<div class="empty-panel"><div class="empty-icon">✅</div><p>Semua stok normal</p></div>`;
-      return;
+      el.innerHTML = `<div class="empty-state"><div class="ico">✅</div><p>Semua stok normal</p></div>`; return;
     }
     el.innerHTML = alerts.map(p => {
-      const pct = p.min_stock > 0 ? Math.min(100, Math.round((p.stock_quantity / p.min_stock) * 100)) : 0;
-      const barColor = p.stock_quantity <= 0 ? '#ef4444' : '#f59e0b';
+      const pct = p.min_stock > 0 ? Math.min(100, Math.round(p.stock_quantity / p.min_stock * 100)) : 0;
+      const color = p.stock_quantity <= 0 ? '#ef4444' : '#f59e0b';
       return `<div class="stock-row">
-        <div style="min-width:0;flex:1">
+        <div style="flex:1;min-width:0">
           <div class="stock-name">${escapeHtml(p.name)}</div>
-          <div class="stock-bar-wrap"><div class="stock-bar-fill" style="width:${pct}%;background:${barColor}"></div></div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+            <div class="stock-bar-bg" style="flex:1"><div class="stock-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+            <div style="font-size:11px;color:var(--muted);white-space:nowrap">min ${p.min_stock}</div>
+          </div>
         </div>
-        <div style="text-align:right;flex-shrink:0;margin-left:12px">
-          <div class="stock-qty" style="color:${p.stock_quantity<=0?'#ef4444':'#f59e0b'}">${p.stock_quantity} ${p.unit||'pcs'}</div>
-          <div class="metric-sub">min ${p.min_stock}</div>
+        <div style="margin-left:16px;text-align:right;flex-shrink:0">
+          <div class="stock-qty" style="color:${color}">${p.stock_quantity}</div>
+          <div style="font-size:11px;color:var(--muted)">${p.unit||'pcs'}</div>
         </div>
       </div>`;
     }).join('');
   }
 
   async function loadMovements() {
-    const { data } = await supabase.from('stock_movements').select('product_name,type,quantity,created_at')
-      .order('created_at',{ascending:false}).limit(10);
-    const tbody = document.getElementById('movements-body');
+    const { data } = await supabase.from('stock_movements')
+      .select('product_name,type,quantity,created_at').order('created_at',{ascending:false}).limit(10);
+    const tbody = document.getElementById('movements');
     if (!data?.length) {
-      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:30px;color:#94a3b8">Belum ada pergerakan</td></tr>`;
-      return;
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:30px;color:#94a3b8">Belum ada data</td></tr>`; return;
     }
+    const typeMap = { in:['Masuk','in'], out:['Keluar','out'], adjustment:['Adj','adj'] };
     tbody.innerHTML = data.map(m => {
-      const typeMap = { out: ['Keluar','out'], in: ['Masuk','in'], adjustment: ['Adj','adj'] };
-      const [label, cls] = typeMap[m.type] || ['—','adj'];
+      const [lbl,cls] = typeMap[m.type]||['—','adj'];
       return `<tr>
-        <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(m.product_name)}</td>
-        <td><span class="move-type ${cls}">${label}</span></td>
+        <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500">${escapeHtml(m.product_name)}</td>
+        <td><span class="move-badge ${cls}">${lbl}</span></td>
         <td style="text-align:right;font-weight:700;color:${m.type==='out'?'#ef4444':'#22c55e'}">${m.type==='out'?'-':'+'}${m.quantity}</td>
-        <td style="color:#94a3b8;white-space:nowrap">${formatDate(m.created_at)}</td>
+        <td style="color:var(--muted);font-size:12px;white-space:nowrap">${formatDate(m.created_at)}</td>
       </tr>`;
     }).join('');
   }
 
   async function loadChart() {
-    // Ambil data 6 bulan terakhir
     const months = [];
     const labels = [];
-    const mNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    for (let i=5; i>=0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
       months.push({
         from: `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-01`,
-        to:   new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().split('T')[0],
+        to: new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().split('T')[0],
+        label: MONTHS[d.getMonth()]
       });
-      labels.push(mNames[d.getMonth()]);
+      labels.push(MONTHS[d.getMonth()]);
     }
-
     const values = await Promise.all(months.map(async m => {
       const { data } = await supabase.from('invoices').select('total')
-        .gte('invoice_date', m.from).lte('invoice_date', m.to).neq('status','cancelled');
-      return (data||[]).reduce((s,i) => s + Number(i.total), 0);
+        .gte('invoice_date',m.from).lte('invoice_date',m.to).neq('status','cancelled');
+      return (data||[]).reduce((s,i) => s+Number(i.total),0);
     }));
-
-    const totalAll = values.reduce((s,v) => s+v, 0);
-    document.getElementById('chart-total-label').textContent = `Total 6 bulan: ${formatCurrency(totalAll)}`;
+    const total6 = values.reduce((s,v)=>s+v,0);
+    document.getElementById('chart-subtitle').textContent = `Total 6 bulan: ${formatCurrency(total6)}`;
 
     const ctx = document.getElementById('revenue-chart').getContext('2d');
-    if (revenueChart) revenueChart.destroy();
-    revenueChart = new Chart(ctx, {
+    if (chart) chart.destroy();
+    chart = new Chart(ctx, {
       type: 'bar',
       data: {
         labels,
         datasets: [{
-          label: 'Omzet',
           data: values,
-          backgroundColor: values.map((_, i) => i === 5 ? '#2563eb' : '#bfdbfe'),
-          borderRadius: 8,
+          backgroundColor: values.map((_,i) => i===5 ? '#2563eb' : '#bfdbfe'),
+          hoverBackgroundColor: values.map((_,i) => i===5 ? '#1d4ed8' : '#93c5fd'),
+          borderRadius: 10,
           borderSkipped: false,
         }]
       },
@@ -517,46 +687,40 @@
         responsive: true,
         plugins: {
           legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: ctx => formatCurrency(ctx.raw)
-            }
-          }
+          tooltip: { callbacks: { label: c => ' ' + formatCurrency(c.raw) } }
         },
         scales: {
           y: {
-            grid: { color: '#f1f5f9' },
+            grid: { color: '#f1f5f9', drawBorder: false },
+            border: { display: false },
             ticks: {
-              callback: v => {
-                if (v >= 1e6) return 'Rp ' + (v/1e6).toFixed(0) + 'jt';
-                if (v >= 1e3) return 'Rp ' + (v/1e3).toFixed(0) + 'rb';
-                return 'Rp ' + v;
-              },
-              font: { size: 11 }, color: '#94a3b8'
-            },
-            border: { display: false }
+              color: '#94a3b8', font: { size: 11 },
+              callback: v => v>=1e6?'Rp '+(v/1e6).toFixed(0)+'jt':v>=1e3?'Rp '+(v/1e3).toFixed(0)+'rb':'Rp '+v
+            }
           },
           x: {
             grid: { display: false },
-            ticks: { font: { size: 12 }, color: '#64748b' },
-            border: { display: false }
+            border: { display: false },
+            ticks: { color: '#64748b', font: { size: 12, weight: '600' } }
           }
         }
       }
     });
   }
 
-  // Realtime
   supabase.channel('dash-rt')
-    .on('postgres_changes',{event:'*',schema:'public',table:'invoices'}, loadDashboard)
-    .on('postgres_changes',{event:'*',schema:'public',table:'products'}, loadDashboard)
+    .on('postgres_changes',{event:'*',schema:'public',table:'invoices'},loadDashboard)
+    .on('postgres_changes',{event:'*',schema:'public',table:'products'},loadDashboard)
     .subscribe();
 
   (async () => {
     const auth = await requireAdmin();
     if (!auth) return;
-    document.getElementById('greeting-name').textContent = auth.profile.name;
-    updateSidebarUser(auth.profile);
+    const { profile } = auth;
+    document.getElementById('greeting-name').textContent = profile.name;
+    document.getElementById('user-initial').textContent = profile.name[0].toUpperCase();
+    document.getElementById('user-name').textContent = profile.name;
+    document.getElementById('user-role').textContent = profile.role;
     loadDashboard();
   })();
 </script>
