@@ -406,7 +406,7 @@
 
   async function loadProducts() {
     const catFilter = document.getElementById('filter-category').value;
-    let query = supabase.from('products').select('*, categories(name)').eq('is_active', true).order('name');
+    let query = supabase.from('products').select('*, categories(name)').eq('is_active', true).order('name').limit(5000);
     if (catFilter) query = query.eq('category_id', catFilter);
     const { data, error } = await query;
     if (error) { showToast('Gagal memuat produk: ' + error.message, 'error'); return; }
