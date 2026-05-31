@@ -1028,6 +1028,8 @@ function recalcTotal() {
       customer_id: customerId,
       customer_name: customer?.name || '',
       store_name: customer?.store_name || customer?.name || '',
+      customer_phone: customer?.phone || null,
+      customer_address: customer?.address || null,
       payment_term: term,
       price_mode: priceMode,
       total: total,
