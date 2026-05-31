@@ -945,9 +945,30 @@
   function recalcItem(id) {
     const row = document.getElementById('item-' + id);
     if (!row) return;
-    const qty   = parseFloat(row.querySelector('.item-qty-input').value) || 0;
+    const qtyInput = row.querySelector('.item-qty-input');
+    const qty   = parseFloat(qtyInput.value) || 0;
+    const max   = parseInt(qtyInput.max) || 0;
     const price = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
-    const sub   = Math.round((qty * price) / 100) * 100; // bulatkan ke kelipatan 100
+
+    // Hapus error lama
+    let errEl = row.querySelector('.qty-error');
+    if (!errEl) {
+      errEl = document.createElement('div');
+      errEl.className = 'qty-error';
+      errEl.style.cssText = 'font-size:12px;color:#dc2626;margin-top:4px;';
+      qtyInput.closest('.item-field').appendChild(errEl);
+    }
+
+    const hasProduct = qtyInput.max !== '';
+    if (hasProduct && qty > max) {
+      errEl.textContent = max === 0 ? '⚠️ Stok habis' : `⚠️ Melebihi stok (maks ${max})`;
+      qtyInput.style.borderColor = '#dc2626';
+    } else {
+      errEl.textContent = '';
+      qtyInput.style.borderColor = '';
+    }
+
+    const sub = Math.round((qty * price) / 100) * 100;
     const subInput = document.getElementById('sub-' + id);
     if (subInput) subInput.value = Number(sub).toLocaleString('id-ID');
     recalcTotal();
@@ -982,8 +1003,9 @@ function recalcTotal() {
       if (!sel.value) continue;
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); return; }
       const opt = sel.options[sel.selectedIndex];
-      const stock = parseFloat(opt.dataset.stock) || 0;
-      if (qty > stock) { showToast(`Stok ${opt.text.split(' (')[0]} tidak cukup (stok: ${stock})`, 'error'); return; }
+      const stock = parseInt(opt.dataset.stock) || 0;
+      if (stock === 0) { showToast(`Stok "${opt.text.split(' (')[0]}" habis`, 'error'); return; }
+      if (qty > stock) { showToast(`Stok "${opt.text.split(' (')[0]}" tidak cukup (stok: ${stock})`, 'error'); return; }
       items.push({
         product_id: sel.value,
         product_name: opt.text.split(' (Stok:')[0].trim(),
