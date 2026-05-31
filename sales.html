@@ -353,8 +353,18 @@
 
 <!-- TAB: RIWAYAT -->
 <div class="tab-content" id="tab-history">
-  <div style="margin-bottom:12px">
-    <input type="text" id="search-history" placeholder="🔍 Cari nomor / customer..." oninput="filterHistory()" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none">
+  <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+    <input type="text" id="search-history" placeholder="🔍 Cari nomor / customer / toko..." oninput="filterHistory()" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div>
+        <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Dari Tanggal</label>
+        <input type="date" id="filter-history-from" onchange="filterHistory()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Sampai</label>
+        <input type="date" id="filter-history-to" onchange="filterHistory()" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none">
+      </div>
+    </div>
   </div>
   <div id="history-list">
     <div class="empty-state"><div class="icon">📋</div><h4>Memuat...</h4></div>
@@ -447,6 +457,7 @@
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
 <script>
   let currentUser = null;
   let products = [];
@@ -456,12 +467,10 @@
   let allInvoices = [];
 
   async function init() {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { window.location.href = 'login.html'; return; }
+    const auth = await requireSales();
+    if (!auth) return;
 
-    const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).single();
-    if (!profile || !profile.is_active) { await supabase.auth.signOut(); window.location.href = 'login.html'; return; }
-
+    const { session, profile } = auth;
     currentUser = { session, profile };
 
     document.getElementById('user-initial').textContent = profile.name.charAt(0).toUpperCase();
@@ -637,12 +646,18 @@
   }
 
   function renderHistory() {
-    const search = (document.getElementById('search-history').value || '').toLowerCase();
-    const filtered = allInvoices.filter(inv =>
-      !search ||
-      (inv.invoice_number || '').toLowerCase().includes(search) ||
-      (inv.store_name || '').toLowerCase().includes(search)
-    );
+    const search  = (document.getElementById('search-history').value || '').toLowerCase();
+    const from    = document.getElementById('filter-history-from').value;
+    const to      = document.getElementById('filter-history-to').value;
+    const filtered = allInvoices.filter(inv => {
+      if (from && inv.invoice_date < from) return false;
+      if (to   && inv.invoice_date > to)   return false;
+      if (search) {
+        const hay = `${inv.invoice_number} ${inv.store_name} ${inv.customer_name}`.toLowerCase();
+        if (!hay.includes(search)) return false;
+      }
+      return true;
+    });
 
     const el = document.getElementById('history-list');
     if (!filtered.length) {
@@ -704,13 +719,18 @@
       <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0;">
         <th style="text-align:left;padding:10px 14px;">Nama Produk</th>
         <th style="text-align:center;padding:10px 8px;">Stok</th>
-        <th style="text-align:right;padding:10px 14px;">Harga Jual</th>
+        <th style="text-align:right;padding:10px 14px;">Harga / pcs</th>
+        <th style="text-align:right;padding:10px 14px;">Harga / lusin</th>
       </tr></thead>
-      <tbody>${filtered.map(p => `<tr style="border-bottom:1px solid #f1f5f9;">
-        <td style="padding:9px 14px;">${escapeHtml(p.name)}</td>
-        <td style="text-align:center;padding:9px 8px;">${p.stock_quantity} ${p.unit || 'pcs'}</td>
-        <td style="text-align:right;padding:9px 14px;font-weight:600;">${formatCurrency(p.price)}</td>
-      </tr>`).join('')}</tbody>
+      <tbody>${filtered.map(p => {
+        const hargaLusin = Math.round((p.price * 12) / 100) * 100;
+        return `<tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:9px 14px;">${escapeHtml(p.name)}</td>
+          <td style="text-align:center;padding:9px 8px;">${p.stock_quantity} ${p.unit || 'pcs'}</td>
+          <td style="text-align:right;padding:9px 14px;font-weight:600;">${formatCurrency(p.price)}</td>
+          <td style="text-align:right;padding:9px 14px;color:#64748b;">${formatCurrency(hargaLusin)}</td>
+        </tr>`;
+      }).join('')}</tbody>
     </table>`;
   }
 
@@ -763,7 +783,7 @@
     document.getElementById('detail-body').innerHTML = `
       <div style="display:flex;flex-direction:column;gap:6px;font-size:13px;margin-bottom:16px">
         <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Tanggal</span><span>${formatDate(inv.invoice_date)}</span></div>
-        <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Customer</span><span>${escapeHtml(inv.store_name || '—')}</span></div>
+        <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Customer</span><span style="text-align:right">${escapeHtml(inv.customer_name || '—')}${inv.store_name && inv.store_name !== inv.customer_name ? `<br><span style="font-size:11px;color:#94a3b8">${escapeHtml(inv.store_name)}</span>` : ''}</span></div>
         <div style="display:flex;justify-content:space-between"><span style="color:#64748b">Termin</span><span>${inv.payment_term || '—'}</span></div>
         ${inv.notes ? `<div style="display:flex;justify-content:space-between"><span style="color:#64748b">Catatan</span><span>${escapeHtml(inv.notes)}</span></div>` : ''}
       </div>
@@ -870,7 +890,7 @@
         </div>
         <div class="item-field" style="grid-column:1/-1;">
           <label>Harga Satuan</label>
-          <input type="number" class="item-price-input readonly" value="0" disabled style="background:#f1f5f9;color:#475569;">
+          <input type="text" class="item-price-input readonly" value="0" readonly style="background:#f1f5f9;color:#475569;">
         </div>
       </div>
       <div class="item-subtotal-row">
@@ -913,7 +933,7 @@
       return;
     }
     row.querySelector('.item-stock-input').value = `${opt.dataset.stock} ${opt.dataset.unit}`;
-    row.querySelector('.item-price-input').value = parseFloat(opt.dataset.price) || 0;
+    row.querySelector('.item-price-input').value = Number(opt.dataset.price || 0).toLocaleString('id-ID');
     const id = row.id.replace('item-', '');
     recalcItem(id);
   }
@@ -922,7 +942,7 @@
     const row = document.getElementById('item-' + id);
     if (!row) return;
     const qty   = parseFloat(row.querySelector('.item-qty-input').value) || 0;
-    const price = parseFloat(row.querySelector('.item-price-input').value) || 0;
+    const price = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
     const sub   = Math.round((qty * price) / 100) * 100; // bulatkan ke kelipatan 100
     const subInput = document.getElementById('sub-' + id);
     if (subInput) subInput.value = Number(sub).toLocaleString('id-ID');
@@ -953,7 +973,7 @@ function recalcTotal() {
     for (const row of rows) {
       const sel = row.querySelector('.item-product-sel');
       const qty      = parseFloat(row.querySelector('.item-qty-input').value) || 0;
-      const price    = parseFloat(row.querySelector('.item-price-input').value) || 0;
+      const price    = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
       const subtotal = parseFormattedNumber(row.querySelector('.item-subtotal-input')?.value) || (qty * price);
       if (!sel.value) continue;
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); return; }
