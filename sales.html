@@ -932,8 +932,12 @@
       recalcItem(row.id.replace('item-', ''));
       return;
     }
-    row.querySelector('.item-stock-input').value = `${opt.dataset.stock} ${opt.dataset.unit}`;
+    const stock = parseInt(opt.dataset.stock) || 0;
+    row.querySelector('.item-stock-input').value = `${stock} ${opt.dataset.unit}`;
     row.querySelector('.item-price-input').value = Number(opt.dataset.price || 0).toLocaleString('id-ID');
+    const qtyInput = row.querySelector('.item-qty-input');
+    qtyInput.max = stock;
+    if (parseInt(qtyInput.value) > stock) qtyInput.value = stock;
     const id = row.id.replace('item-', '');
     recalcItem(id);
   }
