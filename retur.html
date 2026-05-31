@@ -106,6 +106,7 @@
     @page { size: 8.5in 11.5in; margin: 0.3in 0.4in; }
     @media print {
       body > .layout { display:none !important; }
+      .modal-overlay { display:none !important; }
       #print-area { display:block !important; }
     }
     #print-area { display:none; }
@@ -1037,13 +1038,18 @@ create table if not exists return_items (
     const notesClean = (ret.notes||'').replace(/\[Ditolak:.+\]/g,'').trim();
 
     const html = `<div class="rp">
-      <!-- HEADER -->
-      <div class="rp-header">
+      <!-- HEADER: 3 kolom -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;align-items:start;margin-bottom:6pt;">
         <div>
           <div class="rp-no">${escapeHtml(ret.return_number)}</div>
           <div class="rp-co">UD. DIANA</div>
           <div class="rp-sub">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
-          <div class="rp-sub">Dibuat oleh: <strong>${escapeHtml(ret.created_by||'Admin')}</strong></div>
+          <div class="rp-sub" style="margin-bottom:10pt;">Dibuat oleh: <strong>${escapeHtml(ret.created_by||'Admin')}</strong></div>
+        </div>
+        <div style="text-align:center;padding-top:2pt;">
+          <div class="rp-title" style="margin:0 0 2pt;">BUKTI RETUR PEMBELIAN</div>
+          <div class="rp-reason" style="margin:0;">Alasan: ${escapeHtml(ret.reason||'-')}</div>
+          ${notesClean ? `<div class="rp-reason" style="margin:0;">Catatan: ${escapeHtml(notesClean)}</div>` : ''}
         </div>
         <div class="rp-right">
           <strong>${escapeHtml(ret.customer_name||'-')}</strong>
@@ -1053,10 +1059,6 @@ create table if not exists return_items (
       </div>
 
       <hr class="rp-divider">
-
-      <!-- JUDUL TENGAH -->
-      <div class="rp-title">BUKTI RETUR PEMBELIAN</div>
-      <div class="rp-reason">Alasan: ${escapeHtml(ret.reason||'-')}${notesClean ? ' &nbsp;·&nbsp; Catatan: ' + escapeHtml(notesClean) : ''}</div>
 
       <!-- TABEL ITEM -->
       <table class="rp-table">
@@ -1084,19 +1086,19 @@ create table if not exists return_items (
 
       <!-- FOOTER: TTD + TOTAL -->
       <div style="display:flex;justify-content:space-between;align-items:flex-end;">
-        <div class="rp-footer" style="flex:1;margin-top:0">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20pt;text-align:center;font-size:9pt;flex:1;">
           <div>
-            Cap &amp; TTD Penerima,
-            <div class="rp-sign">( __________________ )</div>
+            <div>Cap &amp; TTD Penerima,</div>
+            <div style="margin-top:28pt;border-top:1px solid #000;padding-top:3pt;width:85pt;margin-left:auto;margin-right:auto;">(______________)</div>
           </div>
           <div>
-            Hormat Kami,
-            <div class="rp-sign">( ${escapeHtml(ret.created_by||'Admin')} )</div>
+            <div>Hormat Kami,</div>
+            <div style="margin-top:28pt;border-top:1px solid #000;padding-top:3pt;width:85pt;margin-left:auto;margin-right:auto;">${escapeHtml(ret.created_by||'Admin')}</div>
           </div>
         </div>
-        <div class="rp-totals" style="margin-left:0;flex-shrink:0">
+        <div style="flex-shrink:0;margin-left:16pt;">
           <div class="rp-total-row rp-grand">
-            <span>Total Nilai Retur</span>
+            <span>Total Nilai Retur&nbsp;&nbsp;</span>
             <span>${formatRupiah(ret.total_return_value||0)}</span>
           </div>
         </div>

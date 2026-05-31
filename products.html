@@ -843,14 +843,25 @@
     const btn = document.getElementById('btn-run-import');
     const total = importRows.length;
     btn.disabled = true;
+    btn.textContent = 'Menyiapkan data...';
 
     let added = 0, updated = 0, errors = [];
+    const CHUNK = 100; // batch size
 
-    // Ensure categories exist, get/create id map
+    // ── 1. Resolve categories ──────────────────────────
     const catMap = {};
     for (const c of categories) catMap[c.name.toLowerCase()] = c.id;
 
-    // Track SKU counter across batch so generated SKUs don't collide
+    const uniqueCats = [...new Set(importRows.map(r => (r.kategori||'').trim()).filter(Boolean))];
+    for (const catName of uniqueCats) {
+      const key = catName.toLowerCase();
+      if (!catMap[key]) {
+        const { data: newCat } = await supabase.from('categories').insert({ name: catName }).select('id,name').single();
+        if (newCat) { catMap[key] = newCat.id; categories.push(newCat); }
+      }
+    }
+
+    // ── 2. Prepare all payloads ────────────────────────
     let skuCounter = 0;
     for (const p of allProducts) {
       const m = (p.sku || '').match(/^UDD-(\d+)$/i);
@@ -858,35 +869,26 @@
     }
     const batchSkus = new Set(allProducts.map(p => (p.sku || '').toUpperCase()));
 
+    const toInsert = []; // payload baru
+    const toUpdate = []; // { id, payload }
+
     for (let i = 0; i < importRows.length; i++) {
       const row = importRows[i];
-      btn.textContent = `Mengimpor ${i + 1}/${total}...`;
       try {
         let sku = (row.sku || '').trim() || null;
         const nama = (row.nama || '').trim();
         if (!nama) { errors.push({ nama: '?', sku: row.sku || '—', reason: 'Kolom nama kosong' }); continue; }
 
-        // Auto-generate SKU jika kosong
         if (!sku) {
           skuCounter++;
           sku = `UDD-${String(skuCounter).padStart(4, '0')}`;
           batchSkus.add(sku.toUpperCase());
         }
 
-        // Resolve category
-        let catId = null;
-        if (row.kategori) {
-          const catKey = row.kategori.toLowerCase().trim();
-          if (!catMap[catKey]) {
-            const { data: newCat } = await supabase.from('categories').insert({ name: row.kategori.trim() }).select('id,name').single();
-            if (newCat) { catMap[catKey] = newCat.id; categories.push(newCat); }
-          }
-          catId = catMap[catKey] || null;
-        }
-
+        const catId = row.kategori ? (catMap[row.kategori.toLowerCase().trim()] || null) : null;
         const payload = {
           name:           nama,
-          sku:            sku,
+          sku,
           category_id:    catId,
           unit:           row.satuan || 'pcs',
           price:          parseFloat(row.harga_biasa)  || 0,
@@ -898,19 +900,35 @@
           is_active:      true,
         };
 
-        const existing = sku ? allProducts.find(p => p.sku && p.sku.toLowerCase() === sku.toLowerCase()) : null;
-        if (existing) {
-          const { error } = await supabase.from('products').update(payload).eq('id', existing.id);
-          if (error) throw error;
-          updated++;
-        } else {
-          const { error } = await supabase.from('products').insert(payload);
-          if (error) throw error;
-          added++;
-        }
+        const existing = allProducts.find(p => p.sku && p.sku.toLowerCase() === sku.toLowerCase());
+        if (existing) toUpdate.push({ id: existing.id, payload });
+        else toInsert.push(payload);
+
       } catch(err) {
-        errors.push({ nama: nama || row.nama || '?', sku: row.sku || '—', reason: err.message });
+        errors.push({ nama: row.nama || '?', sku: row.sku || '—', reason: err.message });
       }
+    }
+
+    // ── 3. Batch insert produk baru ────────────────────
+    const totalChunks = Math.ceil(toInsert.length / CHUNK);
+    for (let c = 0; c < totalChunks; c++) {
+      const chunk = toInsert.slice(c * CHUNK, (c + 1) * CHUNK);
+      btn.textContent = `Menyimpan baru ${Math.min((c+1)*CHUNK, toInsert.length)}/${toInsert.length}...`;
+      const { error } = await supabase.from('products').insert(chunk);
+      if (error) {
+        chunk.forEach(p => errors.push({ nama: p.name, sku: p.sku, reason: error.message }));
+      } else {
+        added += chunk.length;
+      }
+    }
+
+    // ── 4. Update produk lama (satu per satu, biasanya sedikit) ──
+    for (let i = 0; i < toUpdate.length; i++) {
+      const { id, payload } = toUpdate[i];
+      btn.textContent = `Memperbarui ${i + 1}/${toUpdate.length}...`;
+      const { error } = await supabase.from('products').update(payload).eq('id', id);
+      if (error) errors.push({ nama: payload.name, sku: payload.sku, reason: error.message });
+      else updated++;
     }
 
     btn.disabled = false; btn.textContent = '⬆️ Import Sekarang';
