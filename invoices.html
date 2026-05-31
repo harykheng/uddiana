@@ -89,7 +89,7 @@
     .pi-info { display:grid; grid-template-columns:1fr 1fr; gap:6pt; margin:5pt 0; font-size:9pt; }
     .pi-label { font-size:7pt; text-transform:uppercase; font-weight:bold; letter-spacing:.05em; margin-bottom:1pt; }
     .pi-status { display:inline-block; padding:1pt 5pt; font-weight:bold; font-size:9pt; }
-    .pi-table { width:100%; border-collapse:collapse; margin:5pt 0; }
+    .pi-table { width:100%; border-collapse:collapse; margin:5pt 0 24pt 0; }
     .pi-table th {
       padding:2pt 4pt 4pt; text-align:left; font-size:8.5pt; font-weight:bold;
       border-bottom:2px solid #000;
@@ -1205,7 +1205,7 @@
             <div style="font-size:12pt;font-weight:bold;">FAKTUR NO: ${escapeHtml(inv.invoice_number)}</div>
             <div class="pi-company-name">UD. DIANA</div>
             <div style="font-size:9pt;margin-top:1pt;">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
-            ${inv.sales_name ? `<div style="font-size:9pt;margin-top:1pt;">Sales: <strong>${escapeHtml(inv.sales_name)}</strong></div>` : ''}
+            ${inv.sales_name ? `<div style="font-size:9pt;margin-top:1pt;margin-bottom:10pt;">Sales: <strong>${escapeHtml(inv.sales_name)}</strong></div>` : ''}
           </div>
           <div style="text-align:right;font-size:9pt;">
             <div style="font-weight:bold;">${customerLine}</div>
