@@ -1019,11 +1019,15 @@ function recalcTotal() {
 
     if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); return; }
 
-    const customer = customers.find(c => c.id === customerId);
     const total = items.reduce((s, i) => s + i.subtotal, 0);
 
     btn.disabled = true;
     btn.textContent = 'Menyimpan...';
+
+    // Fetch customer langsung dari DB agar alamat & telepon selalu akurat
+    const { data: customer } = await supabase
+      .from('customers').select('name,store_name,phone,address')
+      .eq('id', customerId).single();
 
     const { data: inv, error: invErr } = await supabase.from('invoices').insert({
       invoice_date: date,
