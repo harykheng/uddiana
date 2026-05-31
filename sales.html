@@ -955,8 +955,10 @@
     if (!errEl) {
       errEl = document.createElement('div');
       errEl.className = 'qty-error';
-      errEl.style.cssText = 'font-size:12px;color:#dc2626;margin-top:4px;';
-      qtyInput.closest('.item-field').appendChild(errEl);
+      errEl.style.cssText = 'font-size:11px;color:#dc2626;position:absolute;bottom:-18px;left:0;white-space:nowrap;';
+      const field = qtyInput.closest('.item-field');
+      field.style.position = 'relative';
+      field.appendChild(errEl);
     }
 
     const hasProduct = qtyInput.max !== '';
