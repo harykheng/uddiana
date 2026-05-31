@@ -889,6 +889,7 @@
         <div class="item-field">
           <label>Qty</label>
           <input type="number" class="item-qty-input" value="1" min="1" oninput="recalcItem(${id})">
+          <div class="qty-error" style="font-size:11px;color:#dc2626;min-height:16px;margin-top:3px;"></div>
         </div>
         <div class="item-field">
           <label>Stok</label>
@@ -956,16 +957,7 @@
     const max   = parseInt(qtyInput.max) || 0;
     const price = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
 
-    // Hapus error lama
-    let errEl = row.querySelector('.qty-error');
-    if (!errEl) {
-      errEl = document.createElement('div');
-      errEl.className = 'qty-error';
-      errEl.style.cssText = 'font-size:11px;color:#dc2626;position:absolute;bottom:-18px;left:0;white-space:nowrap;';
-      const field = qtyInput.closest('.item-field');
-      field.style.position = 'relative';
-      field.appendChild(errEl);
-    }
+    const errEl = row.querySelector('.qty-error');
 
     const hasProduct = qtyInput.max !== '';
     if (hasProduct && qty > max) {
