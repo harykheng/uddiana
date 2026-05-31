@@ -22,7 +22,7 @@ TRUNCATE TABLE
   customers,
   products,
   categories
-RESTART IDENTITY CASCADE;
+CASCADE;
 
 -- ============================================================
 -- CATATAN: Akun login (user_profiles + Supabase Auth) TIDAK
