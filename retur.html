@@ -103,18 +103,31 @@
     .setup-notice .copy-btn { font-size:12px; }
 
     /* ── PRINT ── */
+    @page { size: 8.5in 11.5in; margin: 0.3in 0.4in; }
     @media print {
       body > .layout { display:none !important; }
       #print-area { display:block !important; }
     }
     #print-area { display:none; }
-    .print-wrap { font-family:Arial,sans-serif; padding:28px; font-size:13px; }
-    .print-wrap h2 { font-size:16px; font-weight:800; margin-bottom:4px; }
-    .print-wrap p  { font-size:12px; color:#555; margin:0 0 14px; }
-    .print-table { width:100%; border-collapse:collapse; font-size:12px; }
-    .print-table th { background:#f1f5f9; padding:7px 10px; text-align:left; border-bottom:1px solid #ddd; font-size:11px; text-transform:uppercase; }
-    .print-table td { padding:7px 10px; border-bottom:1px solid #eee; }
-    .print-table .num { text-align:right; }
+    .rp { font-family:Arial,'Helvetica Neue',sans-serif; font-size:9pt; color:#000; width:100%; }
+    .rp-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4pt; }
+    .rp-no     { font-size:12pt; font-weight:bold; }
+    .rp-co     { font-size:13pt; font-weight:bold; line-height:1.2; }
+    .rp-sub    { font-size:8.5pt; margin-top:1pt; }
+    .rp-right  { text-align:right; font-size:9pt; }
+    .rp-right strong { font-size:10pt; }
+    .rp-divider { border:none; border-top:1.5px solid #000; margin:6pt 0 4pt; }
+    .rp-title  { text-align:center; font-size:12pt; font-weight:bold; letter-spacing:.05em; margin:8pt 0 3pt; }
+    .rp-reason { text-align:center; font-size:8.5pt; color:#444; margin-bottom:8pt; }
+    .rp-table  { width:100%; border-collapse:collapse; margin-bottom:24pt; }
+    .rp-table th { padding:3pt 4pt 5pt; text-align:left; font-size:8.5pt; font-weight:bold; border-bottom:2px solid #000; }
+    .rp-table td { padding:2pt 4pt; font-size:9pt; line-height:1.4; border-bottom:1px solid #eee; }
+    .rp-table .num { text-align:right; }
+    .rp-totals { width:180pt; margin-left:auto; margin-top:0; }
+    .rp-total-row { display:flex; justify-content:space-between; font-size:9pt; padding:1.5pt 0; }
+    .rp-grand  { font-size:11pt; font-weight:bold; border-top:1.5px solid #000; padding-top:3pt; margin-top:2pt; }
+    .rp-footer { display:grid; grid-template-columns:1fr 1fr; gap:6pt; margin-top:6pt; font-size:9pt; text-align:center; }
+    .rp-sign   { border-top:1px solid #000; margin:28pt auto 0; padding-top:3pt; width:85pt; font-size:9pt; }
   </style>
 </head>
 <body>
@@ -1021,52 +1034,71 @@ create table if not exists return_items (
     const ret = allReturns.find(r => r.id === returId);
     if (!ret) return;
     const items = ret.return_items || [];
-    const statusLabel = ret.status === 'approved' ? 'DISETUJUI' : ret.status === 'rejected' ? 'DITOLAK' : 'PENDING';
+    const notesClean = (ret.notes||'').replace(/\[Ditolak:.+\]/g,'').trim();
 
-    const html = `<div class="print-wrap">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;">
+    const html = `<div class="rp">
+      <!-- HEADER -->
+      <div class="rp-header">
         <div>
-          <h2>SURAT RETUR BARANG</h2>
-          <p>UD. DIANA</p>
+          <div class="rp-no">${escapeHtml(ret.return_number)}</div>
+          <div class="rp-co">UD. DIANA</div>
+          <div class="rp-sub">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
+          <div class="rp-sub">Dibuat oleh: <strong>${escapeHtml(ret.created_by||'Admin')}</strong></div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-size:18px;font-weight:800;">${escapeHtml(ret.return_number)}</div>
-          <div style="font-size:12px;color:#555;">Status: ${statusLabel}</div>
+        <div class="rp-right">
+          <strong>${escapeHtml(ret.customer_name||'-')}</strong>
+          <div>No. Faktur: ${escapeHtml(ret.invoice_number||'-')}</div>
+          <div>Tanggal Retur: ${formatDate(ret.return_date)}</div>
         </div>
       </div>
-      <table style="width:100%;margin-bottom:16px;font-size:12px;">
-        <tr><td style="width:140px;color:#666;padding:3px 0;">Customer</td><td>: <strong>${escapeHtml(ret.customer_name||'-')}</strong></td>
-            <td style="width:140px;color:#666;padding:3px 0;">Tanggal Retur</td><td>: ${formatDate(ret.return_date)}</td></tr>
-        <tr><td style="color:#666;padding:3px 0;">No. Faktur Asal</td><td>: ${escapeHtml(ret.invoice_number||'-')}</td>
-            <td style="color:#666;padding:3px 0;">Dibuat Oleh</td><td>: ${escapeHtml(ret.created_by||'-')}</td></tr>
-        <tr><td style="color:#666;padding:3px 0;">Alasan Retur</td><td colspan="3">: ${escapeHtml(ret.reason||'-')}</td></tr>
-        ${ret.notes ? `<tr><td style="color:#666;padding:3px 0;">Catatan</td><td colspan="3">: ${escapeHtml(ret.notes)}</td></tr>` : ''}
-      </table>
-      <table class="print-table">
-        <thead><tr><th>#</th><th>Nama Produk</th><th>SKU</th><th class="num">Qty</th><th class="num">Harga Satuan</th><th class="num">Subtotal</th></tr></thead>
+
+      <hr class="rp-divider">
+
+      <!-- JUDUL TENGAH -->
+      <div class="rp-title">BUKTI RETUR PEMBELIAN</div>
+      <div class="rp-reason">Alasan: ${escapeHtml(ret.reason||'-')}${notesClean ? ' &nbsp;·&nbsp; Catatan: ' + escapeHtml(notesClean) : ''}</div>
+
+      <!-- TABEL ITEM -->
+      <table class="rp-table">
+        <thead>
+          <tr>
+            <th style="width:20pt">NO</th>
+            <th>NAMA PRODUK</th>
+            <th>SKU</th>
+            <th class="num" style="width:30pt">QTY</th>
+            <th class="num" style="width:75pt">HARGA SATUAN</th>
+            <th class="num" style="width:75pt">SUBTOTAL</th>
+          </tr>
+        </thead>
         <tbody>
           ${items.map((it,i) => `<tr>
             <td>${i+1}</td>
             <td>${escapeHtml(it.product_name||'-')}</td>
-            <td>${escapeHtml(it.sku||'-')}</td>
+            <td style="color:#555;font-size:8.5pt">${escapeHtml(it.sku||'-')}</td>
             <td class="num">${it.quantity}</td>
             <td class="num">${formatRupiah(it.unit_price||0)}</td>
             <td class="num">${formatRupiah(it.subtotal||0)}</td>
           </tr>`).join('')}
         </tbody>
-        <tfoot>
-          <tr><td colspan="5" style="text-align:right;font-weight:700;padding:8px 10px;">Total Nilai Retur</td>
-              <td class="num" style="font-weight:800;font-size:14px;">${formatRupiah(ret.total_return_value||0)}</td></tr>
-        </tfoot>
       </table>
-      <div style="margin-top:40px;display:grid;grid-template-columns:1fr 1fr;gap:40px;font-size:12px;">
-        <div style="text-align:center;">
-          <div style="margin-bottom:50px;">Hormat kami,</div>
-          <div style="border-top:1px solid #999;padding-top:6px;">( ${escapeHtml(ret.created_by||'Admin')} )</div>
+
+      <!-- FOOTER: TTD + TOTAL -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+        <div class="rp-footer" style="flex:1;margin-top:0">
+          <div>
+            Cap &amp; TTD Penerima,
+            <div class="rp-sign">( __________________ )</div>
+          </div>
+          <div>
+            Hormat Kami,
+            <div class="rp-sign">( ${escapeHtml(ret.created_by||'Admin')} )</div>
+          </div>
         </div>
-        <div style="text-align:center;">
-          <div style="margin-bottom:50px;">Penerima,</div>
-          <div style="border-top:1px solid #999;padding-top:6px;">( __________________ )</div>
+        <div class="rp-totals" style="margin-left:0;flex-shrink:0">
+          <div class="rp-total-row rp-grand">
+            <span>Total Nilai Retur</span>
+            <span>${formatRupiah(ret.total_return_value||0)}</span>
+          </div>
         </div>
       </div>
     </div>`;
