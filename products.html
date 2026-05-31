@@ -921,12 +921,20 @@
       }
     }
 
-    // ── Deduplikasi toInsert berdasarkan SKU (ambil yang terakhir) ──
-    const skuMap = new Map();
-    for (const p of toInsert) skuMap.set(p.sku.toLowerCase(), p);
-    const deduped = [...skuMap.values()];
-    const dupCount = toInsert.length - deduped.length;
-    if (dupCount > 0) errors.push({ nama: `${dupCount} baris`, sku: '—', reason: `SKU duplikat dalam CSV (baris terakhir dipakai)` });
+    // ── Cek duplikat SKU dalam batch, auto-generate SKU baru kalau tabrakan ──
+    const usedSkus = new Set(batchSkus); // sudah include SKU dari DB + yang di-generate
+    const deduped = toInsert.map(p => {
+      const key = p.sku.toLowerCase();
+      if (usedSkus.has(key)) {
+        // SKU sudah dipakai — generate baru
+        skuCounter++;
+        const newSku = `UDD-${String(skuCounter).padStart(4, '0')}`;
+        usedSkus.add(newSku.toLowerCase());
+        return { ...p, sku: newSku };
+      }
+      usedSkus.add(key);
+      return p;
+    });
 
     // ── 3. Batch upsert produk baru (onConflict sku) ───
     const totalChunks = Math.ceil(deduped.length / CHUNK);
