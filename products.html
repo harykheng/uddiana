@@ -406,11 +406,25 @@
 
   async function loadProducts() {
     const catFilter = document.getElementById('filter-category').value;
-    let query = supabase.from('products').select('*, categories(name)').eq('is_active', true).order('name').limit(5000);
-    if (catFilter) query = query.eq('category_id', catFilter);
-    const { data, error } = await query;
-    if (error) { showToast('Gagal memuat produk: ' + error.message, 'error'); return; }
-    allProducts = data || [];
+    const PAGE = 1000;
+    let from = 0, all = [];
+
+    while (true) {
+      let query = supabase.from('products')
+        .select('*, categories(name)')
+        .eq('is_active', true)
+        .order('name')
+        .range(from, from + PAGE - 1);
+      if (catFilter) query = query.eq('category_id', catFilter);
+
+      const { data, error } = await query;
+      if (error) { showToast('Gagal memuat produk: ' + error.message, 'error'); return; }
+      all = all.concat(data || []);
+      if (!data || data.length < PAGE) break; // sudah halaman terakhir
+      from += PAGE;
+    }
+
+    allProducts = all;
     currentPage = 1;
     renderProducts();
   }
