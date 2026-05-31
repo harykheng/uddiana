@@ -225,18 +225,26 @@
     }
     .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
 
-    /* TOAST */
-    #toast {
-      position: fixed; bottom: 24px; left: 50%;
-      transform: translateX(-50%) translateY(80px);
-      background: #1e293b; color: #fff;
-      padding: 10px 20px; border-radius: 24px;
-      font-size: 13px; font-weight: 500;
-      transition: transform .3s; z-index: 999;
-      white-space: nowrap;
+    /* TOAST (utils.js showToast) */
+    .toast {
+      position: fixed;
+      top: 16px; left: 16px; right: 16px;
+      background: #1e293b; color: #f8fafc;
+      padding: 14px 16px; border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,.3);
+      display: flex; align-items: center; gap: 10px;
+      font-size: 14px; font-weight: 500;
+      z-index: 9999;
+      transform: translateY(-16px);
+      opacity: 0;
+      transition: all .3s;
     }
-    #toast.show { transform: translateX(-50%) translateY(0); }
-    #toast.error { background: #dc2626; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast-error   { background: #7f1d1d; }
+    .toast-error .toast-icon   { color: #fca5a5; }
+    .toast-success .toast-icon { color: #4ade80; }
+    .toast-warning { background: #78350f; }
+    .toast-warning .toast-icon { color: #fcd34d; }
 
     .reject-reason-box {
       background: #fef2f2;
@@ -451,8 +459,6 @@
     </div>
   </div>
 </div>
-
-<div id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
 <script src="js/config.js"></script>
@@ -879,10 +885,11 @@
         <option value="">— Pilih Produk —</option>
         ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost || 0}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`).join('')}
       </select>
-      <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:end;">
+      <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:start;">
         <div class="item-field">
           <label>Qty</label>
           <input type="number" class="item-qty-input" value="1" min="1" oninput="recalcItem(${id})">
+          <div class="qty-error" style="font-size:11px;color:#dc2626;min-height:16px;margin-top:3px;"></div>
         </div>
         <div class="item-field">
           <label>Stok</label>
@@ -950,16 +957,7 @@
     const max   = parseInt(qtyInput.max) || 0;
     const price = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
 
-    // Hapus error lama
-    let errEl = row.querySelector('.qty-error');
-    if (!errEl) {
-      errEl = document.createElement('div');
-      errEl.className = 'qty-error';
-      errEl.style.cssText = 'font-size:11px;color:#dc2626;position:absolute;bottom:-18px;left:0;white-space:nowrap;';
-      const field = qtyInput.closest('.item-field');
-      field.style.position = 'relative';
-      field.appendChild(errEl);
-    }
+    const errEl = row.querySelector('.qty-error');
 
     const hasProduct = qtyInput.max !== '';
     if (hasProduct && qty > max) {
