@@ -39,4 +39,54 @@ function updateSidebarUser(profile) {
     </button>
     <div style="margin-top:8px;font-size:10px;color:#475569;text-align:center">© 2025 StokManager</div>
   `;
+
+  initMobileSidebar();
+}
+
+function initMobileSidebar() {
+  // Inject hamburger ke topbar (hanya sekali)
+  if (document.getElementById('sidebar-hamburger')) return;
+
+  const topbar = document.querySelector('.topbar');
+  if (!topbar) return;
+
+  // Backdrop overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'sidebar-overlay';
+  overlay.onclick = closeMobileSidebar;
+  document.body.appendChild(overlay);
+
+  // Hamburger button
+  const btn = document.createElement('button');
+  btn.id = 'sidebar-hamburger';
+  btn.innerHTML = `<span></span><span></span><span></span>`;
+  btn.onclick = toggleMobileSidebar;
+  topbar.prepend(btn);
+
+  // Tutup sidebar saat klik nav-item di mobile
+  document.querySelectorAll('.nav-item').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 768) closeMobileSidebar();
+    });
+  });
+}
+
+function toggleMobileSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  const isOpen  = sidebar.classList.contains('sidebar-open');
+  if (isOpen) closeMobileSidebar();
+  else {
+    sidebar.classList.add('sidebar-open');
+    overlay.classList.add('sidebar-overlay-show');
+    document.body.style.overflow = 'hidden';
+  }
+}
+
+function closeMobileSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  sidebar.classList.remove('sidebar-open');
+  overlay.classList.remove('sidebar-overlay-show');
+  document.body.style.overflow = '';
 }
