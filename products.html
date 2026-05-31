@@ -921,14 +921,19 @@
       }
     }
 
-    // ── 3. Batch insert produk baru ────────────────────
+    // ── 3. Batch upsert produk baru (onConflict sku) ───
     const totalChunks = Math.ceil(toInsert.length / CHUNK);
     for (let c = 0; c < totalChunks; c++) {
       const chunk = toInsert.slice(c * CHUNK, (c + 1) * CHUNK);
-      btn.textContent = `Menyimpan baru ${Math.min((c+1)*CHUNK, toInsert.length)}/${toInsert.length}...`;
-      const { error } = await supabase.from('products').insert(chunk);
+      btn.textContent = `Menyimpan ${Math.min((c+1)*CHUNK, toInsert.length)}/${toInsert.length}...`;
+      const { error } = await supabase.from('products').upsert(chunk, { onConflict: 'sku', ignoreDuplicates: false });
       if (error) {
-        chunk.forEach(p => errors.push({ nama: p.name, sku: p.sku, reason: error.message }));
+        // Fallback: coba satu per satu untuk isolasi error
+        for (const p of chunk) {
+          const { error: e2 } = await supabase.from('products').upsert([p], { onConflict: 'sku' });
+          if (e2) errors.push({ nama: p.name, sku: p.sku, reason: e2.message });
+          else added++;
+        }
       } else {
         added += chunk.length;
       }
