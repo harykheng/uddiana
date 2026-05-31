@@ -781,6 +781,10 @@
       importRows = raw.map(r => {
         const norm = {};
         Object.entries(r).forEach(([k, v]) => { norm[k.toLowerCase().trim().replace(/\s+/g,'_')] = String(v).trim(); });
+        // Fallback alias kolom SKU: no_sku, kode, kode_produk, product_code, barcode, no.sku
+        if (!norm.sku) {
+          norm.sku = norm.no_sku || norm.kode || norm.kode_produk || norm.product_code || norm.barcode || norm['no.sku'] || '';
+        }
         return norm;
       });
 
