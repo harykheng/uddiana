@@ -202,8 +202,8 @@
   }
 
   async function loadProducts() {
-    const { data } = await supabase.from('products')
-      .select('id,name,stock_quantity,unit').eq('is_active', true).order('name');
+    const { data } = await fetchAll(() => supabase.from('products')
+      .select('id,name,stock_quantity,unit').eq('is_active', true).order('name'));
     products = data || [];
   }
 
