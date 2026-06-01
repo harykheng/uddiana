@@ -331,6 +331,16 @@
     </div>
     <div class="modal-body">
       <div id="edit-invoice-items-wrap">
+        <div style="margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:160px">
+            <label style="font-size:11px;font-weight:600;color:#475569;display:block;margin-bottom:4px">Termin Pembayaran</label>
+            <select id="edit-inv-payment-term" style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:13px">
+              <option value="cod">COD</option>
+              <option value="14_days">14 Hari</option>
+              <option value="30_days">30 Hari</option>
+            </select>
+          </div>
+        </div>
         <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">Item Penjualan</div>
         <div class="table-wrap" style="margin-bottom:8px">
           <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -860,6 +870,7 @@
     editInvoiceId = id;
     editItemRowCount = 0;
     document.getElementById('edit-invoice-title').textContent = `Edit Faktur: ${inv.invoice_number}`;
+    document.getElementById('edit-inv-payment-term').value = inv.payment_term || 'cod';
     document.getElementById('edit-invoice-items-body').innerHTML = '<tr><td colspan="7" style="padding:20px;text-align:center;color:var(--text-muted)">Memuat item...</td></tr>';
     openModal('modal-edit-invoice');
 
@@ -1041,7 +1052,8 @@
     }
 
     // Update total faktur
-    await supabase.from('invoices').update({ total, subtotal: total }).eq('id', editInvoiceId);
+    const editPaymentTerm = document.getElementById('edit-inv-payment-term').value;
+    await supabase.from('invoices').update({ total, subtotal: total, payment_term: editPaymentTerm }).eq('id', editInvoiceId);
 
     setLoading(btn, false);
     showToast('Faktur berhasil diperbarui!', 'success');
@@ -1279,7 +1291,7 @@
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6pt;">
           <div>
             <div style="font-size:12pt;font-weight:bold;">FAKTUR NO: ${escapeHtml(inv.invoice_number)}</div>
-            <div class="pi-company-name">UD. DIANA</div>
+            <div class="pi-company-name">DIANA KOSMETIK</div>
             <div style="font-size:9pt;margin-top:1pt;">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
             ${inv.sales_name ? `<div style="font-size:9pt;margin-top:1pt;margin-bottom:10pt;">Sales: <strong>${escapeHtml(inv.sales_name)}</strong></div>` : ''}
           </div>
@@ -1316,7 +1328,7 @@
             </div>
             <div>
               Hormat Kami,
-              <div class="pi-sign-line">UD. DIANA</div>
+              <div class="pi-sign-line">DIANA KOSMETIK</div>
             </div>
           </div>
           <div class="pi-totals" style="margin-left:0;margin-top:0;flex-shrink:0;">
