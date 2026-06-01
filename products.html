@@ -372,10 +372,13 @@
   let sortDir = 1; // 1=asc, -1=desc
   const handleSearch = debounce(() => { currentPage = 1; renderProducts(); }, 350);
 
+  let isSuperAdmin = false;
+
   async function init() {
     const auth = await requireAdmin(); if (!auth) return;
-    // Sembunyikan kolom & field harga modal untuk admin biasa
-    if (auth.profile.role === 'admin') {
+    isSuperAdmin = auth.profile.role === 'super_admin';
+    // Sembunyikan th & form field harga modal untuk admin biasa
+    if (!isSuperAdmin) {
       document.querySelectorAll('.col-harga-modal').forEach(el => el.style.display = 'none');
     }
     await loadCategories();
@@ -486,7 +489,7 @@
           <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(Math.round((p.price * 12) / 100) * 100)}/lsn</div>
         </td>
         <td class="text-right">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
-        <td class="text-right col-harga-modal">${formatCurrency(p.cost)}</td>
+        ${isSuperAdmin ? `<td class="text-right">${formatCurrency(p.cost)}</td>` : ''}
         <td class="text-right font-bold ${stockClass}">${p.stock_quantity}</td>
         <td class="text-right">${p.min_stock}</td>
         <td>${escapeHtml(p.unit)}</td>
