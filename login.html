@@ -196,7 +196,7 @@
       return;
     }
 
-    window.location.href = profile.role === 'admin' ? 'index.html' : 'sales.html';
+    window.location.href = (profile.role === 'admin' || profile.role === 'super_admin') ? 'index.html' : 'sales.html';
   }
 
   function showError(msg) {
@@ -210,7 +210,7 @@
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
       const { data: profile } = await supabase.from('user_profiles').select('role').eq('id', session.user.id).single();
-      if (profile) window.location.href = profile.role === 'admin' ? 'index.html' : 'sales.html';
+      if (profile) window.location.href = (profile.role === 'admin' || profile.role === 'super_admin') ? 'index.html' : 'sales.html';
     }
   })();
 </script>
