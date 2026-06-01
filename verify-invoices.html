@@ -407,7 +407,7 @@
     const row = input.closest('.edit-item-row');
     const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
     const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
-    const sub = Math.round((qty * price) / 100) * 100;
+    const sub = Math.ceil((qty * price) / 100) * 100;
     row.querySelector('.edit-sub').value = sub.toLocaleString('id-ID');
     recalcEditTotal();
   }
@@ -417,7 +417,7 @@
     document.querySelectorAll('.edit-item-row').forEach(row => {
       const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
       const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
-      total += Math.round((qty * price) / 100) * 100;
+      total += Math.ceil((qty * price) / 100) * 100;
     });
     document.getElementById('edit-total').textContent = formatCurrency(total);
   }
@@ -436,7 +436,7 @@
       const productId = row.querySelector('.edit-product-sel').value;
       const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
       const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
-      const sub = Math.round((qty * price) / 100) * 100;
+      const sub = Math.ceil((qty * price) / 100) * 100;
       const opt = row.querySelector('.edit-product-sel').options[row.querySelector('.edit-product-sel').selectedIndex];
       const cost = parseFloat(opt.dataset.cost) || 0;
       const productName = opt.text || '';
