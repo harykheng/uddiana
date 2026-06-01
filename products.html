@@ -183,7 +183,7 @@
 </div>
 
 <!-- MODAL ADD/EDIT PRODUCT -->
-<div class="modal-overlay" id="modal-product">
+<div class="modal-overlay" id="modal-product" data-no-overlay-close>
   <div class="modal">
     <div class="modal-header">
       <h3 id="modal-product-title">Tambah Produk</h3>
@@ -286,7 +286,7 @@
 </div>
 
 <!-- MODAL IMPORT CSV -->
-<div class="modal-overlay" id="modal-import">
+<div class="modal-overlay" id="modal-import" data-no-overlay-close>
   <div class="modal" style="max-width:680px">
     <div class="modal-header">
       <h3>⬆️ Import Produk dari CSV</h3>
@@ -317,7 +317,7 @@
 </div>
 
 <!-- MODAL ADJUST STOCK -->
-<div class="modal-overlay" id="modal-adjust">
+<div class="modal-overlay" id="modal-adjust" data-no-overlay-close>
   <div class="modal">
     <div class="modal-header">
       <h3>Sesuaikan Stok</h3>
@@ -995,7 +995,7 @@
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
-    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+    el.addEventListener('click', e => { if (e.target === el && !el.hasAttribute('data-no-overlay-close')) closeModal(el.id); });
   });
 
   init();

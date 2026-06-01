@@ -115,7 +115,7 @@
 </div>
 
 <!-- MODAL CREATE PO -->
-<div class="modal-overlay" id="modal-create-po">
+<div class="modal-overlay" id="modal-create-po" data-no-overlay-close>
   <div class="modal modal-xl">
     <div class="modal-header">
       <h3>Buat Pembelian Barang</h3>
@@ -494,7 +494,7 @@
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
-    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+    el.addEventListener('click', e => { if (e.target === el && !el.hasAttribute('data-no-overlay-close')) closeModal(el.id); });
   });
 
   init();

@@ -444,7 +444,7 @@
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
-    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+    el.addEventListener('click', e => { if (e.target === el && !el.hasAttribute('data-no-overlay-close')) closeModal(el.id); });
   });
 
   (async () => { const auth = await requireAdmin(); if (!auth) return; await loadData(); })();

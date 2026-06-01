@@ -273,7 +273,7 @@
 <!-- ═══════════════════════════════════════════════════ -->
 <!-- MODAL: Create Retur -->
 <!-- ═══════════════════════════════════════════════════ -->
-<div id="modal-create" class="modal-overlay">
+<div id="modal-create" class="modal-overlay" data-no-overlay-close>
   <div class="modal" style="max-width:700px; width:95%;">
     <div class="modal-header">
       <h3>Buat Retur Barang</h3>
@@ -1199,7 +1199,7 @@ create table if not exists return_items (
 
   // ── Close modals on overlay click ───────────────────────────────────────
   document.querySelectorAll('.modal-overlay').forEach(el => {
-    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+    el.addEventListener('click', e => { if (e.target === el && !el.hasAttribute('data-no-overlay-close')) closeModal(el.id); });
   });
 
   init();

@@ -197,7 +197,7 @@
 <!-- ══════════════════════════════════════════════════════════
      MODAL: BUAT FAKTUR
 ════════════════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="modal-create-invoice">
+<div class="modal-overlay" id="modal-create-invoice" data-no-overlay-close>
   <div class="modal modal-xl">
     <div class="modal-header">
       <h3>Buat Faktur Penjualan</h3>
@@ -313,7 +313,7 @@
 <!-- ══════════════════════════════════════════════════════════
      MODAL: EDIT FAKTUR
 ════════════════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="modal-edit-invoice">
+<div class="modal-overlay" id="modal-edit-invoice" data-no-overlay-close>
   <div class="modal modal-xl">
     <div class="modal-header">
       <h3 id="edit-invoice-title">Edit Faktur</h3>
@@ -354,7 +354,7 @@
 <!-- ══════════════════════════════════════════════════════════
      MODAL: PELUNASAN
 ════════════════════════════════════════════════════════════ -->
-<div class="modal-overlay" id="modal-payment">
+<div class="modal-overlay" id="modal-payment" data-no-overlay-close>
   <div class="modal" style="max-width:440px">
     <div class="modal-header">
       <h3>Proses Pelunasan</h3>
@@ -1256,7 +1256,7 @@
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
-    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+    el.addEventListener('click', e => { if (e.target === el && !el.hasAttribute('data-no-overlay-close')) closeModal(el.id); });
   });
 
   init();
