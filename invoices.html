@@ -728,7 +728,7 @@
     const price = parseFormattedNumber(document.getElementById(`price-${rowId}`)?.value);
     const disc  = parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0;
     const sub   = document.getElementById(`sub-${rowId}`);
-    const total = Math.round((qty * price * (1 - disc / 100)) / 100) * 100; // bulatkan ke kelipatan 100
+    const total = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100; // bulatkan ke kelipatan 100
     if (sub) sub.value = total > 0 ? total.toLocaleString('id-ID') : '0';
     recalcTotal();
   }
@@ -932,7 +932,7 @@
     const qty   = parseFormattedNumber(document.getElementById(`eqty-${rowId}`)?.value || '0');
     const price = parseFormattedNumber(document.getElementById(`eprice-${rowId}`)?.value || '0');
     const disc  = parseFormattedNumber(document.getElementById(`edisc-${rowId}`)?.value || '0');
-    const sub   = Math.round((qty * price * (1 - disc / 100)) / 100) * 100;
+    const sub   = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100;
     const subEl = document.getElementById(`esub-${rowId}`);
     if (subEl) subEl.value = sub > 0 ? sub.toLocaleString('id-ID') : '0';
     recalcEditInvoiceTotal();
@@ -963,7 +963,7 @@
       const qty   = Math.round(parseFormattedNumber(tr.querySelector('[id^="eqty-"]')?.value || '0'));
       const price = parseFormattedNumber(tr.querySelector('[id^="eprice-"]')?.value || '0');
       const disc  = parseFormattedNumber(tr.querySelector('[id^="edisc-"]')?.value || '0');
-      const sub   = Math.round((qty * price * (1 - disc / 100)) / 100) * 100;
+      const sub   = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100;
       const prod  = products.find(p => p.id === sel.value);
       const cost  = parseFloat(sel.options[sel.selectedIndex].dataset.cost) || 0;
       const stockEl = tr.querySelector('[id^="estock-"]');

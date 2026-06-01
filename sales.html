@@ -969,7 +969,7 @@
       qtyInput.style.borderColor = '';
     }
 
-    const sub = Math.round((qty * price) / 100) * 100;
+    const sub = Math.ceil((qty * price) / 100) * 100;
     const subInput = document.getElementById('sub-' + id);
     if (subInput) subInput.value = Number(sub).toLocaleString('id-ID');
     recalcTotal();

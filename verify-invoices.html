@@ -407,7 +407,7 @@
     const row = input.closest('.edit-item-row');
     const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
     const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
-    const sub = Math.round((qty * price) / 100) * 100;
+    const sub = Math.ceil((qty * price) / 100) * 100;
     row.querySelector('.edit-sub').value = sub.toLocaleString('id-ID');
     recalcEditTotal();
   }
@@ -417,7 +417,7 @@
     document.querySelectorAll('.edit-item-row').forEach(row => {
       const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
       const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
-      total += Math.round((qty * price) / 100) * 100;
+      total += Math.ceil((qty * price) / 100) * 100;
     });
     document.getElementById('edit-total').textContent = formatCurrency(total);
   }
@@ -436,7 +436,7 @@
       const productId = row.querySelector('.edit-product-sel').value;
       const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
       const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
-      const sub = Math.round((qty * price) / 100) * 100;
+      const sub = Math.ceil((qty * price) / 100) * 100;
       const opt = row.querySelector('.edit-product-sel').options[row.querySelector('.edit-product-sel').selectedIndex];
       const cost = parseFloat(opt.dataset.cost) || 0;
       const productName = opt.text || '';
@@ -456,6 +456,14 @@
 
       await supabase.from('invoice_items').update({ product_id: productId, product_name: productName, quantity: qty, price: price, subtotal: sub, cost_price: cost }).eq('id', itemId);
       total += sub;
+
+      // Auto-update harga jual produk jika belum ada (price = 0)
+      if (price > 0) {
+        const { data: prodCheck } = await supabase.from('products').select('price').eq('id', productId).single();
+        if (prodCheck && (prodCheck.price === 0 || prodCheck.price === null)) {
+          await supabase.from('products').update({ price }).eq('id', productId);
+        }
+      }
     }
 
     const { data: { session } } = await supabase.auth.getSession();
