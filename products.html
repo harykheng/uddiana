@@ -84,17 +84,17 @@
       <div class="nav-label">Transaksi</div>
       <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
       <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
-      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="purchases.html" class="nav-item" data-super-admin><span class="nav-icon">🛒</span> Pembelian Barang</a>
       <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
       <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
       <div class="nav-label">Laporan</div>
-      <a href="reports.html" class="nav-item"><span class="nav-icon">📊</span> Laporan Stok</a>
-      <a href="profit-loss.html" class="nav-item"><span class="nav-icon">💹</span> Laba Rugi</a>
-      <a href="piutang.html" class="nav-item"><span class="nav-icon">💰</span> Piutang</a>
-      <a href="laporan-sales.html" class="nav-item"><span class="nav-icon">👤</span> Laporan Sales</a>
+      <a href="reports.html" class="nav-item" data-super-admin><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item" data-super-admin><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item" data-super-admin><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item" data-super-admin><span class="nav-icon">👤</span> Laporan Sales</a>
       <div class="nav-label">Admin</div>
       <a href="wishlist.html" class="nav-item"><span class="nav-icon">⭐</span> Wishlist</a>
-      <a href="settings.html" class="nav-item"><span class="nav-icon">⚙️</span> Pengaturan</a>
+      <a href="settings.html" class="nav-item" data-super-admin><span class="nav-icon">⚙️</span> Pengaturan</a>
     </nav>
     <div class="sidebar-footer">© 2025 StokManager</div>
   </aside>
@@ -147,7 +147,7 @@
                 <th>Kategori</th>
                 <th>Harga Biasa<br><span style="font-weight:400;font-size:10px;opacity:.6">pcs / lusin</span></th>
                 <th>Harga Shopee</th>
-                <th>Harga Modal</th>
+                <th class="col-harga-modal">Harga Modal</th>
                 <th class="sortable" id="th-stock" onclick="setSort('stock_quantity')">Stok <span class="sort-icon"></span></th>
                 <th>Min.</th>
                 <th>Satuan</th>
@@ -236,7 +236,7 @@
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group">
+        <div class="form-group col-harga-modal">
           <label>Harga Modal (Rp)</label>
           <input type="text" inputmode="numeric" data-number id="product-cost" placeholder="0">
         </div>
@@ -374,6 +374,10 @@
 
   async function init() {
     const auth = await requireAdmin(); if (!auth) return;
+    // Sembunyikan kolom & field harga modal untuk admin biasa
+    if (auth.profile.role === 'admin') {
+      document.querySelectorAll('.col-harga-modal').forEach(el => el.style.display = 'none');
+    }
     await loadCategories();
     await loadProducts();
   }
@@ -482,7 +486,7 @@
           <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(Math.round((p.price * 12) / 100) * 100)}/lsn</div>
         </td>
         <td class="text-right">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
-        <td class="text-right">${formatCurrency(p.cost)}</td>
+        <td class="text-right col-harga-modal">${formatCurrency(p.cost)}</td>
         <td class="text-right font-bold ${stockClass}">${p.stock_quantity}</td>
         <td class="text-right">${p.min_stock}</td>
         <td>${escapeHtml(p.unit)}</td>
