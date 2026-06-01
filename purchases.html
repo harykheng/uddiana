@@ -147,7 +147,7 @@
               <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:38%">Produk</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Stok</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Qty</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Harga Modal / Unit</th>
+              <th class="col-harga-modal-po" style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Harga Modal / Unit</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Subtotal</th>
               <th style="width:8%"></th>
             </tr>
@@ -200,8 +200,15 @@
   let poRowCount = 0;
   const handleSearch = debounce(() => renderPurchases(), 350);
 
+  let poIsSuperAdmin = false;
+
   async function init() {
-    const auth = await requireSuperAdmin(); if (!auth) return;
+    const auth = await requireAdmin(); if (!auth) return;
+    poIsSuperAdmin = auth.profile.role === 'super_admin';
+    // Sembunyikan kolom & input harga modal untuk admin biasa
+    if (!poIsSuperAdmin) {
+      document.querySelectorAll('.col-harga-modal-po').forEach(el => el.style.display = 'none');
+    }
     document.getElementById('po-date').value = todayISO();
     await loadProducts();
     await loadPurchases();
@@ -293,7 +300,7 @@
       </td>
       <td style="padding:5px 6px"><input type="number" id="postock-${id}" readonly value="0" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="number" id="poqty-${id}" value="1" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
-      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
+      <td class="col-harga-modal-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" id="posub-${id}" readonly value="0" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcPoTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
