@@ -288,6 +288,15 @@
       </div>
       <button class="btn btn-ghost btn-sm" onclick="addItemRow()" style="margin-bottom:14px">+ Tambah Item</button>
 
+      <!-- BIAYA TAMBAHAN -->
+      <div style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <label style="font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569">Biaya Tambahan</label>
+          <button class="btn btn-ghost btn-sm" onclick="addCharge()" type="button">+ Tambah Biaya</button>
+        </div>
+        <div id="charges-list" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+
       <!-- SUMMARY -->
       <div class="invoice-summary">
         <div class="invoice-summary-row"><span>Subtotal</span><span id="inv-subtotal">Rp 0</span></div>
@@ -295,6 +304,7 @@
           <span>Diskon (Rp)</span>
           <input type="text" id="inv-discount" inputmode="numeric" data-number value="0" style="width:140px;text-align:right;padding:5px 8px" oninput="recalcTotal()">
         </div>
+        <div id="charges-summary"></div>
         <div class="invoice-summary-row total"><span>TOTAL</span><span id="inv-total" style="color:var(--primary)">Rp 0</span></div>
       </div>
 
@@ -590,11 +600,50 @@
     document.getElementById('inv-sales').value = '';
     document.getElementById('inv-discount').value = '0';
     document.getElementById('invoice-items-body').innerHTML = '';
+    document.getElementById('charges-list').innerHTML = '';
+    document.getElementById('charges-summary').innerHTML = '';
     itemRowCount = 0;
+    chargeRowCount = 0;
     setPriceMode('regular');
     addItemRow();
     recalcTotal();
     openModal('modal-create-invoice');
+  }
+
+  // ── BIAYA TAMBAHAN ──────────────────────────────────────────
+  let chargeRowCount = 0;
+
+  function addCharge() {
+    const id = `charge-${++chargeRowCount}`;
+    const div = document.createElement('div');
+    div.id = id;
+    div.style.cssText = 'display:grid;grid-template-columns:1fr 100px 130px auto;gap:8px;align-items:center';
+    div.innerHTML = `
+      <input type="text" placeholder="Nama biaya (cth: Ongkir)" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:100%" oninput="recalcTotal()">
+      <select style="padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px" onchange="recalcTotal()">
+        <option value="fixed">Rp (nominal)</option>
+        <option value="percent">% (persen)</option>
+      </select>
+      <input type="text" inputmode="numeric" data-number value="0" placeholder="0" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;width:100%;text-align:right" oninput="recalcTotal()">
+      <button onclick="document.getElementById('${id}').remove();recalcTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;line-height:1">×</button>
+    `;
+    document.getElementById('charges-list').appendChild(div);
+  }
+
+  function getCharges(subtotalAfterDiscount) {
+    const charges = [];
+    document.querySelectorAll('#charges-list > div').forEach(div => {
+      const inputs = div.querySelectorAll('input,select');
+      const name  = inputs[0].value.trim() || 'Biaya Tambahan';
+      const type  = inputs[1].value;
+      const val   = parseFormattedNumber(inputs[2].value || '0');
+      if (val <= 0) return;
+      const amount = type === 'percent'
+        ? Math.round((subtotalAfterDiscount * val / 100) / 100) * 100
+        : val;
+      charges.push({ name, type, value: val, amount });
+    });
+    return charges;
   }
 
   function onCustomerSelect() {
@@ -697,9 +746,25 @@
       subtotal += parseFormattedNumber(subEl?.value);
     });
     const discount = parseFormattedNumber(document.getElementById('inv-discount').value);
-    const total = Math.max(0, subtotal - discount);
+    const afterDiscount = Math.max(0, subtotal - discount);
+
+    const charges = getCharges(afterDiscount);
+    const chargesTotal = charges.reduce((s, c) => s + c.amount, 0);
+    const total = afterDiscount + chargesTotal;
+
     document.getElementById('inv-subtotal').textContent = formatCurrency(subtotal);
-    document.getElementById('inv-total').textContent    = formatCurrency(total);
+
+    // Render charges di summary
+    const summaryEl = document.getElementById('charges-summary');
+    if (summaryEl) {
+      summaryEl.innerHTML = charges.map(c => `
+        <div class="invoice-summary-row" style="color:var(--text-muted)">
+          <span>${escapeHtml(c.name)}${c.type === 'percent' ? ` (${c.value}%)` : ''}</span>
+          <span>+${formatCurrency(c.amount)}</span>
+        </div>`).join('');
+    }
+
+    document.getElementById('inv-total').textContent = formatCurrency(total);
   }
 
   async function saveInvoice() {
@@ -737,7 +802,10 @@
     if (!items.length) { showToast('Tambahkan minimal 1 produk', 'error'); return; }
 
     const discount = parseFormattedNumber(document.getElementById('inv-discount').value);
-    const total = Math.max(0, subtotal - discount);
+    const afterDiscount = Math.max(0, subtotal - discount);
+    const charges = getCharges(afterDiscount);
+    const chargesTotal = charges.reduce((s, c) => s + c.amount, 0);
+    const total = afterDiscount + chargesTotal;
     const customerId = document.getElementById('inv-customer-select').value || null;
 
     const salesSel = document.getElementById('inv-sales');
@@ -756,6 +824,7 @@
       payment_term:   document.getElementById('inv-payment-term').value,
       price_mode:     currentPriceMode,
       subtotal, discount, tax_percent: 0, tax: 0, total,
+      additional_charges: charges.length ? charges : null,
       status: 'pending',
       notes:          document.getElementById('inv-notes').value.trim() || null,
       sales_name:     salesName,
@@ -1145,7 +1214,8 @@
       </table>
       <div class="invoice-summary" style="margin-top:12px">
         <div class="invoice-summary-row"><span>Subtotal</span><span>${formatCurrency(inv.subtotal)}</span></div>
-        <div class="invoice-summary-row"><span>Diskon</span><span>- ${formatCurrency(inv.discount)}</span></div>
+        ${Number(inv.discount) > 0 ? `<div class="invoice-summary-row"><span>Diskon</span><span>- ${formatCurrency(inv.discount)}</span></div>` : ''}
+        ${(inv.additional_charges||[]).map(c => `<div class="invoice-summary-row" style="color:var(--text-muted)"><span>${escapeHtml(c.name)}${c.type==='percent'?` (${c.value}%)`:''}</span><span>+${formatCurrency(c.amount)}</span></div>`).join('')}
         <div class="invoice-summary-row total"><span>TOTAL</span><span style="color:var(--primary)">${formatCurrency(inv.total)}</span></div>
       </div>
       ${paymentInfo}
@@ -1188,10 +1258,14 @@
       </tr>`).join('');
 
     const hasDiscount = Number(inv.discount) > 0;
-    const subtotalRow = hasDiscount
+    const hasCharges  = (inv.additional_charges||[]).length > 0;
+    const subtotalRow = (hasDiscount || hasCharges)
       ? `<div class="pi-total-row"><span>Subtotal</span><span>${formatCurrency(inv.subtotal)}</span></div>` : '';
     const discountRow = hasDiscount
       ? `<div class="pi-total-row"><span>Diskon</span><span>- ${formatCurrency(inv.discount)}</span></div>` : '';
+    const chargesRows = (inv.additional_charges||[]).map(c =>
+      `<div class="pi-total-row"><span>${escapeHtml(c.name)}${c.type==='percent'?` (${c.value}%)`:''}</span><span>+${formatCurrency(c.amount)}</span></div>`
+    ).join('');
 
     const customerLine = escapeHtml(inv.customer_name)
       + (inv.store_name ? ` - ${escapeHtml(inv.store_name)}` : '');
@@ -1246,6 +1320,7 @@
           <div class="pi-totals" style="margin-left:0;margin-top:0;flex-shrink:0;">
             ${subtotalRow}
             ${discountRow}
+            ${chargesRows}
             <div class="pi-total-row pi-grand"><span>TOTAL</span><span>${formatCurrency(inv.total)}</span></div>
           </div>
         </div>
