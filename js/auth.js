@@ -3,7 +3,17 @@ async function requireAdmin() {
   if (!session) { window.location.href = 'login.html'; return null; }
   const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).single();
   if (!profile || !profile.is_active) { await supabase.auth.signOut(); window.location.href = 'login.html'; return null; }
-  if (profile.role !== 'admin') { window.location.href = 'sales.html'; return null; }
+  if (profile.role !== 'admin' && profile.role !== 'super_admin') { window.location.href = 'sales.html'; return null; }
+  updateSidebarUser(profile);
+  return { session, profile };
+}
+
+async function requireSuperAdmin() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) { window.location.href = 'login.html'; return null; }
+  const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).single();
+  if (!profile || !profile.is_active) { await supabase.auth.signOut(); window.location.href = 'login.html'; return null; }
+  if (profile.role !== 'super_admin') { window.location.href = 'index.html'; return null; }
   updateSidebarUser(profile);
   return { session, profile };
 }
@@ -39,6 +49,25 @@ function updateSidebarUser(profile) {
     </button>
     <div style="margin-top:8px;font-size:10px;color:#475569;text-align:center">© 2025 StokManager</div>
   `;
+
+  // Sembunyikan menu super_admin-only untuk role admin biasa
+  if (profile.role === 'admin') {
+    document.querySelectorAll('.nav-item[data-super-admin]').forEach(el => {
+      el.style.display = 'none';
+    });
+    // Sembunyikan nav-label "Laporan" jika semua itemnya hidden
+    document.querySelectorAll('.nav-label').forEach(label => {
+      let next = label.nextElementSibling;
+      let allHidden = true;
+      while (next && !next.classList.contains('nav-label')) {
+        if (next.classList.contains('nav-item') && next.style.display !== 'none') {
+          allHidden = false; break;
+        }
+        next = next.nextElementSibling;
+      }
+      if (allHidden) label.style.display = 'none';
+    });
+  }
 
   initMobileSidebar();
 }
