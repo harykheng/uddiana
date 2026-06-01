@@ -50,14 +50,12 @@ function updateSidebarUser(profile) {
     <div style="margin-top:8px;font-size:10px;color:#475569;text-align:center">© 2025 StokManager</div>
   `;
 
-  // Tampilkan menu super_admin-only hanya jika role super_admin
-  // (by default sudah hidden via CSS [data-super-admin] { display:none })
+  // Super admin: tambah class ke body agar CSS [data-super-admin] tampil
+  // Admin biasa: CSS body:not(.is-super-admin) sudah hide otomatis
   if (profile.role === 'super_admin') {
-    document.querySelectorAll('[data-super-admin]').forEach(el => {
-      el.style.removeProperty('display');
-    });
+    document.body.classList.add('is-super-admin');
   } else {
-    // Sembunyikan nav-label "Laporan" karena semua itemnya hidden
+    // Sembunyikan nav-label "Laporan" karena semua itemnya hidden untuk admin biasa
     document.querySelectorAll('.nav-label').forEach(label => {
       let next = label.nextElementSibling;
       let hasVisible = false;
