@@ -38,6 +38,9 @@ body {
 /* ---- LAYOUT ---- */
 .layout { display: flex; min-height: 100vh; }
 
+/* Menu super_admin: hidden by default, tampil jika body punya class is-super-admin */
+body:not(.is-super-admin) [data-super-admin] { display: none; }
+
 /* ---- SIDEBAR ---- */
 .sidebar {
   width: 240px;
