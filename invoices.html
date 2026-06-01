@@ -852,6 +852,7 @@
   // ── EDIT INVOICE ───────────────────────────────────────────
   let editInvoiceId = null;
   let editItemRowCount = 0;
+  let editInvoiceItems = []; // cache invoice_items yang di-fetch saat openEditInvoice
 
   async function openEditInvoice(id) {
     const inv = allInvoices.find(x => x.id === id);
@@ -870,8 +871,9 @@
 
     if (error) { showToast('Gagal memuat item faktur: ' + error.message, 'error'); return; }
 
+    editInvoiceItems = data || []; // simpan untuk dipakai di saveEditInvoice
     document.getElementById('edit-invoice-items-body').innerHTML = '';
-    (data || []).forEach(it => addEditItemRow(it));
+    editInvoiceItems.forEach(it => addEditItemRow(it));
     addEditItemRow(); // baris kosong untuk item baru
     recalcEditInvoiceTotal();
   }
@@ -989,9 +991,9 @@
     setLoading(btn, true);
 
     // Kumpulkan item ID lama untuk mendeteksi item yang dihapus
-    const oldItemIds = new Set((inv.invoice_items || []).map(it => it.id));
+    const oldItemIds = new Set((editInvoiceItems || []).map(it => it.id));
     const keptItemIds = new Set(newItems.filter(x => x.itemId).map(x => x.itemId));
-    const deletedItems = (inv.invoice_items || []).filter(it => !keptItemIds.has(it.id));
+    const deletedItems = (editInvoiceItems || []).filter(it => !keptItemIds.has(it.id));
 
     // Restore stok untuk item yang dihapus
     for (const it of deletedItems) {
@@ -1025,7 +1027,7 @@
       } else {
         // Item baru atau ganti produk — jika ganti produk restore stok lama dulu
         if (item.itemId && !item.isSameProduct) {
-          const oldItem = inv.invoice_items.find(x => x.id === item.itemId);
+          const oldItem = editInvoiceItems.find(x => x.id === item.itemId);
           if (oldItem) {
             const { data: oldProd } = await supabase.from('products').select('stock_quantity').eq('id', oldItem.product_id).single();
             if (oldProd) await supabase.from('products').update({ stock_quantity: oldProd.stock_quantity + oldItem.quantity }).eq('id', oldItem.product_id);
