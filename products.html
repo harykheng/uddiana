@@ -438,6 +438,14 @@
     renderProducts();
   }
 
+  function toLosinDisplay(qty) {
+    const lusin = Math.floor(qty / 12);
+    const sisa  = qty % 12;
+    if (lusin > 0 && sisa > 0) return `${lusin} Lusin ${sisa} Pcs`;
+    if (lusin > 0)              return `${lusin} Lusin`;
+    return '';
+  }
+
   function renderProducts() {
     const search = document.getElementById('search-input').value.toLowerCase();
     const stockFilter = document.getElementById('filter-stock').value;
@@ -490,7 +498,10 @@
         </td>
         <td class="text-right">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
         ${isSuperAdmin ? `<td class="text-right">${formatCurrency(p.cost)}</td>` : ''}
-        <td class="text-right font-bold ${stockClass}">${p.stock_quantity}</td>
+        <td class="text-right font-bold ${stockClass}">
+          ${p.stock_quantity}
+          ${p.stock_quantity >= 12 ? `<div style="font-size:10px;font-weight:400;color:var(--text-muted);margin-top:2px">${toLosinDisplay(p.stock_quantity)}</div>` : ''}
+        </td>
         <td class="text-right">${p.min_stock}</td>
         <td>${escapeHtml(p.unit)}</td>
         <td>${stockBadge(p.stock_quantity, p.min_stock)}</td>
