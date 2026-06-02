@@ -217,6 +217,7 @@
             </tbody>
           </table>
         </div>
+        <div class="pagination" id="movements-pagination" style="display:none"></div>
       </div>
     </main>
   </div>
@@ -481,29 +482,57 @@
   }
 
   function renderMovementsTable() {
-    const typeFilter = document.getElementById('filter-movement-type').value;
-    const filtered = typeFilter ? weekMovements.filter(m => m.type === typeFilter) : weekMovements;
+    const PAGE_SIZE = 20;
+    let movPage = 1;
 
-    const tbody = document.getElementById('movements-table');
-    if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state" style="padding:30px"><div class="empty-icon">📋</div><h4>Tidak ada pergerakan stok</h4></div></td></tr>`;
-      return;
+    function renderMovementsTable(page = 1) {
+      movPage = page;
+      const typeFilter = document.getElementById('filter-movement-type').value;
+      const filtered = typeFilter ? weekMovements.filter(m => m.type === typeFilter) : weekMovements;
+
+      const tbody = document.getElementById('movements-table');
+      const pagEl  = document.getElementById('movements-pagination');
+
+      if (!filtered.length) {
+        tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state" style="padding:30px"><div class="empty-icon">📋</div><h4>Tidak ada pergerakan stok</h4></div></td></tr>`;
+        pagEl.style.display = 'none';
+        return;
+      }
+
+      const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+      const start = (page - 1) * PAGE_SIZE;
+      const pageData = filtered.slice(start, start + PAGE_SIZE);
+
+      const typeMap = { out: ['Keluar','danger'], in: ['Masuk','success'], adjustment: ['Adj.','info'] };
+      tbody.innerHTML = pageData.map(m => {
+        const [label, color] = typeMap[m.type] || ['—','gray'];
+        return `<tr>
+          <td><strong>${escapeHtml(m.product_name)}</strong></td>
+          <td><span class="badge badge-${color}">${label}</span></td>
+          <td class="font-bold ${m.type === 'out' ? 'stock-low' : 'stock-ok'}">${m.type === 'out' ? '-' : '+'}${m.quantity}</td>
+          <td>${m.quantity_before}</td>
+          <td>${m.quantity_after}</td>
+          <td><span class="badge badge-gray">${m.reference_type || '—'}</span></td>
+          <td class="text-muted">${formatDate(m.created_at)}</td>
+        </tr>`;
+      }).join('');
+
+      // Render pagination
+      if (totalPages <= 1) { pagEl.style.display = 'none'; return; }
+      pagEl.style.display = 'flex';
+
+      let paginationHtml = `<div class="pagination-info">${start + 1}–${Math.min(start + PAGE_SIZE, filtered.length)} dari ${filtered.length}</div><div class="pagination-btns">`;
+      paginationHtml += `<button class="page-btn" onclick="renderMovementsTable(${page - 1})" ${page === 1 ? 'disabled' : ''}>‹</button>`;
+      for (let p = 1; p <= totalPages; p++) {
+        if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - page) > 1) {
+          if (p === 3 || p === totalPages - 2) paginationHtml += `<span style="padding:0 4px;color:var(--text-muted)">…</span>`;
+          continue;
+        }
+        paginationHtml += `<button class="page-btn ${p === page ? 'active' : ''}" onclick="renderMovementsTable(${p})">${p}</button>`;
+      }
+      paginationHtml += `<button class="page-btn" onclick="renderMovementsTable(${page + 1})" ${page === totalPages ? 'disabled' : ''}>›</button></div>`;
+      pagEl.innerHTML = paginationHtml;
     }
-
-    const typeMap = { out: ['Keluar','danger'], in: ['Masuk','success'], adjustment: ['Adj.','info'] };
-    tbody.innerHTML = filtered.map(m => {
-      const [label, color] = typeMap[m.type] || ['—','gray'];
-      return `<tr>
-        <td><strong>${escapeHtml(m.product_name)}</strong></td>
-        <td><span class="badge badge-${color}">${label}</span></td>
-        <td class="font-bold ${m.type === 'out' ? 'stock-low' : 'stock-ok'}">${m.type === 'out' ? '-' : '+'}${m.quantity}</td>
-        <td>${m.quantity_before}</td>
-        <td>${m.quantity_after}</td>
-        <td><span class="badge badge-gray">${m.reference_type || '—'}</span></td>
-        <td class="text-muted">${formatDate(m.created_at)}</td>
-      </tr>`;
-    }).join('');
-  }
 
   (async () => { const auth = await requireSuperAdmin(); if (!auth) return; loadReport(); })();
 </script>
