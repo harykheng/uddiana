@@ -1182,7 +1182,7 @@
     const modeMap   = { regular:'Harga Biasa', shopee:'Harga Shopee', custom:'Custom' };
     const [statusLabel, statusColor] = statusMap[inv.status] || ['—','gray'];
 
-    const itemsHtml = (items||[]).map(item => `
+    const itemsHtml = (items||[]).slice().sort((a,b) => (a.product_name||'').localeCompare(b.product_name||'', 'id')).map(item => `
       <tr>
         <td style="padding:8px 10px">${escapeHtml(item.product_name)}</td>
         <td style="padding:8px 10px;text-align:right">${item.quantity}</td>
@@ -1262,7 +1262,7 @@
     // angka tanpa "Rp" — hanya untuk kolom tabel
     const fmtNum = n => Number(n || 0).toLocaleString('id-ID');
     let no = 1;
-    const itemRows = (items || []).map(item => `
+    const itemRows = (items || []).slice().sort((a,b) => (a.product_name||'').localeCompare(b.product_name||'', 'id')).map(item => `
       <tr>
         <td style="text-align:center">${no++}</td>
         <td>${escapeHtml(item.product_name)}</td>
