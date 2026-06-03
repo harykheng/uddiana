@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**StokManager** — sistem manajemen stok untuk UD. DIANA. Pure static frontend (HTML + CSS + Vanilla JS) dengan backend Supabase (PostgreSQL + Auth). Tidak ada build step, bundler, atau framework JS. Buka langsung di browser atau deploy ke Vercel/Netlify as-is.
+**StokManager** — sistem manajemen stok untuk **DIANA KOSMETIK** (sebelumnya UD. DIANA). Pure static frontend (HTML + CSS + Vanilla JS) dengan backend Supabase (PostgreSQL + Auth). Tidak ada build step, bundler, atau framework JS.
 
 **Repo:** https://github.com/harykheng/uddiana  
 **Deployed:** Vercel (auto-deploy dari main)
@@ -20,70 +20,86 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 /
 ├── js/
 │   ├── config.js          ← Supabase URL + anon key, inisialisasi client
-│   ├── auth.js            ← requireAdmin(), requireSales(), signOut(), updateSidebarUser()
-│   └── utils.js           ← Semua utility: formatCurrency, formatDate, modal, toast, number format
+│   ├── auth.js            ← requireAdmin(), requireSuperAdmin(), requireSales(),
+│   │                        signOut(), updateSidebarUser(), mobile sidebar (hamburger)
+│   └── utils.js           ← formatCurrency, formatDate, modal, toast, number format, debounce
 ├── css/
-│   └── style.css          ← Satu file CSS global untuk semua halaman
-├── supabase_schema.sql        ← Schema awal (tables, triggers, functions)
+│   └── style.css          ← CSS global + mobile responsive + sidebar overlay
+├── supabase_schema.sql        ← Schema awal
 ├── supabase_migration.sql     ← Migration 1: customers, price_shopee, invoice fields
 ├── supabase_migration2.sql    ← Migration 2: purchases, stock_transfers, cost_price
 ├── supabase_migration3.sql    ← Migration 3: user_profiles, auth columns di invoices
 ├── supabase_migration5.sql    ← Migration 5: wishlist_items table
-├── reset_demo_data.sql        ← Query untuk reset semua data demo (jalankan di Supabase SQL Editor)
+├── supabase_migration6.sql    ← Migration 6: cash_paid & transfer_paid di invoices
+├── supabase_migration7.sql    ← Migration 7: role super_admin di user_profiles
+├── reset_demo_data.sql        ← Reset semua data demo (jalankan di Supabase SQL Editor)
+├── split-csv.html             ← Tool pecah file CSV besar (public, no auth)
 ├── setup.html         ← Dipakai sekali untuk buat akun admin pertama
 ├── login.html
 ├── index.html         ← Dashboard
-├── products.html      ← Kelola produk (admin)
+├── products.html      ← Kelola produk (admin + super_admin)
 ├── customers.html
-├── invoices.html      ← Faktur penjualan (admin only)
-├── sales.html         ← Buat faktur (sales role)
+├── invoices.html      ← Faktur penjualan (admin + super_admin)
+├── sales.html         ← Buat faktur (sales role, mobile-first)
 ├── verify-invoices.html
 ├── purchases.html
 ├── stock-out.html
 ├── retur.html         ← Retur barang
-├── reports.html       ← Laporan stok
-├── profit-loss.html
-├── piutang.html
-├── laporan-sales.html
-├── wishlist.html      ← Kelola wishlist produk dari sales (admin only)
-└── settings.html      ← Target omzet per sales, toggle fitur
+├── reports.html       ← Laporan stok (super_admin only)
+├── profit-loss.html   ← Laba rugi (super_admin only)
+├── piutang.html       ← Piutang (super_admin only)
+├── laporan-sales.html ← Laporan sales (super_admin only)
+├── wishlist.html      ← Kelola wishlist dari sales (admin + super_admin)
+└── settings.html      ← Pengaturan akun & target omzet (super_admin only)
 ```
 
-### Script Load Order (setiap halaman)
-Setiap halaman HTML memuat script dalam urutan ini di bagian bawah `<body>`:
+### Script Load Order
 ```html
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<!-- optional CDN lain (TomSelect, SheetJS, Chart.js) -->
-<script src="js/config.js"></script>   <!-- inisialisasi supabase global -->
-<script src="js/utils.js"></script>    <!-- utility functions -->
-<script src="js/auth.js"></script>     <!-- auth functions -->
+<!-- CDN lain jika dibutuhkan -->
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
 <script>
-  /* inline page logic */
   async function init() {
-    const auth = await requireAdmin(); // atau requireSales()
+    const auth = await requireAdmin(); // atau requireSuperAdmin() / requireSales()
     if (!auth) return;
-    updateSidebarUser(auth.profile);   // selalu panggil ini setelah requireAdmin/Sales
+    // updateSidebarUser sudah dipanggil otomatis di requireAdmin/requireSuperAdmin
     // load data...
   }
   init();
 </script>
 ```
 
-### Sidebar Layout (semua halaman admin)
-Setiap halaman admin punya sidebar HTML yang di-hardcode (bukan inject via JS). Struktur wajib:
+### Sidebar Layout
+Setiap halaman admin punya sidebar HTML yang di-hardcode. **JANGAN** pakai `sidebar-placeholder`.  
+Menu `data-super-admin` hanya tampil untuk `super_admin` (CSS + `body.is-super-admin`).
+
 ```html
 <div class="layout">
   <aside class="sidebar">
     <div class="sidebar-logo">...</div>
     <nav class="sidebar-nav">
       <div class="nav-label">Menu Utama</div>
-      <a href="index.html" class="nav-item">...</a>
-      ...
+      <a href="index.html" class="nav-item">🏠 Dashboard</a>
+      <a href="products.html" class="nav-item">📦 Produk</a>
+      <a href="customers.html" class="nav-item">👥 Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item">🧾 Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item">✅ Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item">🛒 Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item">📤 Keluar Barang</a>
+      <a href="retur.html" class="nav-item">↩️ Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item" data-super-admin>📊 Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item" data-super-admin>💹 Laba Rugi</a>
+      <a href="piutang.html" class="nav-item" data-super-admin>💰 Piutang</a>
+      <a href="laporan-sales.html" class="nav-item" data-super-admin>👤 Laporan Sales</a>
       <div class="nav-label">Admin</div>
       <a href="wishlist.html" class="nav-item">⭐ Wishlist</a>
-      <a href="settings.html" class="nav-item">⚙️ Pengaturan</a>
+      <a href="settings.html" class="nav-item" data-super-admin>⚙️ Pengaturan</a>
     </nav>
-    <div class="sidebar-footer" id="sidebar-footer">© 2025 StokManager</div>
+    <div class="sidebar-footer">© 2025 StokManager</div>
   </aside>
   <div class="main">
     <header class="topbar">...</header>
@@ -91,248 +107,206 @@ Setiap halaman admin punya sidebar HTML yang di-hardcode (bukan inject via JS). 
   </div>
 </div>
 ```
-**JANGAN** pakai `<div id="sidebar-placeholder">` — tidak ada script yang menginjeksi sidebar.  
-Halaman aktif pakai `class="nav-item active"` pada link yang sesuai.
 
-### Supabase Client
-`config.js` membuat global `supabase` client. Semua halaman menggunakan `supabase` langsung (tidak di-import). Anon key terlihat di network — ini by design, keamanan via RLS policies Supabase. **Semua tabel yang dibuat manual harus `DISABLE ROW LEVEL SECURITY`** karena project ini tidak menggunakan RLS (menggunakan auth check di JS).
+### Mobile Sidebar
+`auth.js` otomatis inject hamburger button ke `.topbar` dan overlay backdrop saat `updateSidebarUser()` dipanggil. Tidak perlu kode tambahan di halaman.
+
+### Supabase — Bypass Limit 1000 Rows
+PostgREST default max 1000 rows. Gunakan pagination loop:
+```js
+let all = [], from = 0, CHUNK = 1000;
+while (true) {
+  const { data } = await supabase.from('tabel').select('*').range(from, from + CHUNK - 1);
+  if (!data?.length) break;
+  all = all.concat(data);
+  if (data.length < CHUNK) break;
+  from += CHUNK;
+}
+```
+
+## Auth & Roles
+
+### Role System
+| Role | Akses |
+|---|---|
+| `sales` | `sales.html` saja |
+| `admin` | Semua halaman KECUALI yang `data-super-admin` |
+| `super_admin` | Semua halaman tanpa terkecuali |
+
+### Auth Guard Functions
+- `requireAdmin()` — allow `admin` + `super_admin`, redirect ke `sales.html` jika bukan
+- `requireSuperAdmin()` — hanya `super_admin`, redirect ke `index.html` jika bukan
+- `requireSales()` — cek sesi aktif saja, semua role boleh
+- `requireAuth()` — **TIDAK ADA**, jangan gunakan
+
+### Super Admin CSS (di style.css)
+```css
+.nav-item[data-super-admin] { display: none; }
+body.is-super-admin .nav-item[data-super-admin] { display: flex; }
+```
+`auth.js` set `document.body.classList.add('is-super-admin')` untuk `super_admin`.
+
+### Upgrade ke super_admin
+Jalankan `supabase_migration7.sql`, lalu:
+```sql
+UPDATE user_profiles SET role = 'super_admin' WHERE id = 'UUID_USER';
+```
 
 ## Critical Conventions
 
-### Auth Guards
-- **Admin pages:** `const auth = await requireAdmin();` — redirect ke `sales.html` jika role bukan admin
-- **Sales pages:** `const auth = await requireSales();` — hanya cek sesi aktif
-- `requireAuth()` **TIDAK ADA** — jangan gunakan
-- Role tersimpan di tabel `user_profiles.role` (nilai: `'admin'` | `'sales'`)
-- Setelah auth berhasil, **wajib** panggil `updateSidebarUser(auth.profile)` agar nama user muncul di sidebar footer
-
 ### Modal System
-CSS menggunakan `.modal-overlay` dengan `opacity:0; pointer-events:none` saat hidden. **WAJIB** pakai utility functions, bukan `style.display`:
 ```js
-openModal('modal-id');   // tambah class 'open'
-closeModal('modal-id');  // hapus class 'open'
+openModal('modal-id');
+closeModal('modal-id');
 ```
-**JANGAN** pakai `el.style.display = 'flex'` atau `'none'` — modal tidak akan muncul.
-
-Tutup modal saat klik overlay:
-```js
-document.querySelectorAll('.modal-overlay').forEach(el => {
-  el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
-});
-```
+**JANGAN** pakai `el.style.display` — modal tidak akan muncul.
 
 ### Number Formatting (Indonesian)
-Semua input angka (harga, stok, qty) menggunakan format titik sebagai pemisah ribuan (1.000, 10.000, 100.000):
-
-**HTML:**
 ```html
-<input type="text" inputmode="numeric" data-number id="my-input" value="0">
+<input type="text" inputmode="numeric" data-number id="my-input">
 ```
-
-**JS (membaca nilai):**
 ```js
 const nilai = parseFormattedNumber(document.getElementById('my-input').value);
-// parseFormattedNumber strips titik, returns float
-```
-
-**JS (set nilai ke input):**
-```js
 input.value = Number(angka).toLocaleString('id-ID');
 ```
 
-Global handler di `utils.js` otomatis memformat semua input dengan atribut `data-number` saat user mengetik. `readonly` inputs boleh pakai `type="text"` tanpa `data-number`.
-
-### Currency & Date Formatting
+### Currency & Date
 ```js
 formatCurrency(amount)    // → "Rp 1.500.000"
 formatDate(dateStr)       // → "14 Mei 2026"
-formatDateInput(dateStr)  // → "2026-05-14" (untuk value input[type=date])
+formatDateInput(dateStr)  // → "2026-05-14"
 todayISO()                // → "2026-05-14"
 ```
 
-### Toast Notifications
+### Subtotal & Harga Lusin
 ```js
-showToast('Berhasil disimpan');           // success (default)
-showToast('Terjadi kesalahan', 'error');
-showToast('Stok menipis', 'warning');
+// Subtotal auto-calc — Math.ceil (selalu round UP ke kelipatan 100)
+const sub = Math.ceil((qty * price) / 100) * 100;
+
+// Harga lusin di list produk
+const hargaLusin = Math.round((p.price * 12) / 100) * 100;
+
+// Stok format lusin
+const lusin = Math.floor(qty / 12);
+const sisa  = qty % 12;
+// Tampil: "144 pcs (12 lsn)" atau "15 pcs (1 lsn + 3)"
 ```
 
-### Loading State Button
-```js
-setLoading(btnElement, true);   // disable + spinner
-setLoading(btnElement, false);  // restore original text
-```
-
-### Subtotal & Harga Lusin — Pembulatan ke Kelipatan 100
-Semua subtotal yang dihitung otomatis (`qty × harga`) dibulatkan ke kelipatan 100 terdekat:
-```js
-const sub = Math.round((qty * price) / 100) * 100;
-```
-Contoh: 16.666 × 12 = 199.992 → **200.000** ✓
-
-Harga lusin di list produk = `Math.round((p.price * 12) / 100) * 100`
-
-**Subtotal editable hanya di `invoices.html` (admin).** Di `sales.html` subtotal readonly.  
-Saat user edit subtotal di invoices.html → harga satuan back-calc: `Math.round(subtotal / (qty * (1 - disc/100)))`
+**Subtotal editable hanya di `invoices.html`.** Di `sales.html` subtotal readonly.  
+Saat edit subtotal → back-calc: `Math.round(subtotal / (qty * (1 - disc%)))`
 
 ## Database Schema Summary
 
-**Core tables:** `categories`, `products`, `customers`, `invoices`, `invoice_items`, `stock_movements`
+**Core:** `categories`, `products`, `customers`, `invoices`, `invoice_items`, `stock_movements`  
+**Transactions:** `purchases`, `purchase_items`, `stock_transfers`, `stock_transfer_items`  
+**Auth:** `user_profiles` (role: `'admin'` | `'sales'` | `'super_admin'`)  
+**Returns:** `returns`, `return_items`  
+**Settings:** `app_settings`, `sales_targets`  
+**Wishlist:** `wishlist_items`  
 
-**Transaction tables:** `purchases`, `purchase_items`, `stock_transfers`, `stock_transfer_items`
-
-**Auth tables:** `user_profiles` (id = Supabase auth UUID)
-
-**Return tables:** `returns`, `return_items` (RLS disabled)
-
-**Settings tables:** `app_settings`, `sales_targets`
-
-**Wishlist tables:** `wishlist_items` (RLS disabled)
-
-**Key invoice columns (termasuk hasil migrations):**
+### Key invoice columns
 - `status`: `'pending'` | `'paid'` | `'cancelled'`
 - `verification_status`: `NULL` | `'pending'` | `'approved'` | `'rejected'`
-- `payment_term`: `'cod'` | `'7_days'` | `'15_days'` | `'30_days'`
+- `payment_term`: `'cod'` | `'14_days'` | `'15_days'` | `'30_days'` *(7_days dihapus)*
 - `price_mode`: `'regular'` | `'shopee'` | `'custom'`
-- `paid_amount`: numeric (akumulasi pembayaran parsial)
+- `paid_amount`: akumulasi pembayaran parsial
+- `cash_paid`, `transfer_paid`: tracking per metode (migration6)
+- `additional_charges`: JSONB `[{name, type:'nominal'|'percent', value, amount}]`
 - `sales_name`, `created_by_id`: diisi saat sales buat faktur
 
-**Supabase Triggers (otomatis, tidak perlu kode JS):**
-- Insert `invoice_items` → kurangi stok produk + catat `stock_movements`
+### Supabase Triggers
+- Insert `invoice_items` → kurangi stok + catat `stock_movements`
 - Update `invoices.status = 'cancelled'` → kembalikan stok
 - Insert `purchase_items` → tambah stok + update `products.cost`
-- Auto-generate `invoice_number` (format: `INV-YYMM-0001`), `purchase_number` (`PO-`), `transfer_number` (`OUT-`)
-
-### Tabel wishlist_items
-```sql
--- supabase_migration5.sql
-create table wishlist_items (
-  id uuid default gen_random_uuid() primary key,
-  product_name text not null,
-  brand text,
-  submitted_by_id uuid references auth.users(id),
-  submitted_by_name text,
-  is_fulfilled boolean default false,
-  created_at timestamptz default now()
-);
-alter table wishlist_items disable row level security;
-```
+- Auto-generate `invoice_number` (`INV-YYMM-0001`), `purchase_number` (`PO-`), `transfer_number` (`OUT-`)
 
 ## CDN Dependencies
 
-Dimuat via CDN di halaman yang membutuhkan:
 - **Supabase JS v2:** `https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2` — semua halaman
-- **TomSelect v2:** `https://cdn.jsdelivr.net/npm/tom-select@2` — `invoices.html`, `sales.html`
-- **SheetJS:** `https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js` — `products.html`
+- **TomSelect v2:** `https://cdn.jsdelivr.net/npm/tom-select@2` — `invoices.html`, `sales.html`, `products.html`
+- **SheetJS:** `https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js` — `products.html`, `split-csv.html`
 - **Chart.js v4:** `https://cdn.jsdelivr.net/npm/chart.js` — `laporan-sales.html`, `index.html`
 
-## Git Workflow Rules
+## Git Workflow
 
-**WAJIB buat branch + PR untuk semua perubahan fitur.** Jangan push langsung ke `main`.
+**WAJIB branch + PR untuk fitur baru.** Minor fix boleh langsung ke main.
 
 ```bash
+git checkout main && git pull --rebase origin main
 git checkout -b feat/nama-fitur
-# buat perubahan
 git add file1 file2
-git commit -m "feat: deskripsi singkat"
+git commit -m "feat: deskripsi"
 git push -u origin feat/nama-fitur
-# buat PR di GitHub untuk di-review user
 ```
 
-Sebelum membuat branch baru pastikan main sudah up-to-date:
-```bash
-git pull --rebase origin main
-```
-
-Minor fixes (typo, favicon, logo) boleh langsung push ke main.
-
-## Branch Status (per Mei 2026)
+## Branch Status (per Juni 2026)
 
 | Branch | Status | Keterangan |
 |---|---|---|
-| `feat/subtotal-editable` | **Merged** | Semua fitur terbaru sudah di main |
-| `feat/auto-sku-generate` | **Merged** | Auto-generate SKU UDD-0001, fix import error handling |
-| `feat/product-sort-search` | **Pending PR** | Sort & search di list produk; search di tab produk sales.html |
-| `fix/print-layout-v4` | **Pending PR** | Layout print invoice untuk dot matrix Epson LQ-310 |
-| `feat/invoice-improvements` | **Pending PR** | Sisa pembayaran di list faktur + data-number untuk pay-amount |
-| `feat/number-format-forms` | **Pending PR** | data-number untuk form buat faktur & modal produk |
+| `main` | **Live** | Semua fitur terbaru sudah merged |
+| `fix/payment-method-split` | **Pending PR** | Fix cash/transfer split di laba rugi — perlu merge + jalankan migration6 |
+| `feat/retur-customer-flow` | **Pending** | Perlu dicek statusnya |
+| `feat/invoice-edit-and-ui-fixes` | **Pending** | Perlu dicek statusnya |
 
-**Urutan merge yang aman:** `feat/invoice-improvements` → `feat/number-format-forms` → `feat/product-sort-search`
-
-## Pending Tasks
-
-1. Merge PR-PR pending: `feat/invoice-improvements` → `feat/number-format-forms` → `feat/product-sort-search`
-
-## Fitur yang Sudah Diimplementasi (branch feat/subtotal-editable)
+## Fitur per Halaman (kondisi terkini di main)
 
 ### products.html
-- **Kolom Deskripsi** di tabel (max-width 160px, truncated, full text on hover)
-- **Sort** by nama & stok (klik header, toggle asc/desc, indikator ▲▼↕)
-- **Search** juga menelusuri deskripsi produk
-- **Harga Biasa** menampilkan 2 baris: harga/pcs + harga/lusin (rounded ke kelipatan 100)
-- **Import CSV**: SKU opsional; error detail tampil dalam tabel scrollable (nama produk, SKU, penyebab); tombol "Download Error Report" → `.xlsx`
-- Import: empty SKU → `null` (bukan `""`) agar tidak langgar unique constraint PostgreSQL
-
-### sales.html
-- 4 tab: **Buat Faktur**, **Riwayat**, **Produk**, **Wishlist**
-- Tab Produk: search input, filter real-time
-- Tab Wishlist: sales ajukan produk baru (nama + brand) → simpan ke `wishlist_items`
-- Form customer: field telepon + alamat
-- Item row: stok ditampilkan (disabled), harga auto-fill dari produk (disabled)
-- Subtotal: **readonly** (auto-calc, dibulatkan ke kelipatan 100), tidak bisa diedit oleh sales
-- `checkUnpaidInvoices(customerId)` — warning jika customer punya faktur belum lunas
-- Payment term values: `'cod'` | `'7_days'` | `'15_days'` | `'30_days'`
+- Sort nama & stok (▲▼↕), search nama/SKU/deskripsi
+- Kolom harga biasa: 2 baris (harga/pcs + harga lusin rounded)
+- Stok: format `X pcs (Y lsn + Z sisa)`
+- Import CSV: SKU opsional, auto-generate jika kosong, batch upsert, bypass 1000 row limit
+- Import: strip BOM, fallback alias kolom SKU, error detail tabel scrollable + download xlsx
+- Export XLS termasuk harga lusin
 
 ### invoices.html
-- Subtotal per baris item: **editable** (admin bisa override)
-- Edit subtotal → harga satuan auto back-calc: `Math.round(subtotal / (qty × (1 - disc%)))`
-- Subtotal auto-round ke kelipatan 100 saat dihitung dari qty × harga
+- Price mode: Regular / Shopee / Custom
+- **Biaya tambahan**: nama bebas, tipe nominal atau persentase, disimpan ke `additional_charges` JSONB
+- **Edit faktur**: admin bisa ubah termin pembayaran
+- **Bayar sebagian**: akumulasi `cash_paid` + `transfer_paid` per metode pembayaran
+- Subtotal per baris editable, back-calc harga satuan
+- Print: nama **DIANA KOSMETIK**, layout dot matrix LQ-310
+- Auto-update harga jual produk saat approve faktur
 
-### wishlist.html (admin)
-- Layout standar admin (sidebar + topbar + layout class) — **bukan** sidebar-placeholder
-- Filter by status (belum/sudah dipenuhi) dan by nama sales
-- Tombol "✓ Penuhi" / "↩ Batal" dan "Hapus"
-- Menu "⭐ Wishlist" sudah ada di sidebar semua halaman admin
+### sales.html
+- Desain mobile-first dengan top nav (bukan sidebar)
+- 4 tab: Buat Faktur, Riwayat, Produk, Wishlist
+- Subtotal readonly (auto-round `Math.ceil` ke kelipatan 100)
+- Payment term: COD, 14 Hari, 15 Hari, 30 Hari
+- Simpan `customer_phone` & `customer_address` saat submit
+- Tab produk: search, scroll horizontal mobile
 
-### reset_demo_data.sql
-- TRUNCATE semua tabel transaksi + master data
-- Yang dipertahankan: `user_profiles`, `app_settings`
-- Jalankan di Supabase SQL Editor saat reset data demo
+### retur.html
+- Print layout mirip invoice (3 kolom TTD)
 
-### Print Invoice (fix/print-layout-v4)
-- Optimized untuk dot matrix Epson LQ-310, continuous form
-- `@page { size: 8.5in 11.5in; margin: 0.3in 0.4in; }`
-- Minimal borders: hanya `border-bottom:2px solid #000` pada `<th>`, `border-top:1.5px solid #000` pada grand total
-- Header: Nomor invoice (bold) → UD. DIANA → tanggal cetak (bold) → nama sales
-- Info pembeli di pojok kanan atas (nama toko, telp, alamat, jatuh tempo)
-- TTD + totals dalam 1 baris flex
+### profit-loss.html
+- Rekap kas: gunakan `cash_paid`/`transfer_paid` langsung (bukan `payment_method × total`)
+- Fallback untuk faktur lama yang belum punya kolom baru
+
+### reports.html
+- Pagination tabel pergerakan stok (20 per halaman)
+- Super_admin only
+
+### split-csv.html
+- Tool mandiri pecah CSV besar, tidak butuh auth
 
 ## Page–Role Matrix
 
-| Halaman | Auth Required | Catatan |
+| Halaman | Auth | Role |
 |---|---|---|
-| `login.html`, `setup.html` | — | Public |
-| `sales.html` | `requireSales()` | Sales buat faktur, lihat riwayat, wishlist |
-| `verify-invoices.html` | `requireAdmin()` | Admin approve/reject faktur sales |
-| `wishlist.html` | `requireAdmin()` | Admin kelola wishlist dari sales |
-| Semua halaman lain | `requireAdmin()` | Admin only |
-
-## Retur Barang Flow
-
-`retur.html` → admin buat retur berdasarkan nomor faktur → status `pending` → admin approve:
-- Approval: stok dikembalikan manual di JS (bukan trigger), catat di `returns` + `return_items`
-- `laporan-sales.html` mengurangi revenue dengan `total_return_value` dari returns yang `status = 'approved'`
-- Tabel `returns` dan `return_items` **wajib** `DISABLE ROW LEVEL SECURITY` di Supabase
+| `login.html`, `setup.html`, `split-csv.html` | — | Public |
+| `sales.html` | `requireSales()` | Semua role |
+| `index.html`, `products.html`, `customers.html`, `invoices.html`, `verify-invoices.html`, `purchases.html`, `stock-out.html`, `retur.html`, `wishlist.html` | `requireAdmin()` | admin + super_admin |
+| `reports.html`, `profit-loss.html`, `piutang.html`, `laporan-sales.html`, `settings.html` | `requireSuperAdmin()` | super_admin only |
 
 ## Print Invoice
 
-`@page { size: 8.5in 11.5in; margin: 0.3in 0.4in; }` — Continuous Form 3ply kertas.  
-Print dipicu via `window.print()`, konten di-inject ke `#print-area` div (display:none → block via @media print).  
-**Catatan:** Browser tidak mau load gambar dari elemen `display:none` — gunakan teks "UD. DIANA" bukan `<img>` untuk logo di print area.
+Nama perusahaan di print: **DIANA KOSMETIK**.  
+`@page { size: 8.5in 11.5in; margin: 0.3in 0.4in; }` — Continuous Form Epson LQ-310.  
+**JANGAN** pakai `<img>` logo di print area — browser tidak load gambar dari `display:none`.
 
-## Settings & Target Omzet
+## Pending Migrations
 
-`settings.html` menggunakan tab: Kategori, User, Target Omzet.  
-Target omzet tersimpan di tabel `sales_targets` (per sales per bulan).  
-Toggle "tampilkan omzet bar" tersimpan di `app_settings` (key-value store).  
-Omzet bar di `sales.html` dan `laporan-sales.html` membaca setting ini sebelum render.
+| File | Keterangan |
+|---|---|
+| `supabase_migration6.sql` | cash_paid + transfer_paid — jalankan jika belum (terkait fix/payment-method-split) |
+| `supabase_migration7.sql` | role super_admin — jalankan jika belum dijalankan sebelumnya |
