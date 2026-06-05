@@ -401,6 +401,28 @@
   </div>
 </div>
 
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- MODAL: Edit Qty Retur -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div id="modal-edit-retur" class="modal-overlay">
+  <div class="modal" style="max-width:560px;width:95%;">
+    <div class="modal-header">
+      <h3>✏️ Edit Qty Retur</h3>
+      <button class="modal-close" onclick="closeModal('modal-edit-retur')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="edit-retur-warning" style="display:none;background:#fef9c3;border:1px solid #fbbf24;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#92400e;">
+        ⚠️ Retur ini sudah <strong>Disetujui</strong> — mengubah qty akan menyesuaikan stok produk secara otomatis.
+      </div>
+      <div id="edit-retur-items"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-edit-retur')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-retur-edit" onclick="saveReturEdit()">💾 Simpan</button>
+    </div>
+  </div>
+</div>
+
 <!-- Print area -->
 <div id="print-area"></div>
 
@@ -1020,6 +1042,7 @@ create table if not exists return_items (
       : '';
     footer.innerHTML = `
       <button class="btn btn-secondary" onclick="printRetur('${ret.id}')">🖨️ Print</button>
+      <button class="btn" style="background:#f59e0b;color:#fff;" onclick="openEditRetur('${ret.id}')">✏️ Edit Qty</button>
       ${pendingBtns}
       <button class="btn btn-secondary" onclick="closeDetailModal()">Tutup</button>`;
 
@@ -1028,6 +1051,89 @@ create table if not exists return_items (
 
   function closeDetailModal() {
     closeModal('modal-detail');
+  }
+
+  // ── Edit Qty Retur ─────────────────────────────────────────────────────
+  let editReturId   = null;
+  let editReturItems = [];
+
+  function openEditRetur(returId) {
+    const ret = allReturns.find(r => r.id === returId);
+    if (!ret) return;
+
+    editReturId    = returId;
+    editReturItems = (ret.return_items || []).map(it => ({ ...it }));
+
+    document.getElementById('edit-retur-warning').style.display =
+      ret.status === 'approved' ? '' : 'none';
+
+    document.getElementById('edit-retur-items').innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:8px 10px;border-bottom:2px solid var(--border);">Nama Produk</th>
+            <th style="text-align:center;padding:8px 10px;border-bottom:2px solid var(--border);width:90px;">Qty</th>
+            <th style="text-align:right;padding:8px 10px;border-bottom:2px solid var(--border);">Harga Satuan</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${editReturItems.map((it, i) => `
+            <tr>
+              <td style="padding:8px 10px;">${escapeHtml(it.product_name||'-')}</td>
+              <td style="padding:8px 10px;text-align:center;">
+                <input type="number" min="1" value="${it.quantity}" id="edit-qty-${i}"
+                  style="width:70px;padding:6px;border:1.5px solid var(--border);border-radius:6px;text-align:center;font-size:14px;font-weight:700;outline:none;">
+              </td>
+              <td style="padding:8px 10px;text-align:right;">${formatRupiah(it.unit_price||0)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+    closeDetailModal();
+    openModal('modal-edit-retur');
+  }
+
+  async function saveReturEdit() {
+    const btn = document.getElementById('btn-save-retur-edit');
+    const ret = allReturns.find(r => r.id === editReturId);
+    if (!ret) return;
+
+    setLoading(btn, true);
+    let totalValue = 0;
+
+    for (let i = 0; i < editReturItems.length; i++) {
+      const it     = editReturItems[i];
+      const newQty = Math.max(1, parseInt(document.getElementById(`edit-qty-${i}`).value) || 1);
+      const oldQty = it.quantity;
+      const newSub = newQty * (it.unit_price || 0);
+      totalValue  += newSub;
+
+      // Update return_item
+      const { error } = await supabase.from('return_items')
+        .update({ quantity: newQty, subtotal: newSub })
+        .eq('id', it.id);
+      if (error) { showToast('Gagal update item: ' + error.message, 'error'); setLoading(btn, false); return; }
+
+      // Jika sudah approved, sesuaikan stok (delta qty)
+      if (ret.status === 'approved' && newQty !== oldQty) {
+        const delta = newQty - oldQty; // + = lebih banyak diretur (tambah stok), - = kurang (kurangi stok)
+        const { data: prod } = await supabase.from('products')
+          .select('stock_quantity').eq('id', it.product_id).single();
+        if (prod) {
+          await supabase.from('products')
+            .update({ stock_quantity: prod.stock_quantity + delta })
+            .eq('id', it.product_id);
+        }
+      }
+    }
+
+    // Update total di returns
+    await supabase.from('returns').update({ total_return_value: totalValue }).eq('id', editReturId);
+
+    setLoading(btn, false);
+    showToast('Retur berhasil diperbarui');
+    closeModal('modal-edit-retur');
+    await loadAllReturns();
   }
 
   // ── Print ──────────────────────────────────────────────────────────────
