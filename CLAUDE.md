@@ -50,6 +50,7 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 ├── piutang.html       ← Piutang (super_admin only)
 ├── laporan-sales.html ← Laporan sales (super_admin only)
 ├── wishlist.html      ← Kelola wishlist dari sales (admin + super_admin)
+├── discounts.html     ← Aturan diskon per produk (admin + super_admin)
 └── settings.html      ← Pengaturan akun & target omzet (super_admin only)
 ```
 
@@ -97,6 +98,7 @@ Menu `data-super-admin` hanya tampil untuk `super_admin` (CSS + `body.is-super-a
       <a href="laporan-sales.html" class="nav-item" data-super-admin>👤 Laporan Sales</a>
       <div class="nav-label">Admin</div>
       <a href="wishlist.html" class="nav-item">⭐ Wishlist</a>
+      <a href="discounts.html" class="nav-item">🏷️ Diskon Produk</a>
       <a href="settings.html" class="nav-item" data-super-admin>⚙️ Pengaturan</a>
     </nav>
     <div class="sidebar-footer">© 2025 StokManager</div>
@@ -203,6 +205,7 @@ Saat edit subtotal → back-calc: `Math.round(subtotal / (qty * (1 - disc%)))`
 **Returns:** `returns`, `return_items`  
 **Settings:** `app_settings`, `sales_targets`  
 **Wishlist:** `wishlist_items`  
+**Discounts:** `product_discount_rules` (product_id, min_qty, min_amount, discount_type, discount_value, is_active)  
 
 ### Key invoice columns
 - `status`: `'pending'` | `'paid'` | `'cancelled'`
@@ -260,12 +263,24 @@ git push -u origin feat/nama-fitur
 
 ### invoices.html
 - Price mode: Regular / Shopee / Custom
+- **Diskon per item**: toggle `%` (persentase) atau `Rp` (nominal) per baris item
+  - `item_discount`: nilai diskon (angka % atau Rp)
+  - `discount_type`: `'percent'` | `'nominal'` (migration8)
+  - Auto-apply dari `product_discount_rules` saat pilih produk
+  - Tampil di detail view & print jika ada item ber-diskon
 - **Biaya tambahan**: nama bebas, tipe nominal atau persentase, disimpan ke `additional_charges` JSONB
 - **Edit faktur**: admin bisa ubah termin pembayaran
 - **Bayar sebagian**: akumulasi `cash_paid` + `transfer_paid` per metode pembayaran
 - Subtotal per baris editable, back-calc harga satuan
 - Print: nama **DIANA KOSMETIK**, layout dot matrix LQ-310
 - Auto-update harga jual produk saat approve faktur
+
+### discounts.html
+- CRUD aturan diskon per produk (`product_discount_rules` table)
+- Syarat berlaku: `min_qty` (pcs) dan/atau `min_amount` (Rp) — 0 = tanpa syarat
+- Tipe diskon: `percent` (%) atau `nominal` (Rp)
+- Jika beberapa rule cocok untuk satu produk → prioritas rule dengan `min_qty` tertinggi
+- Accessible: admin + super_admin (`requireAdmin()`)
 
 ### sales.html
 - Desain mobile-first dengan top nav (bukan sidebar)
@@ -295,7 +310,7 @@ git push -u origin feat/nama-fitur
 |---|---|---|
 | `login.html`, `setup.html`, `split-csv.html` | — | Public |
 | `sales.html` | `requireSales()` | Semua role |
-| `index.html`, `products.html`, `customers.html`, `invoices.html`, `verify-invoices.html`, `purchases.html`, `stock-out.html`, `retur.html`, `wishlist.html` | `requireAdmin()` | admin + super_admin |
+| `index.html`, `products.html`, `customers.html`, `invoices.html`, `verify-invoices.html`, `purchases.html`, `stock-out.html`, `retur.html`, `wishlist.html`, `discounts.html` | `requireAdmin()` | admin + super_admin |
 | `reports.html`, `profit-loss.html`, `piutang.html`, `laporan-sales.html`, `settings.html` | `requireSuperAdmin()` | super_admin only |
 
 ## Print Invoice
@@ -310,3 +325,4 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 |---|---|
 | `supabase_migration6.sql` | cash_paid + transfer_paid — jalankan jika belum (terkait fix/payment-method-split) |
 | `supabase_migration7.sql` | role super_admin — jalankan jika belum dijalankan sebelumnya |
+| `supabase_migration8.sql` | discount_type di invoice_items + tabel product_discount_rules |

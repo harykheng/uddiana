@@ -128,6 +128,7 @@
       <a href="laporan-sales.html" class="nav-item" data-super-admin><span class="nav-icon">👤</span> Laporan Sales</a>
       <div class="nav-label">Admin</div>
       <a href="wishlist.html" class="nav-item"><span class="nav-icon">⭐</span> Wishlist</a>
+      <a href="discounts.html" class="nav-item"><span class="nav-icon">🏷️</span> Diskon Produk</a>
       <a href="settings.html" class="nav-item" data-super-admin><span class="nav-icon">⚙️</span> Pengaturan</a>
     </nav>
     <div class="sidebar-footer">© 2025 StokManager</div>
@@ -278,9 +279,9 @@
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Stok</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Qty</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:16%">Harga Satuan</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Disc %</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Subtotal</th>
-              <th style="padding:8px 6px;width:6%"></th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Diskon</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:13%">Subtotal</th>
+              <th style="padding:8px 6px;width:5%"></th>
             </tr>
           </thead>
           <tbody id="invoice-items-body"></tbody>
@@ -350,9 +351,9 @@
                 <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Stok</th>
                 <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Qty</th>
                 <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:16%">Harga Satuan</th>
-                <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Disc %</th>
-                <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Subtotal</th>
-                <th style="padding:8px 6px;width:6%"></th>
+                <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Diskon</th>
+                <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:13%">Subtotal</th>
+                <th style="padding:8px 6px;width:5%"></th>
               </tr>
             </thead>
             <tbody id="edit-invoice-items-body"></tbody>
@@ -456,10 +457,11 @@
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
 <script>
-  let allInvoices = [];
-  let products    = [];
-  let customers   = [];
+  let allInvoices    = [];
+  let products       = [];
+  let customers      = [];
   let currentInvoice = null;
+  let discountRules  = [];  // aturan diskon produk
 
   let currentPriceMode = 'regular';
   let currentPayMethod = 'cash';
@@ -471,7 +473,7 @@
     const auth = await requireAdmin(); if (!auth) return;
     document.getElementById('inv-date').value = todayISO();
     document.getElementById('pay-date').value  = todayISO();
-    await Promise.all([loadProducts(), loadCustomers(), loadSales(), loadInvoices()]);
+    await Promise.all([loadProducts(), loadCustomers(), loadSales(), loadInvoices(), loadDiscountRules()]);
   }
 
   async function loadProducts() {
@@ -479,6 +481,11 @@
       .select('id,name,sku,price,price_shopee,cost,stock_quantity,unit')
       .eq('is_active', true).order('name'));
     products = data || [];
+  }
+
+  async function loadDiscountRules() {
+    const { data } = await supabase.from('product_discount_rules').select('*').eq('is_active', true);
+    discountRules = data || [];
   }
 
   async function loadCustomers() {
@@ -693,8 +700,16 @@
       <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="qty-${id}" value="1" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="price-${id}" value="0" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
-      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="disc-${id}" value="0" style="width:50px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')" placeholder="0"></td>
-      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="sub-${id}" value="0" style="width:95px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)" oninput="recalcRowFromSubtotal('${id}')"></td>
+      <td style="padding:5px 6px">
+        <div style="display:flex;gap:3px;align-items:center">
+          <select id="disctype-${id}" style="padding:5px 3px;border:1px solid var(--border);border-radius:6px;font-size:11px;width:46px;flex-shrink:0" onchange="recalcRow('${id}')">
+            <option value="percent">%</option>
+            <option value="nominal">Rp</option>
+          </select>
+          <input type="text" inputmode="numeric" data-number id="disc-${id}" value="0" style="width:62px;padding:6px 6px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')" placeholder="0">
+        </div>
+      </td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="sub-${id}" value="0" style="width:90px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)" oninput="recalcRowFromSubtotal('${id}')"></td>
       <td style="padding:5px 4px"><button onclick="removeItemRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
@@ -720,25 +735,73 @@
 
     document.getElementById(`stock-${rowId}`).value = stock;
     document.getElementById(`price-${rowId}`).value = price > 0 ? price.toLocaleString('id-ID') : '0';
+
+    // Auto-apply discount rule (jika ada aturan aktif untuk produk ini)
+    const productId = opt.value;
+    const qty = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value) || 1;
+    applyDiscountRule(rowId, productId, qty, price);
+
     recalcRow(rowId);
   }
 
+  function applyDiscountRule(rowId, productId, qty, price) {
+    const eligible = (discountRules || [])
+      .filter(r => r.product_id === productId)
+      .filter(r => {
+        const meetsQty = !r.min_qty || qty >= r.min_qty;
+        const meetsAmt = !r.min_amount || (qty * price) >= Number(r.min_amount);
+        return meetsQty && meetsAmt;
+      })
+      // Prioritaskan aturan dengan syarat qty tertinggi
+      .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+
+    const discTypeEl = document.getElementById(`disctype-${rowId}`);
+    const discEl     = document.getElementById(`disc-${rowId}`);
+    if (!discTypeEl || !discEl) return;
+
+    if (eligible.length > 0) {
+      const rule = eligible[0];
+      discTypeEl.value = rule.discount_type;
+      discEl.value = rule.discount_type === 'nominal'
+        ? Number(rule.discount_value).toLocaleString('id-ID')
+        : String(rule.discount_value);
+    } else {
+      discTypeEl.value = 'percent';
+      discEl.value = '0';
+    }
+  }
+
   function recalcRow(rowId) {
-    const qty   = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value);
-    const price = parseFormattedNumber(document.getElementById(`price-${rowId}`)?.value);
-    const disc  = parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0;
-    const sub   = document.getElementById(`sub-${rowId}`);
-    const total = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100; // bulatkan ke kelipatan 100
+    const qty      = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value);
+    const price    = parseFormattedNumber(document.getElementById(`price-${rowId}`)?.value);
+    const disc     = parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0;
+    const discType = document.getElementById(`disctype-${rowId}`)?.value || 'percent';
+    const sub      = document.getElementById(`sub-${rowId}`);
+    let total;
+    if (discType === 'percent') {
+      total = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100;
+    } else {
+      // nominal: potong langsung dari subtotal base
+      const base = Math.ceil((qty * price) / 100) * 100;
+      total = Math.max(0, base - disc);
+    }
     if (sub) sub.value = total > 0 ? total.toLocaleString('id-ID') : '0';
     recalcTotal();
   }
 
   function recalcRowFromSubtotal(rowId) {
-    const qty  = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value) || 1;
-    const disc = parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0;
-    const sub  = parseFormattedNumber(document.getElementById(`sub-${rowId}`)?.value) || 0;
-    const divisor = qty * (1 - disc / 100);
-    const price = divisor > 0 ? Math.round(sub / divisor) : 0;
+    const qty      = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value) || 1;
+    const disc     = parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0;
+    const discType = document.getElementById(`disctype-${rowId}`)?.value || 'percent';
+    const sub      = parseFormattedNumber(document.getElementById(`sub-${rowId}`)?.value) || 0;
+    let price;
+    if (discType === 'percent') {
+      const divisor = qty * (1 - disc / 100);
+      price = divisor > 0 ? Math.round(sub / divisor) : 0;
+    } else {
+      // nominal: base = subtotal + disc_rp, lalu bagi qty
+      price = qty > 0 ? Math.round((sub + disc) / qty) : 0;
+    }
     const priceEl = document.getElementById(`price-${rowId}`);
     if (priceEl) priceEl.value = price > 0 ? price.toLocaleString('id-ID') : '0';
     recalcTotal();
@@ -793,19 +856,22 @@
       const stockEl = tr.querySelector('[id^="stock-"]');
       if (!sel?.value) return;
 
-      const qty   = Math.round(parseFormattedNumber(qtyEl?.value));
-      const price = parseFormattedNumber(priceEl?.value);
-      const disc  = parseFormattedNumber(tr.querySelector('[id^="disc-"]')?.value) || 0;
-      const stock = parseInt(stockEl?.value) || 0;
-      const prod  = products.find(p => p.id === sel.value);
+      const qty      = Math.round(parseFormattedNumber(qtyEl?.value));
+      const price    = parseFormattedNumber(priceEl?.value);
+      const disc     = parseFormattedNumber(tr.querySelector('[id^="disc-"]')?.value) || 0;
+      const discType = tr.querySelector('[id^="disctype-"]')?.value || 'percent';
+      const stock    = parseInt(stockEl?.value) || 0;
+      const prod     = products.find(p => p.id === sel.value);
 
-      if (qty <= 0)     { showToast('Jumlah item harus > 0', 'error'); valid = false; return; }
-      if (qty > stock)  { showToast(`Stok "${prod?.name}" tidak cukup (sisa: ${stock})`, 'error'); valid = false; return; }
+      if (qty <= 0)    { showToast('Jumlah item harus > 0', 'error'); valid = false; return; }
+      if (qty > stock) { showToast(`Stok "${prod?.name}" tidak cukup (sisa: ${stock})`, 'error'); valid = false; return; }
 
-      const sub = qty * price * (1 - disc / 100);
+      const sub = discType === 'percent'
+        ? qty * price * (1 - disc / 100)
+        : Math.max(0, Math.ceil((qty * price) / 100) * 100 - disc);
       subtotal += sub;
       const costPrice = parseFloat(sel.options[sel.selectedIndex].dataset.cost) || 0;
-      items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, price, item_discount: disc, subtotal: sub, cost_price: costPrice });
+      items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, price, item_discount: disc, discount_type: discType, subtotal: sub, cost_price: costPrice });
     });
 
     if (!valid) return;
@@ -909,8 +975,16 @@
       <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingItem ? (products.find(p=>p.id===existingItem.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eqty-${id}" value="${existingItem ? existingItem.quantity : '1'}" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eprice-${id}" value="${existingItem ? Number(existingItem.price||0).toLocaleString('id-ID') : '0'}" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')"></td>
-      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="edisc-${id}" value="${existingItem ? (existingItem.item_discount||0) : '0'}" style="width:50px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')" placeholder="0"></td>
-      <td style="padding:5px 6px"><input type="text" id="esub-${id}" readonly value="${existingItem ? Number(existingItem.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:95px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)"></td>
+      <td style="padding:5px 6px">
+        <div style="display:flex;gap:3px;align-items:center">
+          <select id="edisctype-${id}" style="padding:5px 3px;border:1px solid var(--border);border-radius:6px;font-size:11px;width:46px;flex-shrink:0" onchange="recalcEditInvoiceRow('${id}')">
+            <option value="percent"${(existingItem?.discount_type||'percent')==='percent'?' selected':''}>%</option>
+            <option value="nominal"${(existingItem?.discount_type||'percent')==='nominal'?' selected':''}>Rp</option>
+          </select>
+          <input type="text" inputmode="numeric" data-number id="edisc-${id}" value="${existingItem ? (existingItem.discount_type==='nominal' ? Number(existingItem.item_discount||0).toLocaleString('id-ID') : (existingItem.item_discount||0)) : '0'}" style="width:62px;padding:6px 6px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')" placeholder="0">
+        </div>
+      </td>
+      <td style="padding:5px 6px"><input type="text" id="esub-${id}" readonly value="${existingItem ? Number(existingItem.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:90px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)"></td>
       <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcEditInvoiceTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
@@ -929,10 +1003,17 @@
   }
 
   function recalcEditInvoiceRow(rowId) {
-    const qty   = parseFormattedNumber(document.getElementById(`eqty-${rowId}`)?.value || '0');
-    const price = parseFormattedNumber(document.getElementById(`eprice-${rowId}`)?.value || '0');
-    const disc  = parseFormattedNumber(document.getElementById(`edisc-${rowId}`)?.value || '0');
-    const sub   = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100;
+    const qty      = parseFormattedNumber(document.getElementById(`eqty-${rowId}`)?.value || '0');
+    const price    = parseFormattedNumber(document.getElementById(`eprice-${rowId}`)?.value || '0');
+    const disc     = parseFormattedNumber(document.getElementById(`edisc-${rowId}`)?.value || '0');
+    const discType = document.getElementById(`edisctype-${rowId}`)?.value || 'percent';
+    let sub;
+    if (discType === 'percent') {
+      sub = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100;
+    } else {
+      const base = Math.ceil((qty * price) / 100) * 100;
+      sub = Math.max(0, base - disc);
+    }
     const subEl = document.getElementById(`esub-${rowId}`);
     if (subEl) subEl.value = sub > 0 ? sub.toLocaleString('id-ID') : '0';
     recalcEditInvoiceTotal();
@@ -960,10 +1041,17 @@
     for (const tr of rows) {
       const sel = tr.querySelector('select');
       if (!sel?.value) continue;
-      const qty   = Math.round(parseFormattedNumber(tr.querySelector('[id^="eqty-"]')?.value || '0'));
-      const price = parseFormattedNumber(tr.querySelector('[id^="eprice-"]')?.value || '0');
-      const disc  = parseFormattedNumber(tr.querySelector('[id^="edisc-"]')?.value || '0');
-      const sub   = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100;
+      const qty      = Math.round(parseFormattedNumber(tr.querySelector('[id^="eqty-"]')?.value || '0'));
+      const price    = parseFormattedNumber(tr.querySelector('[id^="eprice-"]')?.value || '0');
+      const disc     = parseFormattedNumber(tr.querySelector('[id^="edisc-"]')?.value || '0');
+      const discType = tr.querySelector('[id^="edisctype-"]')?.value || 'percent';
+      let sub;
+      if (discType === 'percent') {
+        sub = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100;
+      } else {
+        const base = Math.ceil((qty * price) / 100) * 100;
+        sub = Math.max(0, base - disc);
+      }
       const prod  = products.find(p => p.id === sel.value);
       const cost  = parseFloat(sel.options[sel.selectedIndex].dataset.cost) || 0;
       const stockEl = tr.querySelector('[id^="estock-"]');
@@ -989,6 +1077,7 @@
         quantity: qty,
         price,
         item_discount: disc,
+        discount_type: discType,
         subtotal: sub,
         cost_price: cost,
         isSameProduct,
@@ -1024,6 +1113,7 @@
         quantity: item.quantity,
         price: item.price,
         item_discount: item.item_discount,
+        discount_type: item.discount_type,
         subtotal: item.subtotal,
         cost_price: item.cost_price,
       };
@@ -1182,13 +1272,27 @@
     const modeMap   = { regular:'Harga Biasa', shopee:'Harga Shopee', custom:'Custom' };
     const [statusLabel, statusColor] = statusMap[inv.status] || ['—','gray'];
 
-    const itemsHtml = (items||[]).slice().sort((a,b) => (a.product_name||'').localeCompare(b.product_name||'', 'id')).map(item => `
-      <tr>
-        <td style="padding:8px 10px">${escapeHtml(item.product_name)}</td>
-        <td style="padding:8px 10px;text-align:right">${item.quantity}</td>
-        <td style="padding:8px 10px;text-align:right">${formatCurrency(item.price)}</td>
-        <td style="padding:8px 10px;text-align:right;font-weight:700">${formatCurrency(item.subtotal)}</td>
-      </tr>`).join('');
+    const sortedItems = (items||[]).slice().sort((a,b) => (a.product_name||'').localeCompare(b.product_name||'', 'id'));
+    const hasItemDisc = sortedItems.some(item => Number(item.item_discount) > 0);
+
+    const itemsHtml = sortedItems.map(item => {
+      const disc     = Number(item.item_discount) || 0;
+      const discType = item.discount_type || 'percent';
+      let discDisplay = '<span class="text-muted">—</span>';
+      if (disc > 0) {
+        discDisplay = discType === 'percent'
+          ? `<span style="color:#dc2626;font-size:12px">${disc}%</span>`
+          : `<span style="color:#dc2626;font-size:12px">-${formatCurrency(disc)}</span>`;
+      }
+      return `
+        <tr>
+          <td style="padding:8px 10px">${escapeHtml(item.product_name)}</td>
+          <td style="padding:8px 10px;text-align:right">${item.quantity}</td>
+          <td style="padding:8px 10px;text-align:right">${formatCurrency(item.price)}</td>
+          ${hasItemDisc ? `<td style="padding:8px 10px;text-align:right">${discDisplay}</td>` : ''}
+          <td style="padding:8px 10px;text-align:right;font-weight:700">${formatCurrency(item.subtotal)}</td>
+        </tr>`;
+    }).join('');
 
     const paymentInfo = inv.status === 'paid' ? `
       <div style="margin-top:12px;padding:10px 14px;background:var(--success-light);border-radius:8px;border-left:3px solid var(--success)">
@@ -1221,6 +1325,7 @@
             <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Produk</th>
             <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Qty</th>
             <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Harga</th>
+            ${hasItemDisc ? `<th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Diskon</th>` : ''}
             <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Subtotal</th>
           </tr>
         </thead>
@@ -1262,14 +1367,27 @@
     // angka tanpa "Rp" — hanya untuk kolom tabel
     const fmtNum = n => Number(n || 0).toLocaleString('id-ID');
     let no = 1;
-    const itemRows = (items || []).slice().sort((a,b) => (a.product_name||'').localeCompare(b.product_name||'', 'id')).map(item => `
-      <tr>
-        <td style="text-align:center">${no++}</td>
-        <td>${escapeHtml(item.product_name)}</td>
-        <td style="text-align:center">${item.quantity}</td>
-        <td style="text-align:right">${fmtNum(item.price)}</td>
-        <td style="text-align:right;font-weight:bold">${fmtNum(item.subtotal)}</td>
-      </tr>`).join('');
+    const sortedPrintItems = (items || []).slice().sort((a,b) => (a.product_name||'').localeCompare(b.product_name||'', 'id'));
+    const printHasDisc = sortedPrintItems.some(item => Number(item.item_discount) > 0);
+    const itemRows = sortedPrintItems.map(item => {
+      const disc     = Number(item.item_discount) || 0;
+      const discType = item.discount_type || 'percent';
+      let discCell = '';
+      if (printHasDisc) {
+        discCell = disc > 0
+          ? `<td style="text-align:center">${discType === 'percent' ? disc + '%' : '-' + fmtNum(disc)}</td>`
+          : `<td style="text-align:center">—</td>`;
+      }
+      return `
+        <tr>
+          <td style="text-align:center">${no++}</td>
+          <td>${escapeHtml(item.product_name)}</td>
+          <td style="text-align:center">${item.quantity}</td>
+          <td style="text-align:right">${fmtNum(item.price)}</td>
+          ${discCell}
+          <td style="text-align:right;font-weight:bold">${fmtNum(item.subtotal)}</td>
+        </tr>`;
+    }).join('');
 
     const hasDiscount = Number(inv.discount) > 0;
     const hasCharges  = (inv.additional_charges||[]).length > 0;
@@ -1310,8 +1428,9 @@
               <th style="width:5%;text-align:center">No</th>
               <th>Nama Produk</th>
               <th style="width:8%;text-align:center">Qty</th>
-              <th style="width:20%;text-align:right">Harga Satuan</th>
-              <th style="width:20%;text-align:right">Subtotal</th>
+              <th style="width:18%;text-align:right">Harga Satuan</th>
+              ${printHasDisc ? `<th style="width:10%;text-align:center">Diskon</th>` : ''}
+              <th style="width:${printHasDisc?'18':'20'}%;text-align:right">Subtotal</th>
             </tr>
           </thead>
           <tbody>${itemRows}</tbody>

@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Diskon Produk - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+  <style>
+    .ts-wrapper .ts-control { border:1.5px solid var(--border); border-radius:6px; padding:5px 8px; box-shadow:none; min-height:unset; font-size:12.5px; }
+    .ts-wrapper.focus .ts-control,.ts-wrapper.single.input-active .ts-control { border-color:var(--primary); box-shadow:0 0 0 3px rgba(37,99,235,.1); }
+    .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; }
+    .ts-dropdown .option { padding:8px 12px; }
+    .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
+    .ts-dropdown-content { max-height:220px; }
+    .ts-dropdown { z-index:9999 !important; }
+    .disc-type-radio { display:flex; gap:16px; }
+    .disc-type-radio label { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; padding:8px 14px; border:1.5px solid var(--border); border-radius:8px; transition:all .15s; }
+    .disc-type-radio label:has(input:checked) { border-color:var(--primary); background:var(--primary-light); color:var(--primary); font-weight:600; }
+    .form-hint { font-size:11px; color:var(--text-muted); margin-top:3px; }
+    .badge-disc-pct  { background:#ede9fe; color:#6d28d9; }
+    .badge-disc-nom  { background:#dcfce7; color:#166534; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon"><img src="logo.png" alt="UD.DIANA" style="width:100%;height:auto;object-fit:contain;border-radius:6px;"></div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item" data-super-admin><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item" data-super-admin><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item" data-super-admin><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item" data-super-admin><span class="nav-icon">👤</span> Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="wishlist.html" class="nav-item"><span class="nav-icon">⭐</span> Wishlist</a>
+      <a href="discounts.html" class="nav-item active"><span class="nav-icon">🏷️</span> Diskon Produk</a>
+      <a href="settings.html" class="nav-item" data-super-admin><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer" id="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Diskon Produk</h1>
+        <p>Atur aturan diskon otomatis per produk di faktur penjualan</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-primary" onclick="openAddRule()">+ Tambah Aturan Diskon</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <!-- Info box -->
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#1e40af;display:flex;gap:10px;align-items:flex-start">
+        <span style="font-size:18px;flex-shrink:0">💡</span>
+        <div>
+          <strong>Cara kerja:</strong> Saat produk dipilih di faktur, diskon otomatis diterapkan jika syarat terpenuhi.
+          Bisa diatur syarat minimal qty atau minimal nilai pembelian. Jika ada beberapa aturan, aturan dengan syarat tertinggi yang diprioritaskan.
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="search-input-wrap" style="flex:1;max-width:280px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search-input" placeholder="Cari nama produk..." oninput="handleSearch()">
+        </div>
+        <select id="filter-active" onchange="renderRules()">
+          <option value="">Semua Status</option>
+          <option value="true">Aktif</option>
+          <option value="false">Nonaktif</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="clearFilters()">Reset</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Daftar Aturan Diskon <span id="rules-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Produk</th>
+                <th>Deskripsi</th>
+                <th style="text-align:center">Min. Qty</th>
+                <th style="text-align:right">Min. Pembelian</th>
+                <th style="text-align:center">Diskon</th>
+                <th style="text-align:center">Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="rules-table">
+              <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: TAMBAH / EDIT ATURAN DISKON
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-rule">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <h3 id="modal-rule-title">Tambah Aturan Diskon</h3>
+      <button class="modal-close" onclick="closeModal('modal-rule')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="rule-id">
+
+      <div class="form-group">
+        <label>Produk *</label>
+        <select id="rule-product">
+          <option value="">— Pilih Produk —</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Deskripsi <span class="text-muted" style="font-weight:400">(opsional)</span></label>
+        <input type="text" id="rule-description" placeholder="Cth: 6 Lusin ke atas, Pembelian ≥ Rp 100.000">
+      </div>
+
+      <div style="background:#f8fafc;border-radius:8px;padding:12px 14px;margin-bottom:14px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:10px">Syarat Berlaku (opsional — isi salah satu atau keduanya)</div>
+        <div class="form-row" style="margin-bottom:0">
+          <div class="form-group mb-0">
+            <label>Min. Qty (pcs)</label>
+            <input type="number" id="rule-min-qty" value="0" min="0" placeholder="0">
+            <div class="form-hint">0 = tanpa syarat qty</div>
+          </div>
+          <div class="form-group mb-0">
+            <label>Min. Nilai Pembelian (Rp)</label>
+            <input type="text" id="rule-min-amount" inputmode="numeric" data-number value="0" placeholder="0">
+            <div class="form-hint">0 = tanpa syarat nilai beli</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Tipe Diskon *</label>
+        <div class="disc-type-radio">
+          <label>
+            <input type="radio" name="rule-disc-type" value="percent" checked onchange="onDiscTypeChange()">
+            % Persentase
+          </label>
+          <label>
+            <input type="radio" name="rule-disc-type" value="nominal" onchange="onDiscTypeChange()">
+            Rp Nominal
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group mb-0">
+        <label id="rule-disc-label">Nilai Diskon (%)</label>
+        <div style="position:relative">
+          <span id="rule-disc-prefix" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;pointer-events:none;display:none">Rp</span>
+          <input type="text" id="rule-disc-value" inputmode="numeric" data-number value="0" style="padding-right:32px">
+          <span id="rule-disc-suffix" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;pointer-events:none">%</span>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:14px;margin-bottom:0">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+          <input type="checkbox" id="rule-active" checked style="width:16px;height:16px">
+          <span>Aturan <strong>aktif</strong> (dipakai di faktur)</span>
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-rule')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-rule" onclick="saveRule()">💾 Simpan Aturan</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let allRules    = [];
+  let allProducts = [];
+  let productSelect = null;
+
+  const handleSearch = debounce(() => renderRules(), 300);
+
+  async function init() {
+    const auth = await requireAdmin();
+    if (!auth) return;
+    updateSidebarUser(auth.profile);
+    await Promise.all([loadProducts(), loadRules()]);
+  }
+
+  async function loadProducts() {
+    const { data } = await supabase.from('products').select('id,name').eq('is_active', true).order('name');
+    allProducts = data || [];
+
+    // Modal product select
+    const selModal = document.getElementById('rule-product');
+    selModal.innerHTML = '<option value="">— Pilih Produk —</option>' +
+      allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+
+    if (productSelect) { try { productSelect.destroy(); } catch(e){} }
+    productSelect = new TomSelect(selModal, {
+      placeholder: '— Cari & pilih produk —',
+      maxOptions: 300,
+      dropdownParent: 'body',
+    });
+  }
+
+  async function loadRules() {
+    const { data, error } = await supabase
+      .from('product_discount_rules')
+      .select('*, products(name)')
+      .order('created_at', { ascending: false });
+
+    if (error) { showToast('Gagal memuat aturan diskon', 'error'); return; }
+    allRules = data || [];
+    renderRules();
+  }
+
+  function renderRules() {
+    const search = document.getElementById('search-input').value.toLowerCase();
+    const filterActive = document.getElementById('filter-active').value;
+
+    const filtered = allRules.filter(r => {
+      const name = (r.products?.name || '').toLowerCase();
+      if (search && !name.includes(search)) return false;
+      if (filterActive !== '' && String(r.is_active) !== filterActive) return false;
+      return true;
+    });
+
+    document.getElementById('rules-count').textContent = filtered.length;
+    const tbody = document.getElementById('rules-table');
+
+    if (!filtered.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">🏷️</div><h4>Belum ada aturan diskon</h4><p>Klik <strong>+ Tambah Aturan Diskon</strong> untuk mulai.</p></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(r => {
+      const discLabel = r.discount_type === 'percent'
+        ? `<span class="badge badge-disc-pct">${r.discount_value}%</span>`
+        : `<span class="badge badge-disc-nom">${formatCurrency(r.discount_value)}</span>`;
+      const minQty  = r.min_qty  > 0 ? `${r.min_qty} pcs`          : '<span class="text-muted">—</span>';
+      const minAmt  = r.min_amount > 0 ? formatCurrency(r.min_amount) : '<span class="text-muted">—</span>';
+      const status  = r.is_active
+        ? '<span class="badge badge-success">Aktif</span>'
+        : '<span class="badge badge-gray">Nonaktif</span>';
+      return `
+        <tr style="${!r.is_active ? 'opacity:.55;' : ''}">
+          <td><strong>${escapeHtml(r.products?.name || '—')}</strong></td>
+          <td>${r.description ? escapeHtml(r.description) : '<span class="text-muted">—</span>'}</td>
+          <td style="text-align:center">${minQty}</td>
+          <td style="text-align:right">${minAmt}</td>
+          <td style="text-align:center">${discLabel}</td>
+          <td style="text-align:center">${status}</td>
+          <td>
+            <div class="table-actions">
+              <button class="btn btn-ghost btn-sm" onclick="openEditRule('${r.id}')">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteRule('${r.id}')">Hapus</button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  function clearFilters() {
+    document.getElementById('search-input').value = '';
+    document.getElementById('filter-active').value = '';
+    renderRules();
+  }
+
+  function onDiscTypeChange() {
+    const type = document.querySelector('input[name="rule-disc-type"]:checked')?.value || 'percent';
+    const isNominal = type === 'nominal';
+    document.getElementById('rule-disc-label').textContent = isNominal ? 'Nilai Diskon (Rp)' : 'Nilai Diskon (%)';
+    document.getElementById('rule-disc-prefix').style.display = isNominal ? 'block' : 'none';
+    document.getElementById('rule-disc-suffix').style.display = isNominal ? 'none'  : 'block';
+    const input = document.getElementById('rule-disc-value');
+    input.style.paddingLeft  = isNominal ? '32px' : '12px';
+    input.style.paddingRight = isNominal ? '12px' : '32px';
+  }
+
+  function openAddRule() {
+    document.getElementById('rule-id').value = '';
+    document.getElementById('modal-rule-title').textContent = 'Tambah Aturan Diskon';
+    if (productSelect) productSelect.setValue('');
+    document.getElementById('rule-description').value = '';
+    document.getElementById('rule-min-qty').value = '0';
+    document.getElementById('rule-min-amount').value = '0';
+    document.querySelector('input[name="rule-disc-type"][value="percent"]').checked = true;
+    document.getElementById('rule-disc-value').value = '0';
+    document.getElementById('rule-active').checked = true;
+    onDiscTypeChange();
+    openModal('modal-rule');
+  }
+
+  function openEditRule(id) {
+    const r = allRules.find(x => x.id === id);
+    if (!r) return;
+    document.getElementById('rule-id').value = r.id;
+    document.getElementById('modal-rule-title').textContent = 'Edit Aturan Diskon';
+    if (productSelect) productSelect.setValue(r.product_id || '');
+    document.getElementById('rule-description').value = r.description || '';
+    document.getElementById('rule-min-qty').value = r.min_qty || 0;
+    document.getElementById('rule-min-amount').value = r.min_amount > 0 ? Number(r.min_amount).toLocaleString('id-ID') : '0';
+    const radios = document.querySelectorAll('input[name="rule-disc-type"]');
+    radios.forEach(rad => { rad.checked = rad.value === r.discount_type; });
+    document.getElementById('rule-disc-value').value = r.discount_type === 'nominal'
+      ? Number(r.discount_value).toLocaleString('id-ID')
+      : String(r.discount_value);
+    document.getElementById('rule-active').checked = r.is_active;
+    onDiscTypeChange();
+    openModal('modal-rule');
+  }
+
+  async function saveRule() {
+    const btn = document.getElementById('btn-save-rule');
+    const id  = document.getElementById('rule-id').value;
+    const productId = productSelect?.getValue() || '';
+
+    if (!productId) { showToast('Pilih produk terlebih dahulu', 'error'); return; }
+
+    const discType  = document.querySelector('input[name="rule-disc-type"]:checked')?.value || 'percent';
+    const discValue = parseFormattedNumber(document.getElementById('rule-disc-value').value) || 0;
+
+    if (discValue <= 0) { showToast('Nilai diskon harus lebih dari 0', 'error'); return; }
+    if (discType === 'percent' && discValue > 100) { showToast('Persentase tidak boleh melebihi 100%', 'error'); return; }
+
+    const payload = {
+      product_id:    productId,
+      description:   document.getElementById('rule-description').value.trim() || null,
+      min_qty:       parseInt(document.getElementById('rule-min-qty').value) || 0,
+      min_amount:    parseFormattedNumber(document.getElementById('rule-min-amount').value) || 0,
+      discount_type: discType,
+      discount_value: discValue,
+      is_active:     document.getElementById('rule-active').checked,
+    };
+
+    setLoading(btn, true);
+    let error;
+    if (id) {
+      ({ error } = await supabase.from('product_discount_rules').update(payload).eq('id', id));
+    } else {
+      ({ error } = await supabase.from('product_discount_rules').insert(payload));
+    }
+    setLoading(btn, false);
+
+    if (error) { showToast('Gagal simpan: ' + error.message, 'error'); return; }
+    showToast(id ? 'Aturan diskon diperbarui!' : 'Aturan diskon ditambahkan!', 'success');
+    closeModal('modal-rule');
+    await loadRules();
+  }
+
+  async function deleteRule(id) {
+    const r = allRules.find(x => x.id === id);
+    if (!confirm(`Hapus aturan diskon untuk "${r?.products?.name || 'produk ini'}"?`)) return;
+    const { error } = await supabase.from('product_discount_rules').delete().eq('id', id);
+    if (error) { showToast('Gagal hapus: ' + error.message, 'error'); return; }
+    showToast('Aturan diskon dihapus');
+    await loadRules();
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>
