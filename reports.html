@@ -482,11 +482,10 @@
     `;
   }
 
-  function renderMovementsTable() {
-    const PAGE_SIZE = 20;
-    let movPage = 1;
+  const PAGE_SIZE = 20;
+  let movPage = 1;
 
-    function renderMovementsTable(page = 1) {
+  function renderMovementsTable(page = 1) {
       movPage = page;
       const typeFilter = document.getElementById('filter-movement-type').value;
       const filtered = typeFilter ? weekMovements.filter(m => m.type === typeFilter) : weekMovements;
