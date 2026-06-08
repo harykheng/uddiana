@@ -461,7 +461,8 @@
   let products       = [];
   let customers      = [];
   let currentInvoice = null;
-  let discountRules  = [];  // aturan diskon produk
+  let discountRules        = [];  // aturan diskon produk
+  let discountGroupMembers = [];  // { group_id, product_id }[]
 
   let currentPriceMode = 'regular';
   let currentPayMethod = 'cash';
@@ -484,8 +485,12 @@
   }
 
   async function loadDiscountRules() {
-    const { data } = await supabase.from('product_discount_rules').select('*').eq('is_active', true);
-    discountRules = data || [];
+    const [rulesRes, membersRes] = await Promise.all([
+      supabase.from('product_discount_rules').select('*').eq('is_active', true),
+      supabase.from('discount_group_members').select('group_id, product_id')
+    ]);
+    discountRules        = rulesRes.data  || [];
+    discountGroupMembers = membersRes.data || [];
   }
 
   async function loadCustomers() {
@@ -698,7 +703,7 @@
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
-      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="qty-${id}" value="1" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="qty-${id}" value="1" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onQtyChange('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="price-${id}" value="0" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
       <td style="padding:5px 6px">
         <div style="display:flex;gap:3px;align-items:center">
@@ -744,31 +749,151 @@
     recalcRow(rowId);
   }
 
+  // Helper: ambil semua data baris item saat ini (productId, qty, price)
+  function _getAllRowData() {
+    const rows = document.querySelectorAll('#invoice-items-body tr[id]');
+    const result = [];
+    rows.forEach(tr => {
+      const rId  = tr.id;
+      const sel  = tr.querySelector('select');
+      const pId  = sel?.value;
+      if (!pId) return;
+      const rQty   = parseFormattedNumber(document.getElementById(`qty-${rId}`)?.value)   || 0;
+      const rPrice = parseFormattedNumber(document.getElementById(`price-${rId}`)?.value) || 0;
+      result.push({ rowId: rId, productId: pId, qty: rQty, price: rPrice });
+    });
+    return result;
+  }
+
   function applyDiscountRule(rowId, productId, qty, price) {
-    const eligible = (discountRules || [])
-      .filter(r => r.product_id === productId)
+    // 1. Cek aturan produk tunggal
+    const productEligible = (discountRules || [])
+      .filter(r => r.product_id === productId && !r.group_id)
       .filter(r => {
         const meetsQty = !r.min_qty || qty >= r.min_qty;
         const meetsAmt = !r.min_amount || (qty * price) >= Number(r.min_amount);
         return meetsQty && meetsAmt;
       })
-      // Prioritaskan aturan dengan syarat qty tertinggi
       .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+
+    // 2. Cek aturan grup varian
+    const myGroupIds = (discountGroupMembers || [])
+      .filter(m => m.product_id === productId)
+      .map(m => m.group_id);
+
+    let groupBest = null;
+    if (myGroupIds.length > 0) {
+      const allRowData = _getAllRowData();
+      myGroupIds.forEach(groupId => {
+        const groupProdIds = (discountGroupMembers || [])
+          .filter(m => m.group_id === groupId).map(m => m.product_id);
+        const groupQty = allRowData
+          .filter(r => groupProdIds.includes(r.productId))
+          .reduce((s, r) => s + r.qty, 0);
+        const groupAmt = allRowData
+          .filter(r => groupProdIds.includes(r.productId))
+          .reduce((s, r) => s + r.qty * r.price, 0);
+
+        const eligible = (discountRules || [])
+          .filter(r => r.group_id === groupId)
+          .filter(r => {
+            const meetsQty = !r.min_qty || groupQty >= r.min_qty;
+            const meetsAmt = !r.min_amount || groupAmt >= Number(r.min_amount);
+            return meetsQty && meetsAmt;
+          })
+          .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+
+        if (eligible.length > 0) {
+          if (!groupBest || Number(eligible[0].min_qty) > Number(groupBest.min_qty)) {
+            groupBest = eligible[0];
+          }
+        }
+      });
+    }
+
+    // Prioritas: aturan produk > aturan grup
+    const best = productEligible.length > 0 ? productEligible[0] : groupBest;
 
     const discTypeEl = document.getElementById(`disctype-${rowId}`);
     const discEl     = document.getElementById(`disc-${rowId}`);
     if (!discTypeEl || !discEl) return;
 
-    if (eligible.length > 0) {
-      const rule = eligible[0];
-      discTypeEl.value = rule.discount_type;
-      discEl.value = rule.discount_type === 'nominal'
-        ? Number(rule.discount_value).toLocaleString('id-ID')
-        : String(rule.discount_value);
+    if (best) {
+      discTypeEl.value = best.discount_type;
+      discEl.value = best.discount_type === 'nominal'
+        ? Number(best.discount_value).toLocaleString('id-ID')
+        : String(best.discount_value);
     } else {
       discTypeEl.value = 'percent';
       discEl.value = '0';
     }
+  }
+
+  // Re-apply aturan GRUP setiap kali qty berubah di baris manapun
+  function reapplyGroupDiscounts() {
+    const allRowData = _getAllRowData();
+    allRowData.forEach(({ rowId, productId }) => {
+      // Hanya proses baris yang produknya masuk grup
+      const myGroupIds = (discountGroupMembers || [])
+        .filter(m => m.product_id === productId).map(m => m.group_id);
+      if (myGroupIds.length === 0) return;
+
+      // Hanya proses jika ada aturan berbasis grup untuk grup tersebut
+      const hasGroupRules = myGroupIds.some(gId =>
+        (discountRules || []).some(r => r.group_id === gId)
+      );
+      if (!hasGroupRules) return;
+
+      // Produk tunggal punya aturan sendiri → biarkan, grup tidak menimpa
+      const hasProductRule = (discountRules || []).some(r => r.product_id === productId && !r.group_id);
+      if (hasProductRule) return;
+
+      const discTypeEl = document.getElementById(`disctype-${rowId}`);
+      const discEl     = document.getElementById(`disc-${rowId}`);
+      if (!discTypeEl || !discEl) return;
+
+      let bestRule = null;
+      myGroupIds.forEach(groupId => {
+        const groupProdIds = (discountGroupMembers || [])
+          .filter(m => m.group_id === groupId).map(m => m.product_id);
+        const groupQty = allRowData
+          .filter(r => groupProdIds.includes(r.productId))
+          .reduce((s, r) => s + r.qty, 0);
+        const groupAmt = allRowData
+          .filter(r => groupProdIds.includes(r.productId))
+          .reduce((s, r) => s + r.qty * r.price, 0);
+
+        const eligible = (discountRules || [])
+          .filter(r => r.group_id === groupId)
+          .filter(r => {
+            const meetsQty = !r.min_qty || groupQty >= r.min_qty;
+            const meetsAmt = !r.min_amount || groupAmt >= Number(r.min_amount);
+            return meetsQty && meetsAmt;
+          })
+          .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+
+        if (eligible.length > 0 && (!bestRule || Number(eligible[0].min_qty) > Number(bestRule.min_qty))) {
+          bestRule = eligible[0];
+        }
+      });
+
+      if (bestRule) {
+        discTypeEl.value = bestRule.discount_type;
+        discEl.value = bestRule.discount_type === 'nominal'
+          ? Number(bestRule.discount_value).toLocaleString('id-ID')
+          : String(bestRule.discount_value);
+      } else {
+        discTypeEl.value = 'percent';
+        discEl.value = '0';
+      }
+      recalcRow(rowId);
+    });
+  }
+
+  // Handler untuk perubahan qty — recalc + re-evaluate group discounts
+  function onQtyChange(rowId) {
+    recalcRow(rowId);
+    reapplyGroupDiscounts();
   }
 
   function recalcRow(rowId) {

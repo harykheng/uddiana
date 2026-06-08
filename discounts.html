@@ -15,12 +15,14 @@
     .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
     .ts-dropdown-content { max-height:220px; }
     .ts-dropdown { z-index:9999 !important; }
-    .disc-type-radio { display:flex; gap:16px; }
+    .disc-type-radio { display:flex; gap:16px; flex-wrap:wrap; }
     .disc-type-radio label { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:13px; padding:8px 14px; border:1.5px solid var(--border); border-radius:8px; transition:all .15s; }
     .disc-type-radio label:has(input:checked) { border-color:var(--primary); background:var(--primary-light); color:var(--primary); font-weight:600; }
     .form-hint { font-size:11px; color:var(--text-muted); margin-top:3px; }
     .badge-disc-pct  { background:#ede9fe; color:#6d28d9; }
     .badge-disc-nom  { background:#dcfce7; color:#166534; }
+    .badge-group     { background:#fef3c7; color:#92400e; }
+    .member-chip { display:inline-block; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:20px; padding:2px 10px; font-size:11.5px; color:#475569; margin:2px 2px 2px 0; }
   </style>
 </head>
 <body>
@@ -59,29 +61,61 @@
     <header class="topbar">
       <div class="topbar-title">
         <h1>Diskon Produk</h1>
-        <p>Atur aturan diskon otomatis per produk di faktur penjualan</p>
+        <p>Atur aturan diskon otomatis per produk atau grup varian di faktur penjualan</p>
       </div>
       <div class="topbar-right">
+        <button class="btn btn-ghost" onclick="openAddGroup()" style="margin-right:4px">+ Tambah Grup Varian</button>
         <button class="btn btn-primary" onclick="openAddRule()">+ Tambah Aturan Diskon</button>
         <div class="user-avatar">A</div>
       </div>
     </header>
 
     <main class="page">
+
       <!-- Info box -->
       <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#1e40af;display:flex;gap:10px;align-items:flex-start">
         <span style="font-size:18px;flex-shrink:0">💡</span>
         <div>
           <strong>Cara kerja:</strong> Saat produk dipilih di faktur, diskon otomatis diterapkan jika syarat terpenuhi.
-          Bisa diatur syarat minimal qty atau minimal nilai pembelian. Jika ada beberapa aturan, aturan dengan syarat tertinggi yang diprioritaskan.
+          Bisa diatur per <strong>produk tunggal</strong> atau per <strong>grup varian</strong> (misal: Produk A no 1, 2, 3 — diskon jika total semua varian ≥ 12 pcs).
+          Aturan grup dievaluasi ulang setiap kali qty berubah di faktur.
         </div>
       </div>
 
+      <!-- ══ CARD: GRUP VARIAN ══ -->
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+          <h3>Grup Varian <span id="groups-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+          <button class="btn btn-ghost btn-sm" onclick="openAddGroup()">+ Tambah Grup</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Nama Grup</th>
+                <th>Deskripsi</th>
+                <th>Produk Anggota</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="groups-table">
+              <tr><td colspan="4" class="text-center text-muted" style="padding:30px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ══ FILTER BAR ══ -->
       <div class="filter-bar">
         <div class="search-input-wrap" style="flex:1;max-width:280px">
           <span class="search-icon">🔍</span>
-          <input type="text" id="search-input" placeholder="Cari nama produk..." oninput="handleSearch()">
+          <input type="text" id="search-input" placeholder="Cari nama produk / grup..." oninput="handleSearch()">
         </div>
+        <select id="filter-target" onchange="renderRules()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--surface)">
+          <option value="">Semua Target</option>
+          <option value="product">Produk Tunggal</option>
+          <option value="group">Grup Varian</option>
+        </select>
         <select id="filter-active" onchange="renderRules()">
           <option value="">Semua Status</option>
           <option value="true">Aktif</option>
@@ -90,6 +124,7 @@
         <button class="btn btn-ghost btn-sm" onclick="clearFilters()">Reset</button>
       </div>
 
+      <!-- ══ CARD: ATURAN DISKON ══ -->
       <div class="card">
         <div class="card-header">
           <h3>Daftar Aturan Diskon <span id="rules-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
@@ -98,7 +133,7 @@
           <table>
             <thead>
               <tr>
-                <th>Produk</th>
+                <th>Target</th>
                 <th>Deskripsi</th>
                 <th style="text-align:center">Min. Qty</th>
                 <th style="text-align:right">Min. Pembelian</th>
@@ -113,7 +148,45 @@
           </table>
         </div>
       </div>
+
     </main>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: TAMBAH / EDIT GRUP VARIAN
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-group">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-header">
+      <h3 id="modal-group-title">Tambah Grup Varian</h3>
+      <button class="modal-close" onclick="closeModal('modal-group')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="group-id">
+
+      <div class="form-group">
+        <label>Nama Grup *</label>
+        <input type="text" id="group-name" placeholder="Cth: Lipstik Matte A, Bedak B No 1-5">
+      </div>
+
+      <div class="form-group">
+        <label>Deskripsi <span class="text-muted" style="font-weight:400">(opsional)</span></label>
+        <input type="text" id="group-description" placeholder="Cth: Semua varian ukuran produk A">
+      </div>
+
+      <div class="form-group mb-0">
+        <label>Produk Anggota * <span class="text-muted" style="font-weight:400">(pilih minimal 2)</span></label>
+        <select id="group-products" multiple>
+          <!-- diisi JS -->
+        </select>
+        <div class="form-hint">Pilih semua varian yang termasuk dalam grup ini. Qty total semua varian akan dijumlahkan saat cek syarat diskon.</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-group')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-group" onclick="saveGroup()">💾 Simpan Grup</button>
+    </div>
   </div>
 </div>
 
@@ -129,10 +202,33 @@
     <div class="modal-body">
       <input type="hidden" id="rule-id">
 
+      <!-- Target toggle -->
       <div class="form-group">
+        <label>Target Diskon *</label>
+        <div class="disc-type-radio">
+          <label>
+            <input type="radio" name="rule-target" value="product" checked onchange="onTargetChange()">
+            Produk Tunggal
+          </label>
+          <label>
+            <input type="radio" name="rule-target" value="group" onchange="onTargetChange()">
+            Grup Varian
+          </label>
+        </div>
+        <div class="form-hint" id="target-hint">Diskon berlaku jika qty produk ini memenuhi syarat.</div>
+      </div>
+
+      <div id="rule-product-wrap" class="form-group">
         <label>Produk *</label>
         <select id="rule-product">
           <option value="">— Pilih Produk —</option>
+        </select>
+      </div>
+
+      <div id="rule-group-wrap" class="form-group" style="display:none">
+        <label>Grup Varian *</label>
+        <select id="rule-group">
+          <option value="">— Pilih Grup —</option>
         </select>
       </div>
 
@@ -145,9 +241,9 @@
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:10px">Syarat Berlaku (opsional — isi salah satu atau keduanya)</div>
         <div class="form-row" style="margin-bottom:0">
           <div class="form-group mb-0">
-            <label>Min. Qty (pcs)</label>
+            <label id="min-qty-label">Min. Qty (pcs)</label>
             <input type="number" id="rule-min-qty" value="0" min="0" placeholder="0">
-            <div class="form-hint">0 = tanpa syarat qty</div>
+            <div class="form-hint" id="min-qty-hint">0 = tanpa syarat qty</div>
           </div>
           <div class="form-group mb-0">
             <label>Min. Nilai Pembelian (Rp)</label>
@@ -202,7 +298,11 @@
 <script>
   let allRules    = [];
   let allProducts = [];
-  let productSelect = null;
+  let allGroups   = [];
+
+  let productSelect      = null;  // TomSelect untuk rule-product (single)
+  let groupSelect        = null;  // TomSelect untuk rule-group (single)
+  let groupProductsSelect = null; // TomSelect untuk group-products (multi)
 
   const handleSearch = debounce(() => renderRules(), 300);
 
@@ -210,45 +310,184 @@
     const auth = await requireAdmin();
     if (!auth) return;
     updateSidebarUser(auth.profile);
-    await Promise.all([loadProducts(), loadRules()]);
+    await Promise.all([loadProducts(), loadGroups(), loadRules()]);
   }
+
+  /* ─── PRODUK ─────────────────────────────────────── */
 
   async function loadProducts() {
     const { data } = await supabase.from('products').select('id,name').eq('is_active', true).order('name');
     allProducts = data || [];
 
-    // Modal product select
-    const selModal = document.getElementById('rule-product');
-    selModal.innerHTML = '<option value="">— Pilih Produk —</option>' +
+    // rule-product select (single)
+    const selProd = document.getElementById('rule-product');
+    selProd.innerHTML = '<option value="">— Pilih Produk —</option>' +
       allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
-
     if (productSelect) { try { productSelect.destroy(); } catch(e){} }
-    productSelect = new TomSelect(selModal, {
-      placeholder: '— Cari & pilih produk —',
+    productSelect = new TomSelect(selProd, { placeholder: '— Cari & pilih produk —', maxOptions: 300, dropdownParent: 'body' });
+
+    // group-products select (multi)
+    const selGrpProd = document.getElementById('group-products');
+    selGrpProd.innerHTML = allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+    if (groupProductsSelect) { try { groupProductsSelect.destroy(); } catch(e){} }
+    groupProductsSelect = new TomSelect(selGrpProd, {
+      plugins: ['remove_button'],
+      placeholder: '— Cari & pilih produk anggota —',
       maxOptions: 300,
       dropdownParent: 'body',
     });
   }
 
+  /* ─── GRUP ───────────────────────────────────────── */
+
+  async function loadGroups() {
+    const { data, error } = await supabase
+      .from('discount_groups')
+      .select('*, discount_group_members(product_id, products(name))')
+      .order('name');
+    if (error) { showToast('Gagal memuat grup varian', 'error'); return; }
+    allGroups = data || [];
+
+    // rule-group select (single)
+    const selGrp = document.getElementById('rule-group');
+    selGrp.innerHTML = '<option value="">— Pilih Grup —</option>' +
+      allGroups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+    if (groupSelect) { try { groupSelect.destroy(); } catch(e){} }
+    groupSelect = new TomSelect(selGrp, { placeholder: '— Cari & pilih grup —', maxOptions: 100, dropdownParent: 'body' });
+
+    renderGroups();
+  }
+
+  function renderGroups() {
+    document.getElementById('groups-count').textContent = allGroups.length;
+    const tbody = document.getElementById('groups-table');
+
+    if (!allGroups.length) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">📦</div><h4>Belum ada grup varian</h4><p>Buat grup untuk produk yang punya banyak varian (ukuran, warna, dll), lalu buat aturan diskon berbasis grup.</p></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = allGroups.map(g => {
+      const members = g.discount_group_members || [];
+      const chips   = members.map(m => `<span class="member-chip">${escapeHtml(m.products?.name || '?')}</span>`).join('');
+      return `
+        <tr>
+          <td><strong>${escapeHtml(g.name)}</strong></td>
+          <td>${g.description ? escapeHtml(g.description) : '<span class="text-muted">—</span>'}</td>
+          <td style="max-width:320px">
+            ${chips || '<span class="text-muted">—</span>'}
+            <span class="badge badge-info" style="margin-left:4px">${members.length} produk</span>
+          </td>
+          <td>
+            <div class="table-actions">
+              <button class="btn btn-ghost btn-sm" onclick="openEditGroup('${g.id}')">✏️ Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteGroup('${g.id}')">Hapus</button>
+            </div>
+          </td>
+        </tr>`;
+    }).join('');
+  }
+
+  function openAddGroup() {
+    document.getElementById('group-id').value = '';
+    document.getElementById('modal-group-title').textContent = 'Tambah Grup Varian';
+    document.getElementById('group-name').value = '';
+    document.getElementById('group-description').value = '';
+    if (groupProductsSelect) groupProductsSelect.setValue([]);
+    openModal('modal-group');
+  }
+
+  function openEditGroup(id) {
+    const g = allGroups.find(x => x.id === id);
+    if (!g) return;
+    document.getElementById('group-id').value = g.id;
+    document.getElementById('modal-group-title').textContent = 'Edit Grup Varian';
+    document.getElementById('group-name').value = g.name;
+    document.getElementById('group-description').value = g.description || '';
+    const memberIds = (g.discount_group_members || []).map(m => m.product_id);
+    if (groupProductsSelect) groupProductsSelect.setValue(memberIds);
+    openModal('modal-group');
+  }
+
+  async function saveGroup() {
+    const btn  = document.getElementById('btn-save-group');
+    const id   = document.getElementById('group-id').value;
+    const name = document.getElementById('group-name').value.trim();
+    if (!name) { showToast('Nama grup tidak boleh kosong', 'error'); return; }
+
+    const selectedProducts = groupProductsSelect ? groupProductsSelect.getValue() : [];
+    if (!Array.isArray(selectedProducts) ? !selectedProducts : selectedProducts.length < 2) {
+      showToast('Pilih minimal 2 produk untuk grup', 'error'); return;
+    }
+    const prodIds = Array.isArray(selectedProducts) ? selectedProducts : [selectedProducts];
+    if (prodIds.length < 2) { showToast('Pilih minimal 2 produk untuk grup', 'error'); return; }
+
+    setLoading(btn, true);
+    let groupId = id;
+
+    if (id) {
+      const { error } = await supabase.from('discount_groups').update({
+        name, description: document.getElementById('group-description').value.trim() || null
+      }).eq('id', id);
+      if (error) { showToast('Gagal update grup: ' + error.message, 'error'); setLoading(btn, false); return; }
+      // Hapus anggota lama, ganti dengan yang baru
+      await supabase.from('discount_group_members').delete().eq('group_id', id);
+    } else {
+      const { data, error } = await supabase.from('discount_groups').insert({
+        name, description: document.getElementById('group-description').value.trim() || null
+      }).select('id').single();
+      if (error) { showToast('Gagal buat grup: ' + error.message, 'error'); setLoading(btn, false); return; }
+      groupId = data.id;
+    }
+
+    const members = prodIds.map(pid => ({ group_id: groupId, product_id: pid }));
+    const { error: memberErr } = await supabase.from('discount_group_members').insert(members);
+    if (memberErr) { showToast('Gagal simpan anggota: ' + memberErr.message, 'error'); setLoading(btn, false); return; }
+
+    setLoading(btn, false);
+    showToast(id ? 'Grup diperbarui!' : 'Grup ditambahkan!', 'success');
+    closeModal('modal-group');
+    await loadGroups();
+  }
+
+  async function deleteGroup(id) {
+    const g = allGroups.find(x => x.id === id);
+    const hasRules = allRules.some(r => r.group_id === id);
+    const msg = hasRules
+      ? `Hapus grup "${g?.name || 'ini'}"? Aturan diskon berbasis grup ini juga akan terhapus otomatis.`
+      : `Hapus grup "${g?.name || 'ini'}"?`;
+    if (!confirm(msg)) return;
+    const { error } = await supabase.from('discount_groups').delete().eq('id', id);
+    if (error) { showToast('Gagal hapus: ' + error.message, 'error'); return; }
+    showToast('Grup dihapus');
+    await Promise.all([loadGroups(), loadRules()]);
+  }
+
+  /* ─── ATURAN DISKON ──────────────────────────────── */
+
   async function loadRules() {
     const { data, error } = await supabase
       .from('product_discount_rules')
-      .select('*, products(name)')
+      .select('*, products(name), discount_groups(name)')
       .order('created_at', { ascending: false });
-
     if (error) { showToast('Gagal memuat aturan diskon', 'error'); return; }
     allRules = data || [];
     renderRules();
   }
 
   function renderRules() {
-    const search = document.getElementById('search-input').value.toLowerCase();
+    const search       = document.getElementById('search-input').value.toLowerCase();
     const filterActive = document.getElementById('filter-active').value;
+    const filterTarget = document.getElementById('filter-target').value;
 
     const filtered = allRules.filter(r => {
-      const name = (r.products?.name || '').toLowerCase();
+      const name = r.group_id
+        ? (r.discount_groups?.name || '').toLowerCase()
+        : (r.products?.name || '').toLowerCase();
       if (search && !name.includes(search)) return false;
       if (filterActive !== '' && String(r.is_active) !== filterActive) return false;
+      if (filterTarget === 'product' && r.group_id) return false;
+      if (filterTarget === 'group'   && !r.group_id) return false;
       return true;
     });
 
@@ -261,17 +500,25 @@
     }
 
     tbody.innerHTML = filtered.map(r => {
+      const isGroup = !!r.group_id;
+      const targetCell = isGroup
+        ? `<div><span class="badge badge-group">🔗 Grup</span><br><small style="color:#64748b">${escapeHtml(r.discount_groups?.name || '—')}</small></div>`
+        : `<strong>${escapeHtml(r.products?.name || '—')}</strong>`;
+
       const discLabel = r.discount_type === 'percent'
         ? `<span class="badge badge-disc-pct">${r.discount_value}%</span>`
         : `<span class="badge badge-disc-nom">${formatCurrency(r.discount_value)}</span>`;
-      const minQty  = r.min_qty  > 0 ? `${r.min_qty} pcs`          : '<span class="text-muted">—</span>';
+
+      const minQtyLabel = isGroup ? 'Total grup' : '';
+      const minQty  = r.min_qty   > 0 ? `${r.min_qty} pcs${minQtyLabel ? ' <span style="font-size:10px;color:#94a3b8">(' + minQtyLabel + ')</span>' : ''}` : '<span class="text-muted">—</span>';
       const minAmt  = r.min_amount > 0 ? formatCurrency(r.min_amount) : '<span class="text-muted">—</span>';
       const status  = r.is_active
         ? '<span class="badge badge-success">Aktif</span>'
         : '<span class="badge badge-gray">Nonaktif</span>';
+
       return `
         <tr style="${!r.is_active ? 'opacity:.55;' : ''}">
-          <td><strong>${escapeHtml(r.products?.name || '—')}</strong></td>
+          <td>${targetCell}</td>
           <td>${r.description ? escapeHtml(r.description) : '<span class="text-muted">—</span>'}</td>
           <td style="text-align:center">${minQty}</td>
           <td style="text-align:right">${minAmt}</td>
@@ -290,7 +537,24 @@
   function clearFilters() {
     document.getElementById('search-input').value = '';
     document.getElementById('filter-active').value = '';
+    document.getElementById('filter-target').value = '';
     renderRules();
+  }
+
+  /* ─── MODAL RULE — helpers ───────────────────────── */
+
+  function onTargetChange() {
+    const target = document.querySelector('input[name="rule-target"]:checked')?.value || 'product';
+    const isGroup = target === 'group';
+    document.getElementById('rule-product-wrap').style.display = isGroup ? 'none' : '';
+    document.getElementById('rule-group-wrap').style.display   = isGroup ? '' : 'none';
+    document.getElementById('target-hint').textContent = isGroup
+      ? 'Diskon berlaku jika total qty semua varian dalam grup memenuhi syarat.'
+      : 'Diskon berlaku jika qty produk ini memenuhi syarat.';
+    document.getElementById('min-qty-label').textContent = isGroup ? 'Min. Qty Total Grup (pcs)' : 'Min. Qty (pcs)';
+    document.getElementById('min-qty-hint').textContent  = isGroup
+      ? '0 = tanpa syarat qty (dihitung total semua varian grup)'
+      : '0 = tanpa syarat qty';
   }
 
   function onDiscTypeChange() {
@@ -307,7 +571,10 @@
   function openAddRule() {
     document.getElementById('rule-id').value = '';
     document.getElementById('modal-rule-title').textContent = 'Tambah Aturan Diskon';
+    document.querySelector('input[name="rule-target"][value="product"]').checked = true;
+    onTargetChange();
     if (productSelect) productSelect.setValue('');
+    if (groupSelect)   groupSelect.setValue('');
     document.getElementById('rule-description').value = '';
     document.getElementById('rule-min-qty').value = '0';
     document.getElementById('rule-min-amount').value = '0';
@@ -323,13 +590,19 @@
     if (!r) return;
     document.getElementById('rule-id').value = r.id;
     document.getElementById('modal-rule-title').textContent = 'Edit Aturan Diskon';
-    if (productSelect) productSelect.setValue(r.product_id || '');
+
+    const isGroup = !!r.group_id;
+    document.querySelector(`input[name="rule-target"][value="${isGroup ? 'group' : 'product'}"]`).checked = true;
+    onTargetChange();
+
+    if (!isGroup && productSelect) productSelect.setValue(r.product_id || '');
+    if (isGroup  && groupSelect)   groupSelect.setValue(r.group_id   || '');
+
     document.getElementById('rule-description').value = r.description || '';
-    document.getElementById('rule-min-qty').value = r.min_qty || 0;
-    document.getElementById('rule-min-amount').value = r.min_amount > 0 ? Number(r.min_amount).toLocaleString('id-ID') : '0';
-    const radios = document.querySelectorAll('input[name="rule-disc-type"]');
-    radios.forEach(rad => { rad.checked = rad.value === r.discount_type; });
-    document.getElementById('rule-disc-value').value = r.discount_type === 'nominal'
+    document.getElementById('rule-min-qty').value     = r.min_qty || 0;
+    document.getElementById('rule-min-amount').value  = r.min_amount > 0 ? Number(r.min_amount).toLocaleString('id-ID') : '0';
+    document.querySelectorAll('input[name="rule-disc-type"]').forEach(rad => { rad.checked = rad.value === r.discount_type; });
+    document.getElementById('rule-disc-value').value  = r.discount_type === 'nominal'
       ? Number(r.discount_value).toLocaleString('id-ID')
       : String(r.discount_value);
     document.getElementById('rule-active').checked = r.is_active;
@@ -338,26 +611,33 @@
   }
 
   async function saveRule() {
-    const btn = document.getElementById('btn-save-rule');
-    const id  = document.getElementById('rule-id').value;
-    const productId = productSelect?.getValue() || '';
+    const btn    = document.getElementById('btn-save-rule');
+    const id     = document.getElementById('rule-id').value;
+    const target = document.querySelector('input[name="rule-target"]:checked')?.value || 'product';
 
-    if (!productId) { showToast('Pilih produk terlebih dahulu', 'error'); return; }
+    let productId = null, groupId = null;
+    if (target === 'product') {
+      productId = productSelect?.getValue() || '';
+      if (!productId) { showToast('Pilih produk terlebih dahulu', 'error'); return; }
+    } else {
+      groupId = groupSelect?.getValue() || '';
+      if (!groupId) { showToast('Pilih grup varian terlebih dahulu', 'error'); return; }
+    }
 
     const discType  = document.querySelector('input[name="rule-disc-type"]:checked')?.value || 'percent';
     const discValue = parseFormattedNumber(document.getElementById('rule-disc-value').value) || 0;
-
     if (discValue <= 0) { showToast('Nilai diskon harus lebih dari 0', 'error'); return; }
     if (discType === 'percent' && discValue > 100) { showToast('Persentase tidak boleh melebihi 100%', 'error'); return; }
 
     const payload = {
-      product_id:    productId,
-      description:   document.getElementById('rule-description').value.trim() || null,
-      min_qty:       parseInt(document.getElementById('rule-min-qty').value) || 0,
-      min_amount:    parseFormattedNumber(document.getElementById('rule-min-amount').value) || 0,
-      discount_type: discType,
+      product_id:     productId,
+      group_id:       groupId,
+      description:    document.getElementById('rule-description').value.trim() || null,
+      min_qty:        parseInt(document.getElementById('rule-min-qty').value) || 0,
+      min_amount:     parseFormattedNumber(document.getElementById('rule-min-amount').value) || 0,
+      discount_type:  discType,
       discount_value: discValue,
-      is_active:     document.getElementById('rule-active').checked,
+      is_active:      document.getElementById('rule-active').checked,
     };
 
     setLoading(btn, true);
@@ -377,13 +657,17 @@
 
   async function deleteRule(id) {
     const r = allRules.find(x => x.id === id);
-    if (!confirm(`Hapus aturan diskon untuk "${r?.products?.name || 'produk ini'}"?`)) return;
+    const label = r?.group_id
+      ? `aturan grup "${r.discount_groups?.name || 'ini'}"`
+      : `aturan diskon untuk "${r?.products?.name || 'produk ini'}"`;
+    if (!confirm(`Hapus ${label}?`)) return;
     const { error } = await supabase.from('product_discount_rules').delete().eq('id', id);
     if (error) { showToast('Gagal hapus: ' + error.message, 'error'); return; }
     showToast('Aturan diskon dihapus');
     await loadRules();
   }
 
+  /* ─── OVERLAY CLOSE ──────────────────────────────── */
   document.querySelectorAll('.modal-overlay').forEach(el => {
     el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
   });
