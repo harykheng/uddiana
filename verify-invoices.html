@@ -458,13 +458,8 @@
       await supabase.from('invoice_items').update({ product_id: productId, product_name: productName, quantity: qty, price: price, subtotal: sub, cost_price: cost }).eq('id', itemId);
       total += sub;
 
-      // Auto-update harga jual produk jika belum ada (price = 0)
-      if (price > 0) {
-        const { data: prodCheck } = await supabase.from('products').select('price').eq('id', productId).single();
-        if (prodCheck && (prodCheck.price === 0 || prodCheck.price === null)) {
-          await supabase.from('products').update({ price }).eq('id', productId);
-        }
-      }
+      // Selalu update harga jual produk sesuai harga di faktur
+      await supabase.from('products').update({ price }).eq('id', productId);
     }
 
     const { data: { session } } = await supabase.auth.getSession();
