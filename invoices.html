@@ -565,7 +565,7 @@
     };
     const terminMap = {
       cod:     'COD',
-      '14_days': '14 Hari', '30_days': '30 Hari',
+      '14_days': '14 Hari', '15_days': '15 Hari', '30_days': '30 Hari',
     };
 
     tbody.innerHTML = filtered.map(inv => {
@@ -1298,7 +1298,7 @@
     document.getElementById('pay-sisa-info').style.display = 'none';
     setPayMethod('cash');
 
-    const terminMap = { cod:'COD', '14_days':'14 Hari', '30_days':'30 Hari' };
+    const terminMap = { cod:'COD', '14_days':'14 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
     const sisaLabel = Number(inv.paid_amount || 0) > 0
       ? `<span style="color:#d97706;font-size:11px;font-weight:700;">⚠️ Sudah dibayar ${formatCurrency(inv.paid_amount)} — sisa ${formatCurrency(remaining)}</span>`
       : '';
@@ -1393,7 +1393,7 @@
     document.getElementById('view-invoice-title').textContent = `Faktur ${inv.invoice_number}`;
 
     const statusMap = { paid:['Lunas','success'], pending:['Belum Lunas','warning'], cancelled:['Dibatalkan','danger'] };
-    const terminMap = { cod:'COD', '14_days':'14 Hari', '30_days':'30 Hari' };
+    const terminMap = { cod:'COD', '14_days':'14 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
     const modeMap   = { regular:'Harga Biasa', shopee:'Harga Shopee', custom:'Custom' };
     const [statusLabel, statusColor] = statusMap[inv.status] || ['—','gray'];
 
@@ -1441,7 +1441,11 @@
         <div style="text-align:right">
           <span class="badge badge-${statusColor}" style="font-size:13px">${statusLabel}</span>
           <div style="color:var(--text-muted);font-size:12px;margin-top:4px">📅 ${formatDate(inv.invoice_date)}</div>
-          <div style="margin-top:4px"><span class="badge badge-gray">${terminMap[inv.payment_term]||inv.payment_term}</span> <span class="badge badge-gray">${modeMap[inv.price_mode]||inv.price_mode}</span></div>
+          <div style="margin-top:4px">
+            <span class="badge badge-gray">${terminMap[inv.payment_term]||inv.payment_term}</span>
+            ${calcDueDate(inv.invoice_date, inv.payment_term) ? `<span class="badge badge-warning" style="margin-left:4px">📅 Jatuh Tempo: ${calcDueDate(inv.invoice_date, inv.payment_term)}</span>` : ''}
+            <span class="badge badge-gray" style="margin-left:4px">${modeMap[inv.price_mode]||inv.price_mode}</span>
+          </div>
         </div>
       </div>
       <table style="width:100%;border-collapse:collapse">
@@ -1481,13 +1485,23 @@
     loadInvoices();
   }
 
+  // Hitung tanggal jatuh tempo berdasarkan tanggal faktur + termin
+  function calcDueDate(invoiceDate, paymentTerm) {
+    const daysMap = { '14_days': 14, '15_days': 15, '30_days': 30 };
+    const days = daysMap[paymentTerm];
+    if (!days || !invoiceDate) return null;
+    const [y, m, d] = invoiceDate.slice(0, 10).split('-').map(Number);
+    const due = new Date(y, m - 1, d + days);
+    return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }).format(due);
+  }
+
   function printCurrentInvoice() {
     if (!currentInvoice) return;
     const { inv, items } = currentInvoice;
 
     const terminMap = {
       cod: 'COD (Bayar di Tempat)',
-      '14_days': '14 Hari', '30_days': '30 Hari'
+      '14_days': '14 Hari', '15_days': '15 Hari', '30_days': '30 Hari'
     };
     // angka tanpa "Rp" — hanya untuk kolom tabel
     const fmtNum = n => Number(n || 0).toLocaleString('id-ID');
@@ -1542,7 +1556,7 @@
             <div style="font-weight:bold;">${customerLine}</div>
             <div>Telp: ${escapeHtml(inv.customer_phone || '')}</div>
             <div>${escapeHtml(inv.customer_address || '')}</div>
-            <div>Jatuh Tempo: <strong>${terminMap[inv.payment_term] || inv.payment_term || '—'}</strong></div>
+            <div>Jatuh Tempo: <strong>${terminMap[inv.payment_term] || inv.payment_term || '—'}${calcDueDate(inv.invoice_date, inv.payment_term) ? ' · ' + calcDueDate(inv.invoice_date, inv.payment_term) : ''}</strong></div>
           </div>
         </div>
 
