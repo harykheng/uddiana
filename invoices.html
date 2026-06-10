@@ -442,6 +442,9 @@
       <button class="btn btn-ghost" id="btn-cancel-invoice"
         onclick="cancelCurrentInvoice()"
         style="color:var(--danger);border-color:var(--danger)">Batalkan</button>
+      <button class="btn btn-danger" id="btn-delete-invoice"
+        onclick="deleteInvoiceFromModal()"
+        style="margin-left:auto">🗑 Hapus</button>
       <button class="btn btn-primary" onclick="printCurrentInvoice()">🖨 Cetak PDF</button>
     </div>
   </div>
@@ -600,6 +603,7 @@
             ${inv.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="openPayment('${inv.id}')">💳 ${paidAmt > 0 ? 'Bayar Lagi' : 'Lunasi'}</button>` : ''}
             ${inv.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openEditInvoice('${inv.id}')">✏️</button>` : ''}
             <button class="btn btn-ghost btn-sm" onclick="viewInvoice('${inv.id}')">👁</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteInvoice('${inv.id}')" title="Hapus Faktur">🗑</button>
           </div>
         </td>
       </tr>`;
@@ -1482,6 +1486,49 @@
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('Faktur dibatalkan, stok dikembalikan');
     closeModal('modal-view-invoice');
+    loadInvoices();
+  }
+
+  function deleteInvoiceFromModal() {
+    if (!currentInvoice) return;
+    deleteInvoice(currentInvoice.inv.id, true);
+  }
+
+  async function deleteInvoice(id, fromModal = false) {
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv) return;
+
+    const confirmMsg = inv.status === 'paid'
+      ? `⚠️ Faktur ${inv.invoice_number} sudah LUNAS!\n\nHapus tetap akan mengembalikan stok, tapi pembayaran tidak dikembalikan.\nLanjutkan hapus?`
+      : `Hapus faktur ${inv.invoice_number}?\n\nStok akan dikembalikan dan faktur dihapus permanen.\nTindakan ini tidak bisa dibatalkan.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    // 1. Ambil item faktur
+    const { data: items } = await supabase
+      .from('invoice_items').select('product_id, quantity').eq('invoice_id', id);
+
+    // 2. Kembalikan stok jika belum dibatalkan (cancelled sudah dikembalikan via trigger)
+    if (inv.status !== 'cancelled') {
+      for (const item of (items || [])) {
+        const { data: prod } = await supabase
+          .from('products').select('stock_quantity').eq('id', item.product_id).single();
+        if (prod) {
+          await supabase.from('products')
+            .update({ stock_quantity: prod.stock_quantity + item.quantity })
+            .eq('id', item.product_id);
+        }
+      }
+    }
+
+    // 3. Hapus invoice_items lalu invoice
+    await supabase.from('invoice_items').delete().eq('invoice_id', id);
+    const { error } = await supabase.from('invoices').delete().eq('id', id);
+
+    if (error) { showToast('Gagal hapus: ' + error.message, 'error'); return; }
+
+    showToast('Faktur dihapus dan stok dikembalikan');
+    if (fromModal) closeModal('modal-view-invoice');
     loadInvoices();
   }
 
