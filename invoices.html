@@ -190,6 +190,7 @@
             </tbody>
           </table>
         </div>
+        <div id="inv-pagination" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px"></div>
       </div>
     </main>
   </div>
@@ -471,7 +472,10 @@
   let currentPayMethod = 'cash';
   let itemRowCount = 0;
 
-  const handleSearch = debounce(() => renderInvoices(), 350);
+  const INV_PAGE_SIZE = 25;
+  let invPage = 1;
+
+  const handleSearch = debounce(() => { invPage = 1; renderInvoices(); }, 350);
 
   async function init() {
     const auth = await requireAdmin(); if (!auth) return;
@@ -516,6 +520,7 @@
   }
 
   async function loadInvoices() {
+    invPage = 1;
     const status   = document.getElementById('filter-status').value;
     const dateFrom = document.getElementById('filter-date-from').value;
     const dateTo   = document.getElementById('filter-date-to').value;
@@ -558,7 +563,39 @@
     const tbody = document.getElementById('invoices-table');
     if (!filtered.length) {
       tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🧾</div><h4>Tidak ada faktur</h4></div></td></tr>`;
+      document.getElementById('inv-pagination').innerHTML = '';
       return;
+    }
+
+    const totalPages = Math.ceil(filtered.length / INV_PAGE_SIZE);
+    if (invPage > totalPages) invPage = totalPages;
+    const pageItems = filtered.slice((invPage - 1) * INV_PAGE_SIZE, invPage * INV_PAGE_SIZE);
+
+    // Render pagination controls
+    const pg = document.getElementById('inv-pagination');
+    if (totalPages <= 1) {
+      pg.innerHTML = `<span style="font-size:12px;color:var(--text-muted)">${filtered.length} faktur</span>`;
+    } else {
+      const pages = [];
+      for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || Math.abs(i - invPage) <= 2) {
+          pages.push(i);
+        } else if (pages[pages.length - 1] !== '…') {
+          pages.push('…');
+        }
+      }
+      pg.innerHTML = `
+        <span style="font-size:12px;color:var(--text-muted)">
+          Hal ${invPage} / ${totalPages} &nbsp;·&nbsp; ${filtered.length} faktur
+        </span>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="goInvPage(${invPage - 1})" ${invPage === 1 ? 'disabled' : ''}>‹ Prev</button>
+          ${pages.map(p => p === '…'
+            ? `<span style="padding:4px 2px;font-size:13px;color:var(--text-muted)">…</span>`
+            : `<button class="btn btn-sm ${p === invPage ? 'btn-primary' : 'btn-ghost'}" onclick="goInvPage(${p})">${p}</button>`
+          ).join('')}
+          <button class="btn btn-ghost btn-sm" onclick="goInvPage(${invPage + 1})" ${invPage === totalPages ? 'disabled' : ''}>Next ›</button>
+        </div>`;
     }
 
     const statusMap = {
@@ -571,7 +608,7 @@
       '14_days': '14 Hari', '15_days': '15 Hari', '30_days': '30 Hari',
     };
 
-    tbody.innerHTML = filtered.map(inv => {
+    tbody.innerHTML = pageItems.map(inv => {
       const [label, color] = statusMap[inv.status] || ['—', 'gray'];
       const termin  = terminMap[inv.payment_term] || inv.payment_term || '—';
       const faded   = inv.status === 'cancelled' ? 'style="opacity:.55"' : '';
@@ -610,10 +647,17 @@
     }).join('');
   }
 
+  function goInvPage(p) {
+    invPage = Math.max(1, p);
+    renderInvoices();
+    document.querySelector('.card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
   function clearFilters() {
     ['search-input','filter-date-from','filter-date-to'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('filter-status').value = '';
     document.getElementById('filter-sales').value = '';
+    invPage = 1;
     loadInvoices();
   }
 
