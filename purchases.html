@@ -172,6 +172,63 @@
   </div>
 </div>
 
+<!-- MODAL EDIT PO -->
+<div class="modal-overlay" id="modal-edit-po" data-no-overlay-close>
+  <div class="modal modal-xl">
+    <div class="modal-header">
+      <h3 id="edit-po-title">Edit Pembelian</h3>
+      <button class="modal-close" onclick="closeModal('modal-edit-po')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#f8fafc;border-radius:8px;padding:14px 16px;margin-bottom:14px">
+        <div class="form-row">
+          <div class="form-group mb-0">
+            <label>Nama Supplier</label>
+            <input type="text" id="edit-po-supplier" placeholder="Nama distributor / supplier">
+          </div>
+          <div class="form-group mb-0">
+            <label>Tanggal</label>
+            <input type="date" id="edit-po-date">
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:10px;margin-bottom:0">
+          <label>Catatan / No. Surat Jalan</label>
+          <input type="text" id="edit-po-notes" placeholder="Nomor surat jalan atau catatan lainnya">
+        </div>
+      </div>
+
+      <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">Daftar Barang</div>
+      <div class="table-wrap" style="margin-bottom:8px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f8fafc">
+              <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:38%">Produk</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Stok</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Qty</th>
+              <th class="col-harga-modal-edit-po" style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Harga Modal / Unit</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Subtotal</th>
+              <th style="width:8%"></th>
+            </tr>
+          </thead>
+          <tbody id="edit-po-items-body"></tbody>
+        </table>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="addEditPoRow()" style="margin-bottom:14px">+ Tambah Barang</button>
+
+      <div class="invoice-summary">
+        <div class="invoice-summary-row total">
+          <span>TOTAL MODAL PEMBELIAN</span>
+          <span id="edit-po-total" style="color:var(--primary)">Rp 0</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-po')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-edit-po" onclick="saveEditPurchase()">💾 Simpan Perubahan</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL VIEW DETAIL -->
 <div class="modal-overlay" id="modal-view-po">
   <div class="modal modal-lg">
@@ -262,7 +319,10 @@
         <td class="text-right font-bold">${formatCurrency(p.total_cost)}</td>
         <td>${statusBadge}</td>
         <td>
-          <button class="btn btn-ghost btn-sm" onclick="viewPo('${p.id}')">👁 Detail</button>
+          <div class="table-actions">
+            ${p.status !== 'cancelled' ? `<button class="btn btn-ghost btn-sm" onclick="openEditPo('${p.id}')">✏️ Edit</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="viewPo('${p.id}')">👁 Detail</button>
+          </div>
         </td>
       </tr>`;
     }).join('');
@@ -499,6 +559,154 @@
         </div>
       </div>`;
     window.print();
+  }
+
+  // ── EDIT PO ────────────────────────────────────────────────
+  let currentEditPoId = null;
+  let editPoRowCount  = 0;
+
+  async function openEditPo(id) {
+    const { data: po }    = await supabase.from('purchases').select('*').eq('id', id).single();
+    const { data: items } = await supabase.from('purchase_items').select('*').eq('purchase_id', id);
+    if (!po) return;
+
+    currentEditPoId = id;
+    editPoRowCount  = 0;
+
+    document.getElementById('edit-po-title').textContent    = `Edit PO: ${po.purchase_number}`;
+    document.getElementById('edit-po-supplier').value       = po.supplier_name || '';
+    document.getElementById('edit-po-date').value           = po.purchase_date || todayISO();
+    document.getElementById('edit-po-notes').value          = po.notes || '';
+    document.getElementById('edit-po-items-body').innerHTML = '';
+
+    // Sembunyikan kolom harga modal untuk admin biasa
+    document.querySelectorAll('.col-harga-modal-edit-po').forEach(el => {
+      el.style.display = poIsSuperAdmin ? '' : 'none';
+    });
+
+    (items || []).forEach(item => addEditPoRow(item));
+    recalcEditPoTotal();
+    openModal('modal-edit-po');
+  }
+
+  function addEditPoRow(existing = null) {
+    const id   = `epor-${++editPoRowCount}`;
+    const tbody = document.getElementById('edit-po-items-body');
+    const tr   = document.createElement('tr');
+    tr.id      = id;
+    tr.innerHTML = `
+      <td style="padding:5px 6px">
+        <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
+          <option value="">-- Pilih Produk --</option>
+          ${products.map(p => `<option value="${p.id}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}"${existing && p.id === existing.product_id ? ' selected' : ''}>${escapeHtml(p.name)} (${p.stock_quantity} ${p.unit})</option>`).join('')}
+        </select>
+      </td>
+      <td style="padding:5px 6px"><input type="number" id="epostock-${id}" readonly value="${existing ? (products.find(p=>p.id===existing.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="number" id="epoqty-${id}" value="${existing ? existing.quantity : 1}" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"></td>
+      <td class="col-harga-modal-edit-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="epocost-${id}" value="${existing ? Number(existing.cost_price||0).toLocaleString('id-ID') : '0'}" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" id="eposub-${id}" readonly value="${existing ? Number(existing.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcEditPoTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
+    `;
+    tbody.appendChild(tr);
+    const selEl = tr.querySelector('select');
+    new TomSelect(selEl, {
+      placeholder: '— Cari & pilih produk —',
+      maxOptions: 200,
+      dropdownParent: 'body',
+      onChange: () => onEditPoProductSelect(selEl, id)
+    });
+  }
+
+  function onEditPoProductSelect(sel, rowId) {
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById(`epostock-${rowId}`).value = opt.dataset.stock || 0;
+    document.getElementById(`epocost-${rowId}`).value  = Number(opt.dataset.cost || 0).toLocaleString('id-ID');
+    recalcEditPoRow(rowId);
+  }
+
+  function recalcEditPoRow(rowId) {
+    const qty  = parseInt(document.getElementById(`epoqty-${rowId}`)?.value) || 0;
+    const cost = parseFormattedNumber(document.getElementById(`epocost-${rowId}`)?.value || '0');
+    const sub  = document.getElementById(`eposub-${rowId}`);
+    if (sub) sub.value = (qty * cost).toLocaleString('id-ID');
+    recalcEditPoTotal();
+  }
+
+  function recalcEditPoTotal() {
+    let total = 0;
+    document.querySelectorAll('#edit-po-items-body tr').forEach(tr => {
+      total += parseFormattedNumber(tr.querySelector('[id^="eposub-"]')?.value || '0');
+    });
+    document.getElementById('edit-po-total').textContent = formatCurrency(total);
+  }
+
+  async function saveEditPurchase() {
+    const btn = document.getElementById('btn-save-edit-po');
+
+    const newItems = [];
+    let totalCost  = 0;
+    let valid      = true;
+
+    document.querySelectorAll('#edit-po-items-body tr').forEach(tr => {
+      const sel    = tr.querySelector('select');
+      const qtyEl  = tr.querySelector('[id^="epoqty-"]');
+      const costEl = tr.querySelector('[id^="epocost-"]');
+      if (!sel?.value) return;
+      const qty  = parseInt(qtyEl?.value) || 0;
+      const cost = parseFormattedNumber(costEl?.value || '0');
+      if (qty <= 0) { showToast('Jumlah harus > 0', 'error'); valid = false; return; }
+      const prod = products.find(p => p.id === sel.value);
+      const sub  = qty * cost;
+      totalCost += sub;
+      newItems.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, cost_price: cost, subtotal: sub });
+    });
+
+    if (!valid) return;
+    if (!newItems.length) { showToast('Tambahkan minimal 1 barang', 'error'); return; }
+
+    setLoading(btn, true);
+
+    // 1. Ambil item lama → balik stok (kurangi dari produk)
+    const { data: oldItems } = await supabase
+      .from('purchase_items').select('product_id, quantity').eq('purchase_id', currentEditPoId);
+
+    for (const old of (oldItems || [])) {
+      const { data: prod } = await supabase.from('products')
+        .select('stock_quantity').eq('id', old.product_id).single();
+      if (prod) {
+        await supabase.from('products')
+          .update({ stock_quantity: prod.stock_quantity - old.quantity })
+          .eq('id', old.product_id);
+      }
+    }
+
+    // 2. Hapus item lama
+    await supabase.from('purchase_items').delete().eq('purchase_id', currentEditPoId);
+
+    // 3. Insert item baru — trigger otomatis tambah stok + update cost
+    const { error: itemsErr } = await supabase.from('purchase_items').insert(
+      newItems.map(i => ({ ...i, purchase_id: currentEditPoId }))
+    );
+    if (itemsErr) {
+      showToast('Gagal simpan item: ' + itemsErr.message, 'error');
+      setLoading(btn, false);
+      return;
+    }
+
+    // 4. Update header PO
+    const { error } = await supabase.from('purchases').update({
+      supplier_name: document.getElementById('edit-po-supplier').value.trim() || null,
+      purchase_date: document.getElementById('edit-po-date').value,
+      notes:         document.getElementById('edit-po-notes').value.trim() || null,
+      total_cost:    totalCost,
+    }).eq('id', currentEditPoId);
+
+    setLoading(btn, false);
+    if (error) { showToast('Gagal update PO: ' + error.message, 'error'); return; }
+
+    showToast('Pembelian berhasil diperbarui, stok disesuaikan');
+    closeModal('modal-edit-po');
+    loadPurchases();
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
