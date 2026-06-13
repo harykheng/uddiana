@@ -429,6 +429,55 @@
   </div>
 </div>
 
+<!-- MODAL: EDIT FAKTUR -->
+<div class="modal-overlay" id="modal-edit" data-no-overlay-close>
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-size:16px;font-weight:700;">✏️ Edit Faktur</div>
+      <button onclick="closeEditModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#64748b;line-height:1;">✕</button>
+    </div>
+
+    <div class="form-group">
+      <label>Customer</label>
+      <select id="edit-customer"></select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Tanggal</label>
+        <input type="date" id="edit-date">
+      </div>
+      <div class="form-group">
+        <label>Termin</label>
+        <select id="edit-term">
+          <option value="cod">COD</option>
+          <option value="14_days">14 Hari</option>
+          <option value="30_days">30 Hari</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Catatan (opsional)</label>
+      <textarea id="edit-notes" rows="2" placeholder="Catatan tambahan..."></textarea>
+    </div>
+
+    <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:10px;">Items</div>
+    <div class="items-list" id="edit-items-list"></div>
+
+    <button class="btn btn-ghost btn-full" onclick="addEditItem()" style="margin-bottom:14px;border:1.5px dashed var(--border);color:var(--primary);font-size:14px;">+ Tambah Item</button>
+
+    <div class="totals-box">
+      <div class="totals-row"><span>Subtotal</span><span id="edit-t-subtotal">Rp 0</span></div>
+      <div class="totals-row grand"><span>TOTAL</span><span id="edit-t-total">Rp 0</span></div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn btn-ghost" style="flex:1;" onclick="closeEditModal()">Batal</button>
+      <button class="btn btn-primary" style="flex:2;" id="btn-save-edit" onclick="saveEditInvoice()">💾 Simpan Perubahan</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: CUSTOMER BARU -->
 <div class="modal-overlay" id="modal-new-customer">
   <div class="modal">
@@ -470,6 +519,13 @@
   let priceMode = 'normal';
   let itemCount = 0;
   let allInvoices = [];
+
+  // Edit modal state
+  let editingInvoiceId = null;
+  let editItemCount = 0;
+  let editCustomerTS = null;
+  let editItemTomSelects = {};
+  let editProducts = [];
 
   async function init() {
     const auth = await requireSales();
@@ -678,6 +734,7 @@
       else if (vstatus === 'approved') vbadge = `<span class="badge badge-success">Disetujui</span>`;
       else if (vstatus === 'rejected') vbadge = `<span class="badge badge-danger">Ditolak</span>`;
 
+      const canEdit = inv.verification_status === 'pending';
       return `<div class="invoice-item" onclick="showDetail('${inv.id}')">
         <div class="invoice-item-top">
           <div>
@@ -692,6 +749,9 @@
           <span class="badge ${inv.status === 'paid' ? 'badge-success' : 'badge-warning'}">${inv.status === 'paid' ? 'Lunas' : 'Belum Lunas'}</span>
         </div>
         ${inv.reject_reason ? `<div class="reject-reason-box">❌ Ditolak: ${escapeHtml(inv.reject_reason)}</div>` : ''}
+        ${canEdit ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openEditInvoice('${inv.id}')" style="color:#2563eb;font-weight:600;">✏️ Edit Faktur</button>
+        </div>` : ''}
       </div>`;
     }).join('');
   }
@@ -1073,6 +1133,271 @@ function recalcTotal() {
     await loadHistory();
     switchTab('tab-history');
   }
+
+  // ── EDIT FAKTUR ──────────────────────────────────────────────────────────
+
+  function closeEditModal() {
+    Object.values(editItemTomSelects).forEach(ts => { try { ts.destroy(); } catch(e) {} });
+    editItemTomSelects = {};
+    if (editCustomerTS) { try { editCustomerTS.destroy(); } catch(e) {} editCustomerTS = null; }
+    document.getElementById('edit-items-list').innerHTML = '';
+    editItemCount = 0;
+    editingInvoiceId = null;
+    closeModal('modal-edit');
+  }
+
+  async function openEditInvoice(id) {
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv || inv.verification_status !== 'pending') {
+      showToast('Faktur ini tidak bisa diedit', 'error');
+      return;
+    }
+
+    editingInvoiceId = id;
+
+    // Reset state modal edit
+    Object.values(editItemTomSelects).forEach(ts => { try { ts.destroy(); } catch(e) {} });
+    editItemTomSelects = {};
+    if (editCustomerTS) { try { editCustomerTS.destroy(); } catch(e) {} editCustomerTS = null; }
+    document.getElementById('edit-items-list').innerHTML = '';
+    editItemCount = 0;
+
+    // Reload produk untuk stok terbaru
+    await loadProducts();
+
+    // Buat salinan lokal dengan stok dikembalikan untuk item di faktur ini
+    // (karena saat simpan, stok akan di-restore dulu sebelum item baru dimasukkan)
+    editProducts = products.map(p => ({ ...p }));
+    (inv.invoice_items || []).forEach(it => {
+      const p = editProducts.find(p => p.id === it.product_id);
+      if (p) p.stock_quantity += it.quantity;
+    });
+
+    // Isi field header
+    document.getElementById('edit-date').value = inv.invoice_date;
+    document.getElementById('edit-term').value = inv.payment_term || 'cod';
+    document.getElementById('edit-notes').value = inv.notes || '';
+
+    // Init TomSelect customer
+    editCustomerTS = new TomSelect(document.getElementById('edit-customer'), {
+      placeholder: '— Cari customer —',
+      maxOptions: 300,
+      dropdownParent: 'body',
+      options: customers.map(c => ({
+        value: c.id,
+        text: c.name + (c.store_name ? ' — ' + c.store_name : '')
+      }))
+    });
+    if (inv.customer_id) editCustomerTS.setValue(inv.customer_id);
+
+    // Isi item yang sudah ada
+    const items = inv.invoice_items || [];
+    if (items.length === 0) {
+      addEditItem();
+    } else {
+      items.forEach(it => addEditItem(it.product_id, it.quantity));
+    }
+
+    recalcEditTotal();
+    openModal('modal-edit');
+  }
+
+  function addEditItem(productId = null, qty = 1) {
+    const id = ++editItemCount;
+    const optionsHtml = editProducts.map(p =>
+      `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost || 0}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`
+    ).join('');
+
+    const div = document.createElement('div');
+    div.className = 'item-row';
+    div.id = 'edit-item-' + id;
+    div.innerHTML = `
+      <div class="item-header">
+        <span class="item-label">Item ${id}</span>
+        <button class="btn-remove-item" onclick="removeEditItem(${id})" title="Hapus">✕</button>
+      </div>
+      <select class="item-product-sel">
+        <option value="">— Pilih Produk —</option>
+        ${optionsHtml}
+      </select>
+      <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:start;">
+        <div class="item-field">
+          <label>Qty</label>
+          <input type="number" class="item-qty-input" value="${qty}" min="1" oninput="recalcEditItem(${id})">
+          <div class="qty-error" style="font-size:11px;color:#dc2626;min-height:16px;margin-top:3px;"></div>
+        </div>
+        <div class="item-field">
+          <label>Stok</label>
+          <input type="text" class="item-stock-input" value="—" disabled style="background:#f1f5f9;color:#475569;">
+        </div>
+        <div class="item-field" style="grid-column:1/-1;">
+          <label>Harga Satuan</label>
+          <input type="text" class="item-price-input" value="0" readonly style="background:#f1f5f9;color:#475569;">
+        </div>
+      </div>
+      <div class="item-subtotal-row">
+        <span class="item-subtotal-label">Subtotal</span>
+        <input type="text" class="item-subtotal-input" id="edit-sub-${id}" value="0" readonly
+          style="font-size:15px;font-weight:700;color:var(--primary);text-align:right;border:none;background:transparent;width:150px;pointer-events:none;">
+      </div>`;
+    document.getElementById('edit-items-list').appendChild(div);
+
+    const sel = div.querySelector('.item-product-sel');
+    const ts = new TomSelect(sel, {
+      placeholder: '— Cari & pilih produk —',
+      maxOptions: 200,
+      dropdownParent: 'body',
+      onChange: () => updateEditItemPrice(sel, id)
+    });
+    editItemTomSelects[id] = ts;
+
+    if (productId) ts.setValue(productId);
+  }
+
+  function removeEditItem(id) {
+    const el = document.getElementById('edit-item-' + id);
+    if (el) {
+      if (editItemTomSelects[id]) {
+        try { editItemTomSelects[id].destroy(); } catch(e) {}
+        delete editItemTomSelects[id];
+      }
+      el.remove();
+    }
+    recalcEditTotal();
+  }
+
+  function updateEditItemPrice(sel, id) {
+    const row = document.getElementById('edit-item-' + id);
+    if (!row) return;
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt || !opt.value) {
+      row.querySelector('.item-stock-input').value = '—';
+      row.querySelector('.item-price-input').value = '0';
+      recalcEditItem(id);
+      return;
+    }
+    const stock = parseInt(opt.dataset.stock) || 0;
+    row.querySelector('.item-stock-input').value = `${stock} ${opt.dataset.unit}`;
+    row.querySelector('.item-price-input').value = Number(opt.dataset.price || 0).toLocaleString('id-ID');
+    const qtyInput = row.querySelector('.item-qty-input');
+    qtyInput.max = stock;
+    recalcEditItem(id);
+  }
+
+  function recalcEditItem(id) {
+    const row = document.getElementById('edit-item-' + id);
+    if (!row) return;
+    const qtyInput = row.querySelector('.item-qty-input');
+    const qty   = parseFloat(qtyInput.value) || 0;
+    const max   = parseInt(qtyInput.max) || 0;
+    const price = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
+    const errEl = row.querySelector('.qty-error');
+    if (qtyInput.max !== '' && qty > max) {
+      errEl.textContent = max === 0 ? '⚠️ Stok habis' : `⚠️ Melebihi stok (maks ${max})`;
+      qtyInput.style.borderColor = '#dc2626';
+    } else {
+      errEl.textContent = '';
+      qtyInput.style.borderColor = '';
+    }
+    const sub = Math.ceil((qty * price) / 100) * 100;
+    const subInput = document.getElementById('edit-sub-' + id);
+    if (subInput) subInput.value = Number(sub).toLocaleString('id-ID');
+    recalcEditTotal();
+  }
+
+  function recalcEditTotal() {
+    let total = 0;
+    document.querySelectorAll('#edit-items-list .item-row').forEach(row => {
+      total += parseFormattedNumber(row.querySelector('.item-subtotal-input')?.value) || 0;
+    });
+    document.getElementById('edit-t-subtotal').textContent = formatCurrency(total);
+    document.getElementById('edit-t-total').textContent = formatCurrency(total);
+  }
+
+  async function saveEditInvoice() {
+    if (!editingInvoiceId) return;
+
+    const customerId = editCustomerTS ? editCustomerTS.getValue() : '';
+    const date  = document.getElementById('edit-date').value;
+    const term  = document.getElementById('edit-term').value;
+    const notes = document.getElementById('edit-notes').value.trim();
+
+    if (!customerId) { showToast('Pilih customer terlebih dahulu', 'error'); return; }
+    if (!date)       { showToast('Isi tanggal faktur', 'error'); return; }
+
+    // Kumpulkan item
+    const rows = document.querySelectorAll('#edit-items-list .item-row');
+    const items = [];
+    for (const row of rows) {
+      const sel      = row.querySelector('.item-product-sel');
+      const qty      = parseFloat(row.querySelector('.item-qty-input').value) || 0;
+      const price    = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
+      const subtotal = parseFormattedNumber(row.querySelector('.item-subtotal-input')?.value) || 0;
+      if (!sel.value) continue;
+      if (qty <= 0)   { showToast('Qty harus lebih dari 0', 'error'); return; }
+      const opt = sel.options[sel.selectedIndex];
+      items.push({
+        product_id:   sel.value,
+        product_name: opt.text.split(' (')[0].trim(),
+        quantity:     qty,
+        price:        price,
+        subtotal:     subtotal,
+        cost_price:   parseFloat(opt.dataset.cost) || 0
+      });
+    }
+    if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); return; }
+
+    const total = items.reduce((s, i) => s + i.subtotal, 0);
+    const btn = document.getElementById('btn-save-edit');
+    btn.disabled = true; btn.textContent = 'Menyimpan...';
+
+    try {
+      // 1. Cancel invoice → trigger DB kembalikan stok otomatis
+      const { error: e1 } = await supabase.from('invoices')
+        .update({ status: 'cancelled' }).eq('id', editingInvoiceId);
+      if (e1) throw new Error('Gagal restore stok: ' + e1.message);
+
+      // 2. Hapus semua item lama
+      const { error: e2 } = await supabase.from('invoice_items')
+        .delete().eq('invoice_id', editingInvoiceId);
+      if (e2) throw new Error('Gagal hapus items lama: ' + e2.message);
+
+      // 3. Ambil data customer terbaru
+      const { data: customer } = await supabase.from('customers')
+        .select('name,store_name,phone,address').eq('id', customerId).single();
+
+      // 4. Update header faktur & set kembali ke pending
+      const { error: e3 } = await supabase.from('invoices').update({
+        customer_id:      customerId,
+        customer_name:    customer?.name || '',
+        store_name:       customer?.store_name || customer?.name || '',
+        customer_phone:   customer?.phone   || null,
+        customer_address: customer?.address || null,
+        invoice_date:     date,
+        payment_term:     term,
+        notes:            notes || null,
+        total:            total,
+        status:           'pending',
+        verification_status: 'pending'
+      }).eq('id', editingInvoiceId);
+      if (e3) throw new Error('Gagal update faktur: ' + e3.message);
+
+      // 5. Insert item baru → trigger DB kurangi stok otomatis
+      const { error: e4 } = await supabase.from('invoice_items')
+        .insert(items.map(it => ({ ...it, invoice_id: editingInvoiceId })));
+      if (e4) throw new Error('Gagal simpan items baru: ' + e4.message);
+
+      showToast('✅ Faktur berhasil diperbarui!');
+      closeEditModal();
+      await loadHistory();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = '💾 Simpan Perubahan';
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   function switchTab(id) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
