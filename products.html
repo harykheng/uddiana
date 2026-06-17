@@ -67,12 +67,41 @@
     .import-result.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
     .import-result ul { margin: 6px 0 0 16px; }
 
-    /* ── MOBILE ── */
+    /* ── MOBILE CARDS ── */
     @media (max-width: 768px) {
-      .col-hide-mobile { display: none !important; }
-      .table-wrap { overflow-x: unset; }
-      .col-lusin-hint { display: none; }
+      .table-wrap { display: none; }
+      #products-mobile { display: block !important; }
     }
+    .product-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+    }
+    .product-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .product-card-sku {
+      font-size: 11px;
+      background: #f1f5f9;
+      padding: 2px 7px;
+      border-radius: 4px;
+      color: #64748b;
+      font-family: monospace;
+    }
+    .product-card-actions { display: flex; gap: 3px; flex-shrink: 0; }
+    .product-card-name { font-weight: 700; font-size: 14px; color: #0f172a; margin-bottom: 7px; }
+    .product-card-info { display: flex; gap: 10px; font-size: 13px; flex-wrap: wrap; align-items: center; }
+    .product-card-stock-ok   { color: #16a34a; font-weight: 700; }
+    .product-card-stock-warn { color: #d97706; font-weight: 700; }
+    .product-card-stock-out  { color: #dc2626; font-weight: 700; }
+    .product-card-price { color: #0f172a; }
+    .product-card-cost  { color: #64748b; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -169,6 +198,7 @@
             </tbody>
           </table>
         </div>
+        <div id="products-mobile" style="display:none;padding:8px 12px"></div>
         <div class="pagination" id="pagination-bar">
           <div class="pagination-info" id="pagination-info"></div>
           <div style="display:flex;align-items:center;gap:10px">
@@ -478,6 +508,8 @@
 
     if (!filtered.length) {
       tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">📦</div><h4>Tidak ada produk</h4><p>Tambah produk baru atau ubah filter</p></div></td></tr>`;
+      const mob = document.getElementById('products-mobile');
+      if (mob) mob.innerHTML = `<div class="empty-state"><div class="empty-icon">📦</div><h4>Tidak ada produk</h4></div>`;
       document.getElementById('pagination-bar').style.display = 'none';
       return;
     }
@@ -525,11 +557,44 @@
       </tr>`;
     }).join('');
 
+    renderMobileCards(paged);
+
     // Render pagination controls
     document.getElementById('pagination-bar').style.display = '';
     document.getElementById('pagination-info').textContent =
       `Menampilkan ${start + 1}–${end} dari ${total} produk`;
     renderPaginationBtns(totalPages);
+  }
+
+  function renderMobileCards(paged) {
+    const el = document.getElementById('products-mobile');
+    if (!el) return;
+    el.innerHTML = paged.map(p => {
+      const stockQty = p.stock_quantity;
+      let stockCls = 'product-card-stock-ok';
+      let stockLabel = '✓';
+      if (stockQty <= 0)              { stockCls = 'product-card-stock-out';  stockLabel = 'Habis'; }
+      else if (stockQty <= p.min_stock) { stockCls = 'product-card-stock-warn'; stockLabel = 'Menipis'; }
+      const lusin = stockQty >= 12 ? ` · ${toLosinDisplay(stockQty)}` : '';
+      return `
+      <div class="product-card">
+        <div class="product-card-top">
+          <span class="product-card-sku">${escapeHtml(p.sku)}</span>
+          <div class="product-card-actions">
+            <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}','${escapeHtml(p.name)}',${stockQty})" title="Stok">📊</button>
+            <button class="btn btn-ghost btn-sm" onclick="openEditProduct('${p.id}')" title="Edit">✏️</button>
+            <button class="btn btn-ghost btn-sm" onclick="openDuplicateProduct('${p.id}')" title="Duplikat">📋</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}','${escapeHtml(p.name)}')" title="Hapus">🗑</button>
+          </div>
+        </div>
+        <div class="product-card-name">${escapeHtml(p.name)}</div>
+        <div class="product-card-info">
+          <span class="${stockCls}">${stockQty} pcs${lusin}</span>
+          <span class="product-card-price">${formatCurrency(p.price)}</span>
+          ${isSuperAdmin ? `<span class="product-card-cost">Modal: ${formatCurrency(p.cost)}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
   }
 
   function renderPaginationBtns(totalPages) {
