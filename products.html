@@ -71,7 +71,9 @@
     @media (max-width: 768px) {
       .table-wrap { display: none; }
       #products-mobile { display: block !important; }
+      .desktop-only { display: none !important; }
     }
+    #mobile-action-sheet.open { display: flex !important; }
     .product-card {
       background: #fff;
       border: 1px solid #e2e8f0;
@@ -168,7 +170,7 @@
       <div class="card">
         <div class="card-header">
           <h3>Daftar Produk <span id="product-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
-          <div style="display:flex;gap:6px">
+          <div style="display:flex;gap:6px" class="desktop-only">
             <button class="btn btn-ghost btn-sm" onclick="openImport()">⬆️ Import CSV</button>
             <button class="btn btn-ghost btn-sm" onclick="exportXls()">⬇️ Export XLS</button>
             <button class="btn btn-ghost btn-sm" onclick="loadProducts()">🔄 Refresh</button>
@@ -581,10 +583,7 @@
         <div class="product-card-top">
           <span class="product-card-sku">${escapeHtml(p.sku)}</span>
           <div class="product-card-actions">
-            <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}','${escapeHtml(p.name)}',${stockQty})" title="Stok">📊</button>
-            <button class="btn btn-ghost btn-sm" onclick="openEditProduct('${p.id}')" title="Edit">✏️</button>
-            <button class="btn btn-ghost btn-sm" onclick="openDuplicateProduct('${p.id}')" title="Duplikat">📋</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}','${escapeHtml(p.name)}')" title="Hapus">🗑</button>
+            <button class="btn btn-ghost btn-sm" onclick="openMobileAction('${p.id}')" style="font-size:18px;padding:0 8px;">···</button>
           </div>
         </div>
         <div class="product-card-name">${escapeHtml(p.name)}</div>
@@ -1109,6 +1108,52 @@
   });
 
   init();
+
+  // ── MOBILE ACTION SHEET ─────────────────────────────────────
+  let _mobileActionProduct = null;
+
+  function openMobileAction(id) {
+    _mobileActionProduct = id;
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('mobile-action-name').textContent = p.name;
+    document.getElementById('mobile-action-sheet').classList.add('open');
+  }
+
+  function closeMobileAction() {
+    document.getElementById('mobile-action-sheet').classList.remove('open');
+    _mobileActionProduct = null;
+  }
+
+  function mobileAction(fn) {
+    const id = _mobileActionProduct;
+    closeMobileAction();
+    if (!id) return;
+    const p = allProducts.find(x => x.id === id);
+    if (fn === 'stock')     openAdjustStock(id, p.name, p.stock_quantity);
+    else if (fn === 'edit') openEditProduct(id);
+    else if (fn === 'dup')  openDuplicateProduct(id);
+    else if (fn === 'del')  deleteProduct(id, p.name);
+  }
+
+  document.getElementById('mobile-action-sheet').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeMobileAction();
+  });
 </script>
+
+<!-- MOBILE ACTION SHEET -->
+<div id="mobile-action-sheet" style="
+  position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;
+  display:none;align-items:flex-end;justify-content:center;">
+  <div style="background:#fff;width:100%;border-radius:20px 20px 0 0;padding:16px 16px 32px;max-width:480px;">
+    <div style="width:40px;height:4px;background:#e2e8f0;border-radius:2px;margin:0 auto 14px;"></div>
+    <div id="mobile-action-name" style="font-size:13px;font-weight:700;color:#374151;margin-bottom:14px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+    <button onclick="mobileAction('stock')" style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">📊 <span>Sesuaikan Stok</span></button>
+    <button onclick="mobileAction('edit')"  style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">✏️ <span>Edit Produk</span></button>
+    <button onclick="mobileAction('dup')"   style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">📋 <span>Duplikat Produk</span></button>
+    <button onclick="mobileAction('del')"   style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#fef2f2;font-size:14px;cursor:pointer;color:#dc2626;display:flex;align-items:center;gap:10px;">🗑 <span>Hapus Produk</span></button>
+  </div>
+</div>
+
 </body>
 </html>
