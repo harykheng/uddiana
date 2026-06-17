@@ -348,12 +348,17 @@
     if (error) { showToast('Gagal memuat grup varian', 'error'); return; }
     allGroups = data || [];
 
-    // rule-group select (single)
-    const selGrp = document.getElementById('rule-group');
-    selGrp.innerHTML = '<option value="">— Pilih Grup —</option>' +
-      allGroups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
-    if (groupSelect) { try { groupSelect.destroy(); } catch(e){} }
-    groupSelect = new TomSelect(selGrp, { placeholder: '— Cari & pilih grup —', maxOptions: 100, dropdownParent: 'body' });
+    // Update TomSelect via API supaya tidak destroy+reinit pada elemen hidden
+    if (groupSelect) {
+      groupSelect.clearOptions();
+      allGroups.forEach(g => groupSelect.addOption({ value: g.id, text: g.name }));
+      groupSelect.refreshOptions(false);
+    } else {
+      const selGrp = document.getElementById('rule-group');
+      selGrp.innerHTML = '<option value="">— Pilih Grup —</option>' +
+        allGroups.map(g => `<option value="${g.id}">${escapeHtml(g.name)}</option>`).join('');
+      groupSelect = new TomSelect(selGrp, { placeholder: '— Cari & pilih grup —', maxOptions: 100, dropdownParent: 'body' });
+    }
 
     renderGroups();
   }

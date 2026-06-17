@@ -1098,6 +1098,115 @@
     loadInvoices();
   }
 
+  // ── EDIT INVOICE — discount helpers ───────────────────────
+
+  function _getAllEditRowData() {
+    const result = [];
+    document.querySelectorAll('#edit-invoice-items-body tr[id]').forEach(tr => {
+      const rId  = tr.id;
+      const sel  = tr.querySelector('select');
+      const pId  = sel?.value;
+      if (!pId) return;
+      const rQty   = parseFormattedNumber(document.getElementById(`eqty-${rId}`)?.value)   || 0;
+      const rPrice = parseFormattedNumber(document.getElementById(`eprice-${rId}`)?.value) || 0;
+      result.push({ rowId: rId, productId: pId, qty: rQty, price: rPrice });
+    });
+    return result;
+  }
+
+  function applyDiscountRuleEdit(rowId, productId, qty, price) {
+    const discTypeEl = document.getElementById(`edisctype-${rowId}`);
+    const discEl     = document.getElementById(`edisc-${rowId}`);
+    if (!discTypeEl || !discEl) return;
+
+    const productEligible = (discountRules || [])
+      .filter(r => r.product_id === productId && !r.group_id)
+      .filter(r => {
+        const meetsQty = !r.min_qty || qty >= r.min_qty;
+        const meetsAmt = !r.min_amount || (qty * price) >= Number(r.min_amount);
+        return meetsQty && meetsAmt;
+      })
+      .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+
+    const myGroupIds = (discountGroupMembers || [])
+      .filter(m => m.product_id === productId).map(m => m.group_id);
+
+    let groupBest = null;
+    if (myGroupIds.length > 0) {
+      const allRowData = _getAllEditRowData();
+      myGroupIds.forEach(groupId => {
+        const groupProdIds = (discountGroupMembers || [])
+          .filter(m => m.group_id === groupId).map(m => m.product_id);
+        const groupQty = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty, 0);
+        const groupAmt = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty * r.price, 0);
+        const eligible = (discountRules || [])
+          .filter(r => r.group_id === groupId)
+          .filter(r => (!r.min_qty || groupQty >= r.min_qty) && (!r.min_amount || groupAmt >= Number(r.min_amount)))
+          .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+        if (eligible.length > 0 && (!groupBest || Number(eligible[0].min_qty) > Number(groupBest.min_qty)))
+          groupBest = eligible[0];
+      });
+    }
+
+    const best = productEligible.length > 0 ? productEligible[0] : groupBest;
+    if (best) {
+      discTypeEl.value = best.discount_type;
+      discEl.value = best.discount_type === 'nominal'
+        ? Number(best.discount_value).toLocaleString('id-ID')
+        : String(best.discount_value);
+    } else {
+      discTypeEl.value = 'percent';
+      discEl.value = '0';
+    }
+  }
+
+  function reapplyGroupDiscountsEdit() {
+    const allRowData = _getAllEditRowData();
+    allRowData.forEach(({ rowId, productId }) => {
+      const myGroupIds = (discountGroupMembers || [])
+        .filter(m => m.product_id === productId).map(m => m.group_id);
+      if (!myGroupIds.length) return;
+      const hasGroupRules = myGroupIds.some(gId => (discountRules || []).some(r => r.group_id === gId));
+      if (!hasGroupRules) return;
+      const hasProductRule = (discountRules || []).some(r => r.product_id === productId && !r.group_id);
+      if (hasProductRule) return;
+
+      const discTypeEl = document.getElementById(`edisctype-${rowId}`);
+      const discEl     = document.getElementById(`edisc-${rowId}`);
+      if (!discTypeEl || !discEl) return;
+
+      let bestRule = null;
+      myGroupIds.forEach(groupId => {
+        const groupProdIds = (discountGroupMembers || [])
+          .filter(m => m.group_id === groupId).map(m => m.product_id);
+        const groupQty = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty, 0);
+        const groupAmt = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty * r.price, 0);
+        const eligible = (discountRules || [])
+          .filter(r => r.group_id === groupId)
+          .filter(r => (!r.min_qty || groupQty >= r.min_qty) && (!r.min_amount || groupAmt >= Number(r.min_amount)))
+          .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+        if (eligible.length > 0 && (!bestRule || Number(eligible[0].min_qty) > Number(bestRule.min_qty)))
+          bestRule = eligible[0];
+      });
+
+      if (bestRule) {
+        discTypeEl.value = bestRule.discount_type;
+        discEl.value = bestRule.discount_type === 'nominal'
+          ? Number(bestRule.discount_value).toLocaleString('id-ID')
+          : String(bestRule.discount_value);
+      } else {
+        discTypeEl.value = 'percent';
+        discEl.value = '0';
+      }
+      recalcEditInvoiceRow(rowId);
+    });
+  }
+
+  function onEditQtyChange(rowId) {
+    recalcEditInvoiceRow(rowId);
+    reapplyGroupDiscountsEdit();
+  }
+
   // ── EDIT INVOICE ───────────────────────────────────────────
   let editInvoiceId = null;
   let editItemRowCount = 0;
@@ -1146,7 +1255,7 @@
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingItem ? (products.find(p=>p.id===existingItem.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
-      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eqty-${id}" value="${existingItem ? existingItem.quantity : '1'}" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eqty-${id}" value="${existingItem ? existingItem.quantity : '1'}" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onEditQtyChange('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eprice-${id}" value="${existingItem ? Number(existingItem.price||0).toLocaleString('id-ID') : '0'}" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')"></td>
       <td style="padding:5px 6px">
         <div style="display:flex;gap:3px;align-items:center">
@@ -1167,9 +1276,13 @@
       maxOptions: 200,
       dropdownParent: 'body',
       onChange: () => {
-        const opt = sel.options[sel.selectedIndex];
+        const opt      = sel.options[sel.selectedIndex];
+        const productId = opt.value;
+        const price    = parseFloat(opt.dataset.price || 0);
+        const qty      = parseFormattedNumber(document.getElementById(`eqty-${id}`)?.value) || 1;
         document.getElementById(`estock-${id}`).value = opt.dataset.stock || 0;
-        document.getElementById(`eprice-${id}`).value = Number(opt.dataset.price || 0).toLocaleString('id-ID');
+        document.getElementById(`eprice-${id}`).value = price > 0 ? price.toLocaleString('id-ID') : '0';
+        if (productId) applyDiscountRuleEdit(id, productId, qty, price);
         recalcEditInvoiceRow(id);
       }
     });
