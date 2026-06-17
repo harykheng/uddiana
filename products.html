@@ -66,6 +66,13 @@
     .import-result.success { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
     .import-result.error   { background: #fef2f2; border: 1px solid #fca5a5; color: #991b1b; }
     .import-result ul { margin: 6px 0 0 16px; }
+
+    /* ── MOBILE ── */
+    @media (max-width: 768px) {
+      .col-hide-mobile { display: none !important; }
+      .table-wrap { overflow-x: unset; }
+      .col-lusin-hint { display: none; }
+    }
   </style>
 </head>
 <body>
@@ -142,18 +149,18 @@
           <table>
             <thead>
               <tr>
-                <th>#</th>
+                <th class="col-hide-mobile">#</th>
                 <th>SKU</th>
                 <th class="sortable" id="th-name" onclick="setSort('name')">Nama Produk <span class="sort-icon"></span></th>
-                <th>Kategori</th>
-                <th>Harga Biasa<br><span style="font-weight:400;font-size:10px;opacity:.6">pcs / lusin</span></th>
-                <th>Harga Shopee</th>
+                <th class="col-hide-mobile">Kategori</th>
+                <th>Harga Jual</th>
+                <th class="col-hide-mobile">Harga Shopee</th>
                 <th class="col-harga-modal">Harga Modal</th>
                 <th class="sortable" id="th-stock" onclick="setSort('stock_quantity')">Stok <span class="sort-icon"></span></th>
-                <th>Min.</th>
-                <th>Satuan</th>
-                <th>Status</th>
-                <th>Deskripsi</th>
+                <th class="col-hide-mobile">Min.</th>
+                <th class="col-hide-mobile">Satuan</th>
+                <th class="col-hide-mobile">Status</th>
+                <th class="col-hide-mobile">Deskripsi</th>
                 <th>Aksi</th>
               </tr>
             </thead>
@@ -489,24 +496,24 @@
       if (p.stock_quantity <= 0) stockClass = 'stock-low';
       else if (p.stock_quantity <= p.min_stock) stockClass = 'stock-warn';
       return `<tr>
-        <td class="text-muted" style="font-size:12px">${start + i + 1}</td>
+        <td class="text-muted col-hide-mobile" style="font-size:12px">${start + i + 1}</td>
         <td><code style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px">${escapeHtml(p.sku)}</code></td>
         <td><strong>${escapeHtml(p.name)}</strong></td>
-        <td>${escapeHtml(cat)}</td>
+        <td class="col-hide-mobile">${escapeHtml(cat)}</td>
         <td class="text-right">
           <div>${formatCurrency(p.price)}</div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(Math.round((p.price * 12) / 100) * 100)}/lsn</div>
+          <div class="col-lusin-hint" style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(Math.round((p.price * 12) / 100) * 100)}/lsn</div>
         </td>
-        <td class="text-right">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
+        <td class="text-right col-hide-mobile">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
         ${isSuperAdmin ? `<td class="text-right">${formatCurrency(p.cost)}</td>` : ''}
         <td class="text-right font-bold ${stockClass}">
           ${p.stock_quantity}
-          ${p.stock_quantity >= 12 ? `<div style="font-size:10px;font-weight:400;color:var(--text-muted);margin-top:2px">${toLosinDisplay(p.stock_quantity)}</div>` : ''}
+          ${p.stock_quantity >= 12 ? `<div class="col-lusin-hint" style="font-size:10px;font-weight:400;color:var(--text-muted);margin-top:2px">${toLosinDisplay(p.stock_quantity)}</div>` : ''}
         </td>
-        <td class="text-right">${p.min_stock}</td>
-        <td>${escapeHtml(p.unit)}</td>
-        <td>${stockBadge(p.stock_quantity, p.min_stock)}</td>
-        <td style="font-size:12px;color:var(--text-muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(p.description||'')}">${escapeHtml(p.description || '—')}</td>
+        <td class="text-right col-hide-mobile">${p.min_stock}</td>
+        <td class="col-hide-mobile">${escapeHtml(p.unit)}</td>
+        <td class="col-hide-mobile">${stockBadge(p.stock_quantity, p.min_stock)}</td>
+        <td class="col-hide-mobile" style="font-size:12px;color:var(--text-muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(p.description||'')}">${escapeHtml(p.description || '—')}</td>
         <td>
           <div class="table-actions">
             <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}','${escapeHtml(p.name)}',${p.stock_quantity})" title="Sesuaikan Stok">📊</button>
