@@ -511,6 +511,7 @@
           <div class="table-actions">
             <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}','${escapeHtml(p.name)}',${p.stock_quantity})" title="Sesuaikan Stok">📊</button>
             <button class="btn btn-ghost btn-sm" onclick="openEditProduct('${p.id}')" title="Edit">✏️</button>
+            <button class="btn btn-ghost btn-sm" onclick="openDuplicateProduct('${p.id}')" title="Duplikat">📋</button>
             <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}','${escapeHtml(p.name)}')" title="Hapus">🗑</button>
           </div>
         </td>
@@ -568,6 +569,24 @@
     if (categoryTomSelect) categoryTomSelect.setValue('', true);
     document.getElementById('product-unit').value = 'pcs';
     document.getElementById('modal-product-title').textContent = 'Tambah Produk';
+    openModal('modal-product');
+  }
+
+  function openDuplicateProduct(id) {
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('product-id').value = '';
+    document.getElementById('product-name').value = p.name + ' (Salin)';
+    document.getElementById('product-sku').value = '';
+    if (categoryTomSelect) categoryTomSelect.setValue(p.category_id || '', true);
+    document.getElementById('product-unit').value = p.unit;
+    document.getElementById('product-price').value = Number(p.price || 0).toLocaleString('id-ID');
+    document.getElementById('product-price-shopee').value = Number(p.price_shopee || 0).toLocaleString('id-ID');
+    document.getElementById('product-cost').value = Number(p.cost || 0).toLocaleString('id-ID');
+    document.getElementById('product-stock').value = '0';
+    document.getElementById('product-min-stock').value = p.min_stock || 0;
+    document.getElementById('product-desc').value = p.description || '';
+    document.getElementById('modal-product-title').textContent = 'Duplikat Produk';
     openModal('modal-product');
   }
 
