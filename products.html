@@ -542,7 +542,7 @@
         ${isSuperAdmin ? `<td class="text-right">${formatCurrency(p.cost)}</td>` : ''}
         <td class="text-right font-bold ${stockClass}">
           ${p.stock_quantity}
-          ${p.stock_quantity >= 12 ? `<div class="col-lusin-hint" style="font-size:10px;font-weight:400;color:var(--text-muted);margin-top:2px">${toLosinDisplay(p.stock_quantity)}</div>` : ''}
+          ${p.stock_quantity >= 12 && p.unit === 'pcs' ? `<div class="col-lusin-hint" style="font-size:10px;font-weight:400;color:var(--text-muted);margin-top:2px">${toLosinDisplay(p.stock_quantity)}</div>` : ''}
         </td>
         <td class="text-right col-hide-mobile">${p.min_stock}</td>
         <td class="col-hide-mobile">${escapeHtml(p.unit)}</td>
@@ -577,7 +577,8 @@
       let stockLabel = '✓';
       if (stockQty <= 0)              { stockCls = 'product-card-stock-out';  stockLabel = 'Habis'; }
       else if (stockQty <= p.min_stock) { stockCls = 'product-card-stock-warn'; stockLabel = 'Menipis'; }
-      const lusin = stockQty >= 12 ? ` · ${toLosinDisplay(stockQty)}` : '';
+      const lusin = stockQty >= 12 && p.unit === 'pcs' ? ` · ${toLosinDisplay(stockQty)}` : '';
+      const unitLabel = p.unit || 'pcs';
       return `
       <div class="product-card">
         <div class="product-card-top">
@@ -588,7 +589,7 @@
         </div>
         <div class="product-card-name">${escapeHtml(p.name)}</div>
         <div class="product-card-info">
-          <span class="${stockCls}">${stockQty} pcs${lusin}</span>
+          <span class="${stockCls}">${stockQty} ${unitLabel}${lusin}</span>
           <span class="product-card-price">${formatCurrency(p.price)}</span>
           ${isSuperAdmin ? `<span class="product-card-cost">Modal: ${formatCurrency(p.cost)}</span>` : ''}
         </div>
@@ -1146,7 +1147,10 @@
   position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;
   display:none;align-items:flex-end;justify-content:center;">
   <div style="background:#fff;width:100%;border-radius:20px 20px 0 0;padding:16px 16px 32px;max-width:480px;">
-    <div style="width:40px;height:4px;background:#e2e8f0;border-radius:2px;margin:0 auto 14px;"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div style="width:40px;height:4px;background:#e2e8f0;border-radius:2px;margin:0 auto;flex:1;"></div>
+      <button onclick="closeMobileAction()" style="border:none;background:none;font-size:20px;color:#94a3b8;cursor:pointer;padding:0 0 0 12px;line-height:1;">✕</button>
+    </div>
     <div id="mobile-action-name" style="font-size:13px;font-weight:700;color:#374151;margin-bottom:14px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
     <button onclick="mobileAction('stock')" style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">📊 <span>Sesuaikan Stok</span></button>
     <button onclick="mobileAction('edit')"  style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">✏️ <span>Edit Produk</span></button>
