@@ -6,51 +6,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Stock Opname - StokManager</title>
   <link rel="stylesheet" href="css/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    .opname-header-bar {
-      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-      margin-bottom: 16px;
+    .session-card {
+      border: 2px solid var(--border); border-radius: 12px;
+      padding: 16px 18px; margin-bottom: 12px; background: var(--surface);
+      cursor: pointer; transition: all .15s;
     }
-    .opname-search {
-      flex: 1; min-width: 200px; padding: 8px 12px;
-      border: 1.5px solid var(--border); border-radius: 8px;
-      font-size: 13px; background: var(--surface); color: var(--text);
-    }
-    .opname-search:focus { outline: none; border-color: var(--primary); }
+    .session-card:hover { border-color: var(--primary); }
+    .session-card.active-session { border-color: #16a34a; background: #f0fdf4; }
+    .session-card .sc-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+    .session-card .sc-name { font-size: 14px; font-weight: 700; color: var(--text); flex: 1; }
+    .session-card .sc-meta { font-size: 12px; color: var(--text-muted); }
+    .badge-active  { display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;background:#dcfce7;color:#15803d; }
+    .badge-closed  { display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;background:#f1f5f9;color:#64748b; }
 
-    .opname-table th, .opname-table td { padding: 9px 12px; }
-    .opname-table th { font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--text-muted); background: #f8fafc; }
-    .opname-table td { font-size: 13px; border-bottom: 1px solid #f1f5f9; }
-    .opname-table tr:hover td { background: #fafafa; }
+    .opname-table th { font-size:11px;text-transform:uppercase;font-weight:700;color:var(--text-muted);background:#f8fafc;padding:9px 12px; }
+    .opname-table td { font-size:13px;padding:9px 12px;border-bottom:1px solid #f1f5f9; }
+    .opname-table tr:hover td { background:#fafafa; }
 
-    .input-fisik {
-      width: 90px; padding: 5px 8px; border: 1.5px solid var(--border);
-      border-radius: 6px; font-size: 13px; text-align: center;
-      background: var(--surface); color: var(--text);
-    }
-    .input-fisik:focus { outline: none; border-color: var(--primary); }
+    .diff-pos  { color:#16a34a;font-weight:700; }
+    .diff-neg  { color:#dc2626;font-weight:700; }
+    .diff-zero { color:var(--text-muted); }
 
-    .selisih-pos { color: #16a34a; font-weight: 700; }
-    .selisih-neg { color: #dc2626; font-weight: 700; }
-    .selisih-zero { color: var(--text-muted); }
-
-    tr.has-diff td { background: #fffbeb !important; }
-    tr.has-diff:hover td { background: #fef9c3 !important; }
-
-    .summary-banner {
-      padding: 12px 16px; border-radius: 8px; font-size: 13px;
-      background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8;
-      margin-bottom: 16px; display: none;
-    }
-    .summary-banner.show { display: block; }
-
-    .badge-diff {
-      display: inline-block; font-size: 11px; font-weight: 700;
-      padding: 2px 8px; border-radius: 10px;
-    }
-    .badge-diff.pos { background: #dcfce7; color: #15803d; }
-    .badge-diff.neg { background: #fee2e2; color: #b91c1c; }
+    .stat-box { text-align:center;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;flex:1; }
+    .stat-box .sv { font-size:22px;font-weight:800;color:var(--text); }
+    .stat-box .sl { font-size:11px;color:var(--text-muted);margin-top:2px;font-weight:600;text-transform:uppercase; }
   </style>
 </head>
 <body>
@@ -73,6 +53,7 @@
       <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
       <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
       <a href="stock-opname.html" class="nav-item active" data-super-admin><span class="nav-icon">📋</span> Stock Opname</a>
+      <a href="scan-opname.html" class="nav-item"><span class="nav-icon">📷</span> Scan Opname</a>
       <div class="nav-label">Laporan</div>
       <a href="reports.html" class="nav-item" data-super-admin><span class="nav-icon">📊</span> Laporan Stok</a>
       <a href="profit-loss.html" class="nav-item" data-super-admin><span class="nav-icon">💹</span> Laba Rugi</a>
@@ -90,70 +71,77 @@
     <header class="topbar">
       <div class="topbar-title">
         <h1>Stock Opname</h1>
-        <p>Cocokkan stok fisik dengan data sistem</p>
+        <p>Kelola sesi opname dan lihat log scan</p>
       </div>
       <div class="topbar-right">
+        <a href="scan-opname.html" class="btn btn-primary btn-sm">📷 Buka Scanner</a>
         <div class="user-avatar" id="user-avatar">A</div>
       </div>
     </header>
 
     <main class="page">
 
-      <!-- Info banner -->
-      <div class="card" style="margin-bottom:16px;padding:14px 18px;background:#fffbeb;border:1px solid #fde68a">
-        <div style="font-size:13px;color:#92400e;line-height:1.6">
-          <strong>Cara pakai:</strong> Isi kolom <em>Stok Fisik</em> sesuai hasil hitung fisik di gudang.
-          Biarkan kosong untuk produk yang tidak dihitung. Klik <strong>Simpan Opname</strong> — hanya produk yang ada selisihnya yang akan diupdate.
+      <!-- ACTIVE SESSION -->
+      <div id="active-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h2 style="font-size:15px;font-weight:700;margin:0">Sesi Aktif</h2>
+          <button class="btn btn-primary btn-sm" onclick="openModal('modal-new-session')">＋ Buat Sesi Baru</button>
+        </div>
+        <div id="active-session-wrap">
+          <div style="color:var(--text-muted);font-size:13px;padding:16px 0">Tidak ada sesi aktif. Buat sesi baru untuk memulai opname.</div>
         </div>
       </div>
 
-      <!-- Controls -->
-      <div class="card" style="margin-bottom:16px;padding:14px 18px">
-        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-          <div style="flex:1;min-width:200px">
-            <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Keterangan Opname</label>
-            <input type="text" id="opname-notes" placeholder="Contoh: Opname bulanan Juni 2026"
-              style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;box-sizing:border-box">
+      <!-- SESSION DETAIL -->
+      <div id="session-detail" style="display:none;margin-top:24px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h2 id="detail-title" style="font-size:15px;font-weight:700;margin:0"></h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="loadSessionDetail(currentSessionId)">🔄 Refresh</button>
+            <button class="btn btn-danger btn-sm" id="btn-close-session" onclick="closeSession()" style="display:none">🔒 Tutup Sesi</button>
           </div>
-          <div>
-            <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Tampilkan</label>
-            <select id="opname-filter" onchange="renderTable()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text)">
-              <option value="all">Semua Produk</option>
-              <option value="diff">Hanya yang Ada Selisih</option>
-            </select>
+        </div>
+
+        <!-- Stats -->
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+          <div class="stat-box"><div class="sv" id="stat-total">0</div><div class="sl">Total Scan</div></div>
+          <div class="stat-box"><div class="sv diff-pos" id="stat-tambah">0</div><div class="sl">Bertambah</div></div>
+          <div class="stat-box"><div class="sv diff-neg" id="stat-kurang">0</div><div class="sl">Berkurang</div></div>
+          <div class="stat-box"><div class="sv diff-zero" id="stat-sama">0</div><div class="sl">Sama</div></div>
+        </div>
+
+        <!-- Items table -->
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+            <input type="text" id="detail-search" placeholder="Cari produk..."
+              oninput="filterDetailTable()"
+              style="padding:7px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;width:100%;box-sizing:border-box">
+          </div>
+          <div class="table-wrap">
+            <table class="opname-table" style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <th style="text-align:left">Produk</th>
+                  <th style="text-align:center">Stok Sistem</th>
+                  <th style="text-align:center">Stok Fisik</th>
+                  <th style="text-align:center">Selisih</th>
+                  <th style="text-align:left">Di-scan oleh</th>
+                  <th style="text-align:left">Waktu</th>
+                </tr>
+              </thead>
+              <tbody id="detail-tbody">
+                <tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-muted)">Memuat...</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
 
-      <!-- Summary banner -->
-      <div class="summary-banner" id="summary-banner"></div>
-
-      <!-- Table -->
-      <div class="card" style="padding:0;overflow:hidden">
-        <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <input type="text" id="opname-search" class="opname-search" placeholder="Cari nama produk atau SKU..."
-            oninput="renderTable()">
-          <div id="opname-count" style="font-size:13px;color:var(--text-muted);white-space:nowrap"></div>
-          <button id="btn-save-opname" class="btn btn-primary" onclick="saveOpname()" style="margin-left:auto">
-            💾 Simpan Opname
-          </button>
-        </div>
-
-        <div class="table-wrap">
-          <table class="opname-table" style="width:100%;border-collapse:collapse">
-            <thead>
-              <tr>
-                <th style="text-align:left">Produk</th>
-                <th style="text-align:left">SKU</th>
-                <th style="text-align:center">Stok Sistem</th>
-                <th style="text-align:center">Stok Fisik</th>
-                <th style="text-align:center">Selisih</th>
-              </tr>
-            </thead>
-            <tbody id="opname-tbody">
-              <tr><td colspan="5" style="padding:32px;text-align:center;color:var(--text-muted)">Memuat produk...</td></tr>
-            </tbody>
-          </table>
+      <!-- PAST SESSIONS -->
+      <div style="margin-top:28px">
+        <h2 style="font-size:15px;font-weight:700;margin-bottom:12px">Riwayat Sesi</h2>
+        <div id="past-sessions-wrap">
+          <div style="color:var(--text-muted);font-size:13px">Memuat...</div>
         </div>
       </div>
 
@@ -161,192 +149,205 @@
   </div>
 </div>
 
+<!-- MODAL: BUAT SESI BARU -->
+<div class="modal-overlay" id="modal-new-session">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3>Buat Sesi Opname</h3>
+      <button class="modal-close" onclick="closeModal('modal-new-session')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;font-weight:600;color:var(--text-muted);display:block;margin-bottom:4px">Nama Sesi <span style="color:#dc2626">*</span></label>
+        <input type="text" id="new-session-name" placeholder="Contoh: Opname Bulanan Juni 2026"
+          style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:7px;font-size:13px;box-sizing:border-box">
+      </div>
+      <div style="padding:10px 12px;background:#fffbeb;border-radius:7px;font-size:12px;color:#92400e">
+        ⚠️ Hanya boleh ada <strong>satu sesi aktif</strong> pada satu waktu. Tutup sesi lama sebelum membuat yang baru.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-new-session')">Batal</button>
+      <button class="btn btn-primary" id="btn-create-session" onclick="createSession()">Buat Sesi</button>
+    </div>
+  </div>
+</div>
+
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
 <script>
-  let allProducts = [];
-  let physicalStocks = {}; // product_id → nilai input fisik
+  let currentUser      = null;
+  let currentSessionId = null;
+  let allDetailItems   = [];
 
   async function init() {
     const auth = await requireSuperAdmin();
     if (!auth) return;
-    await loadProducts();
+    currentUser = auth;
+    await loadSessions();
   }
 
-  async function loadProducts() {
-    // Bypass limit 1000 rows
-    let all = [], from = 0, CHUNK = 1000;
-    while (true) {
-      const { data } = await supabase
-        .from('products')
-        .select('id,name,sku,stock_quantity,unit,min_stock')
-        .order('name', { ascending: true })
-        .range(from, from + CHUNK - 1);
-      if (!data?.length) break;
-      all = all.concat(data);
-      if (data.length < CHUNK) break;
-      from += CHUNK;
+  async function loadSessions() {
+    // Active session
+    const { data: active } = await supabase
+      .from('opname_sessions')
+      .select('id,name,created_by_name,created_at,status')
+      .eq('status','active')
+      .order('created_at',{ascending:false})
+      .limit(1);
+
+    const activeWrap = document.getElementById('active-session-wrap');
+    if (active?.length) {
+      const s = active[0];
+      activeWrap.innerHTML = `
+        <div class="session-card active-session" onclick="loadSessionDetail('${s.id}')">
+          <div class="sc-head">
+            <div class="sc-name">${escapeHtml(s.name)}</div>
+            <span class="badge-active">● Aktif</span>
+          </div>
+          <div class="sc-meta">Dibuat oleh ${escapeHtml(s.created_by_name||'?')} · ${formatDate(s.created_at)}</div>
+        </div>`;
+      loadSessionDetail(s.id);
+    } else {
+      activeWrap.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:8px 0">Tidak ada sesi aktif. Buat sesi baru untuk memulai opname.</div>';
+      document.getElementById('session-detail').style.display = 'none';
     }
-    allProducts = all;
-    renderTable();
+
+    // Past sessions
+    const { data: past } = await supabase
+      .from('opname_sessions')
+      .select('id,name,created_by_name,created_at,closed_at,status')
+      .eq('status','closed')
+      .order('created_at',{ascending:false})
+      .limit(20);
+
+    const pastWrap = document.getElementById('past-sessions-wrap');
+    if (!past?.length) {
+      pastWrap.innerHTML = '<div style="color:var(--text-muted);font-size:13px">Belum ada sesi yang selesai.</div>';
+    } else {
+      pastWrap.innerHTML = past.map(s => `
+        <div class="session-card" onclick="loadSessionDetail('${s.id}')">
+          <div class="sc-head">
+            <div class="sc-name">${escapeHtml(s.name)}</div>
+            <span class="badge-closed">Selesai</span>
+          </div>
+          <div class="sc-meta">Dibuat ${formatDate(s.created_at)}${s.closed_at ? ' · Ditutup ' + formatDate(s.closed_at) : ''} · ${escapeHtml(s.created_by_name||'?')}</div>
+        </div>`).join('');
+    }
   }
 
-  function renderTable() {
-    const q      = document.getElementById('opname-search').value.toLowerCase().trim();
-    const filter = document.getElementById('opname-filter').value;
+  async function loadSessionDetail(sessionId) {
+    currentSessionId = sessionId;
+    document.getElementById('session-detail').style.display = 'block';
+    document.getElementById('detail-tbody').innerHTML =
+      '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-muted)">Memuat...</td></tr>';
+    document.getElementById('detail-search').value = '';
 
-    let list = allProducts.filter(p => {
-      const matchQ = !q || p.name.toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q);
-      if (!matchQ) return false;
-      if (filter === 'diff') {
-        const fisik = physicalStocks[p.id];
-        if (fisik === undefined || fisik === '') return false;
-        return parseInt(fisik) !== p.stock_quantity;
-      }
-      return true;
-    });
+    // Get session info
+    const { data: sess } = await supabase
+      .from('opname_sessions')
+      .select('id,name,status')
+      .eq('id', sessionId)
+      .single();
 
-    document.getElementById('opname-count').textContent = `${list.length} produk`;
+    document.getElementById('detail-title').textContent = sess?.name || '';
+    const btnClose = document.getElementById('btn-close-session');
+    btnClose.style.display = sess?.status === 'active' ? 'inline-flex' : 'none';
 
-    if (!list.length) {
-      document.getElementById('opname-tbody').innerHTML =
-        '<tr><td colspan="5" style="padding:32px;text-align:center;color:var(--text-muted)">Tidak ada produk</td></tr>';
+    // Get items
+    const { data: items } = await supabase
+      .from('opname_items')
+      .select('product_name,system_stock,physical_stock,diff,scanned_by_name,scanned_at')
+      .eq('session_id', sessionId)
+      .order('scanned_at',{ascending:false});
+
+    allDetailItems = items || [];
+    updateStats(allDetailItems);
+    renderDetailTable(allDetailItems);
+  }
+
+  function updateStats(items) {
+    document.getElementById('stat-total').textContent  = items.length;
+    document.getElementById('stat-tambah').textContent = items.filter(i=>i.diff>0).length;
+    document.getElementById('stat-kurang').textContent = items.filter(i=>i.diff<0).length;
+    document.getElementById('stat-sama').textContent   = items.filter(i=>i.diff===0).length;
+  }
+
+  function renderDetailTable(items) {
+    if (!items.length) {
+      document.getElementById('detail-tbody').innerHTML =
+        '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-muted)">Belum ada produk yang di-scan</td></tr>';
       return;
     }
-
-    document.getElementById('opname-tbody').innerHTML = list.map(p => {
-      const fisikVal = physicalStocks[p.id] !== undefined ? physicalStocks[p.id] : '';
-      const fisikNum = fisikVal !== '' ? parseInt(fisikVal) : null;
-      const selisih  = fisikNum !== null ? fisikNum - p.stock_quantity : null;
-      const hasDiff  = selisih !== null && selisih !== 0;
-
-      let selisihHtml = '<span class="selisih-zero">—</span>';
-      if (selisih !== null) {
-        if (selisih > 0)      selisihHtml = `<span class="selisih-pos">+${selisih}</span>`;
-        else if (selisih < 0) selisihHtml = `<span class="selisih-neg">${selisih}</span>`;
-        else                  selisihHtml = `<span class="selisih-zero">0</span>`;
-      }
-
-      return `<tr id="row-${p.id}"${hasDiff ? ' class="has-diff"' : ''}>
-        <td style="font-weight:600">${escapeHtml(p.name)}</td>
-        <td style="font-size:12px;color:var(--text-muted);font-family:monospace">${p.sku || '—'}</td>
-        <td style="text-align:center;font-weight:600">${p.stock_quantity} <span style="font-size:11px;color:var(--text-muted)">${p.unit||'pcs'}</span></td>
-        <td style="text-align:center">
-          <input type="number" min="0" class="input-fisik" value="${fisikVal}"
-            data-id="${p.id}" data-system="${p.stock_quantity}"
-            oninput="onFisikInput('${p.id}', this)">
-        </td>
-        <td style="text-align:center">${selisihHtml}</td>
+    document.getElementById('detail-tbody').innerHTML = items.map(i => {
+      const diff    = i.diff;
+      const cls     = diff > 0 ? 'diff-pos' : diff < 0 ? 'diff-neg' : 'diff-zero';
+      const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
+      const time    = new Date(i.scanned_at).toLocaleString('id-ID',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+      return `<tr>
+        <td style="font-weight:600">${escapeHtml(i.product_name)}</td>
+        <td style="text-align:center">${i.system_stock}</td>
+        <td style="text-align:center;font-weight:700">${i.physical_stock}</td>
+        <td style="text-align:center"><span class="${cls}">${diffStr}</span></td>
+        <td style="color:var(--text-muted)">${escapeHtml(i.scanned_by_name||'?')}</td>
+        <td style="color:var(--text-muted);font-size:12px">${time}</td>
       </tr>`;
     }).join('');
-
-    updateSummary();
   }
 
-  function onFisikInput(id, input) {
-    const val = input.value.trim();
-    if (val === '') {
-      delete physicalStocks[id];
-    } else {
-      physicalStocks[id] = val;
-    }
-
-    // Update baris langsung tanpa re-render semua
-    const p       = allProducts.find(x => x.id === id);
-    const fisikNum = val !== '' ? parseInt(val) : null;
-    const selisih  = fisikNum !== null ? fisikNum - p.stock_quantity : null;
-    const hasDiff  = selisih !== null && selisih !== 0;
-
-    const row = document.getElementById(`row-${id}`);
-    if (row) {
-      row.className = hasDiff ? 'has-diff' : '';
-      const cells = row.querySelectorAll('td');
-      let selisihHtml = '<span class="selisih-zero">—</span>';
-      if (selisih !== null) {
-        if (selisih > 0)      selisihHtml = `<span class="selisih-pos">+${selisih}</span>`;
-        else if (selisih < 0) selisihHtml = `<span class="selisih-neg">${selisih}</span>`;
-        else                  selisihHtml = `<span class="selisih-zero">0</span>`;
-      }
-      cells[4].innerHTML = selisihHtml;
-    }
-
-    updateSummary();
+  function filterDetailTable() {
+    const q = document.getElementById('detail-search').value.toLowerCase().trim();
+    const filtered = q
+      ? allDetailItems.filter(i => i.product_name.toLowerCase().includes(q))
+      : allDetailItems;
+    renderDetailTable(filtered);
   }
 
-  function updateSummary() {
-    const diffs = Object.entries(physicalStocks)
-      .map(([id, val]) => {
-        const p = allProducts.find(x => x.id === id);
-        if (!p || val === '') return null;
-        const selisih = parseInt(val) - p.stock_quantity;
-        return selisih !== 0 ? { p, selisih } : null;
-      })
-      .filter(Boolean);
+  async function createSession() {
+    const name = document.getElementById('new-session-name').value.trim();
+    if (!name) { showToast('Isi nama sesi', 'error'); return; }
 
-    const banner = document.getElementById('summary-banner');
-    if (!diffs.length) { banner.classList.remove('show'); return; }
+    // Cek tidak ada sesi aktif
+    const { data: existing } = await supabase
+      .from('opname_sessions').select('id').eq('status','active').limit(1);
+    if (existing?.length) { showToast('Masih ada sesi aktif, tutup dulu sebelum membuat baru', 'error'); return; }
 
-    const tambah  = diffs.filter(d => d.selisih > 0).length;
-    const kurang  = diffs.filter(d => d.selisih < 0).length;
-    banner.classList.add('show');
-    banner.innerHTML = `
-      <strong>${diffs.length} produk</strong> akan diupdate —
-      <span class="badge-diff pos">+${tambah} bertambah</span>
-      <span class="badge-diff neg" style="margin-left:6px">${kurang} berkurang</span>
-      <span style="color:#64748b;margin-left:10px;font-size:12px">Klik <strong>Simpan Opname</strong> untuk menerapkan perubahan.</span>
-    `;
-  }
-
-  async function saveOpname() {
-    const diffs = Object.entries(physicalStocks)
-      .map(([id, val]) => {
-        const p = allProducts.find(x => x.id === id);
-        if (!p || val === '') return null;
-        const fisik   = parseInt(val);
-        const selisih = fisik - p.stock_quantity;
-        return selisih !== 0 ? { p, fisik, selisih } : null;
-      })
-      .filter(Boolean);
-
-    if (!diffs.length) { showToast('Tidak ada perubahan stok untuk disimpan', 'error'); return; }
-
-    const notes = document.getElementById('opname-notes').value.trim() || 'Stock Opname';
-    if (!showConfirm(`Simpan opname? ${diffs.length} produk akan diupdate stoknya.`)) return;
-
-    const btn = document.getElementById('btn-save-opname');
+    const btn = document.getElementById('btn-create-session');
     setLoading(btn, true);
-
-    let success = 0, failed = 0;
-    for (const { p, fisik, selisih } of diffs) {
-      const { error } = await supabase
-        .from('products')
-        .update({ stock_quantity: fisik })
-        .eq('id', p.id);
-
-      if (error) { failed++; continue; }
-
-      await supabase.from('stock_movements').insert({
-        product_id:      p.id,
-        product_name:    p.name,
-        type:            'adjustment',
-        quantity:        Math.abs(selisih),
-        quantity_before: p.stock_quantity,
-        quantity_after:  fisik,
-        notes:           `${notes} (${selisih > 0 ? '+' : ''}${selisih})`,
-      });
-
-      success++;
-    }
-
+    const userName = currentUser?.user_metadata?.name || currentUser?.email || 'Super Admin';
+    const { error } = await supabase.from('opname_sessions').insert({
+      name,
+      created_by_id:   currentUser.id,
+      created_by_name: userName,
+      status:          'active',
+    });
     setLoading(btn, false);
-    if (failed) showToast(`${success} berhasil, ${failed} gagal`, 'error');
-    else        showToast(`Opname selesai — ${success} produk diupdate`, 'success');
-
-    physicalStocks = {};
-    document.getElementById('summary-banner').classList.remove('show');
-    await loadProducts();
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Sesi berhasil dibuat!', 'success');
+    document.getElementById('new-session-name').value = '';
+    closeModal('modal-new-session');
+    loadSessions();
   }
+
+  async function closeSession() {
+    if (!showConfirm('Tutup sesi opname ini? Tim tidak bisa scan lagi setelah ditutup.')) return;
+    const btn = document.getElementById('btn-close-session');
+    setLoading(btn, true);
+    const { error } = await supabase
+      .from('opname_sessions')
+      .update({ status: 'closed', closed_at: new Date().toISOString() })
+      .eq('id', currentSessionId);
+    setLoading(btn, false);
+    if (error) { showToast('Gagal tutup sesi: ' + error.message, 'error'); return; }
+    showToast('Sesi ditutup', 'success');
+    currentSessionId = null;
+    loadSessions();
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
 
   init();
 </script>

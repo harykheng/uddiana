@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Scan Opname - StokManager</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body { background: #0f172a; }
+    .scan-page { min-height: 100vh; display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; }
+
+    /* Top bar */
+    .scan-topbar {
+      padding: 14px 16px 10px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .scan-topbar h1 { font-size: 16px; font-weight: 700; color: #fff; margin: 0; }
+    .scan-topbar a { color: #94a3b8; font-size: 13px; text-decoration: none; }
+
+    /* Session badge */
+    .session-badge {
+      margin: 0 16px 12px;
+      padding: 8px 14px; border-radius: 8px;
+      font-size: 12px; font-weight: 600;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .session-badge.active  { background: #064e3b; color: #6ee7b7; }
+    .session-badge.none    { background: #450a0a; color: #fca5a5; }
+    .session-badge .dot    { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+    /* Scanner area */
+    .scanner-wrap {
+      margin: 0 16px 12px;
+      border-radius: 14px; overflow: hidden;
+      background: #1e293b; position: relative;
+    }
+    #reader { width: 100% !important; }
+    #reader video { border-radius: 14px; }
+    #reader img { display: none !important; } /* hide html5-qrcode branding */
+    .scanner-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .scan-frame {
+      width: 220px; height: 100px;
+      border: 2px solid rgba(99,179,237,.8);
+      border-radius: 10px; box-shadow: 0 0 0 999px rgba(0,0,0,.35);
+    }
+    .scan-line {
+      position: absolute; width: 200px; height: 2px;
+      background: linear-gradient(90deg, transparent, #63b3ed, transparent);
+      animation: scanline 2s linear infinite;
+    }
+    @keyframes scanline { 0%,100% { transform: translateY(-40px); opacity: 0; } 50% { transform: translateY(40px); opacity: 1; } }
+
+    .scanner-hint {
+      text-align: center; color: #64748b; font-size: 12px;
+      margin: 0 16px 12px;
+    }
+
+    /* Result card */
+    .result-card {
+      margin: 0 16px 12px;
+      background: #1e293b; border-radius: 14px;
+      padding: 16px; display: none;
+    }
+    .result-card.show { display: block; }
+    .result-card .prod-name { font-size: 15px; font-weight: 700; color: #f1f5f9; margin-bottom: 4px; }
+    .result-card .prod-sku  { font-size: 12px; color: #64748b; margin-bottom: 14px; }
+    .stock-row { display: flex; gap: 12px; margin-bottom: 14px; }
+    .stock-box {
+      flex: 1; background: #0f172a; border-radius: 8px;
+      padding: 10px; text-align: center;
+    }
+    .stock-box .label { font-size: 10px; text-transform: uppercase; font-weight: 700; color: #64748b; margin-bottom: 4px; }
+    .stock-box .value { font-size: 20px; font-weight: 800; color: #f1f5f9; }
+    .stock-box.diff-pos .value { color: #34d399; }
+    .stock-box.diff-neg .value { color: #f87171; }
+    .stock-box.diff-zero .value { color: #94a3b8; }
+
+    .input-group { margin-bottom: 14px; }
+    .input-group label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; display: block; margin-bottom: 6px; }
+    .input-fisik-big {
+      width: 100%; padding: 12px 16px; font-size: 24px; font-weight: 700;
+      background: #0f172a; border: 2px solid #334155; border-radius: 10px;
+      color: #f1f5f9; text-align: center; box-sizing: border-box;
+    }
+    .input-fisik-big:focus { outline: none; border-color: #3b82f6; }
+
+    .btn-submit {
+      width: 100%; padding: 14px; font-size: 15px; font-weight: 700;
+      background: #2563eb; color: #fff; border: none; border-radius: 10px;
+      cursor: pointer; transition: all .15s;
+    }
+    .btn-submit:hover:not(:disabled) { background: #1d4ed8; }
+    .btn-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-scan-again {
+      width: 100%; padding: 12px; font-size: 14px; font-weight: 600;
+      background: transparent; color: #94a3b8; border: 1.5px solid #334155;
+      border-radius: 10px; cursor: pointer; margin-top: 10px;
+    }
+    .btn-scan-again:hover { border-color: #64748b; color: #f1f5f9; }
+
+    /* Done state */
+    .done-card {
+      margin: 0 16px 12px; background: #064e3b;
+      border-radius: 14px; padding: 20px 16px; display: none; text-align: center;
+    }
+    .done-card.show { display: block; }
+    .done-card .done-icon { font-size: 36px; margin-bottom: 10px; }
+    .done-card .done-title { font-size: 16px; font-weight: 700; color: #6ee7b7; margin-bottom: 4px; }
+    .done-card .done-sub { font-size: 12px; color: #a7f3d0; margin-bottom: 14px; }
+
+    /* Not found */
+    .notfound-card {
+      margin: 0 16px 12px; background: #1e293b;
+      border-radius: 14px; padding: 20px 16px; display: none; text-align: center;
+    }
+    .notfound-card.show { display: block; }
+    .notfound-card .nf-icon { font-size: 32px; margin-bottom: 8px; }
+    .notfound-card .nf-title { font-size: 14px; font-weight: 700; color: #fca5a5; margin-bottom: 4px; }
+    .notfound-card .nf-sub { font-size: 12px; color: #94a3b8; margin-bottom: 14px; }
+
+    /* Recent scans */
+    .recent-wrap { margin: 0 16px; flex: 1; }
+    .recent-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #475569; margin-bottom: 8px; letter-spacing: .05em; }
+    .recent-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid #1e293b;
+    }
+    .recent-item .ri-name { flex: 1; font-size: 13px; color: #cbd5e1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .recent-item .ri-by   { font-size: 11px; color: #475569; }
+    .recent-item .ri-diff { font-size: 12px; font-weight: 700; flex-shrink: 0; }
+    .ri-diff.pos { color: #34d399; }
+    .ri-diff.neg { color: #f87171; }
+    .ri-diff.zero { color: #475569; }
+
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
+  </style>
+</head>
+<body>
+<div class="scan-page">
+
+  <!-- Top bar -->
+  <div class="scan-topbar">
+    <h1>📋 Scan Opname</h1>
+    <a href="index.html">✕ Keluar</a>
+  </div>
+
+  <!-- Session badge -->
+  <div class="session-badge none" id="session-badge">
+    <div class="dot"></div>
+    <span id="session-label">Memeriksa sesi...</span>
+  </div>
+
+  <!-- Scanner -->
+  <div class="scanner-wrap" id="scanner-wrap">
+    <div id="reader"></div>
+    <div class="scanner-overlay">
+      <div class="scan-frame"></div>
+      <div class="scan-line"></div>
+    </div>
+  </div>
+  <div class="scanner-hint" id="scanner-hint">Arahkan kamera ke barcode produk</div>
+
+  <!-- Done card -->
+  <div class="done-card" id="done-card">
+    <div class="done-icon">✅</div>
+    <div class="done-title" id="done-title">Sudah Di-scan</div>
+    <div class="done-sub" id="done-sub"></div>
+    <button class="btn-scan-again" onclick="resumeScanner()">🔄 Scan Produk Lain</button>
+  </div>
+
+  <!-- Not found card -->
+  <div class="notfound-card" id="notfound-card">
+    <div class="nf-icon">❓</div>
+    <div class="nf-title">Produk Tidak Ditemukan</div>
+    <div class="nf-sub" id="nf-sku"></div>
+    <button class="btn-scan-again" onclick="resumeScanner()">🔄 Scan Ulang</button>
+  </div>
+
+  <!-- Result card -->
+  <div class="result-card" id="result-card">
+    <div class="prod-name" id="res-name"></div>
+    <div class="prod-sku"  id="res-sku"></div>
+    <div class="stock-row">
+      <div class="stock-box">
+        <div class="label">Stok Sistem</div>
+        <div class="value" id="res-system">—</div>
+      </div>
+      <div class="stock-box" id="res-diff-box">
+        <div class="label">Selisih</div>
+        <div class="value" id="res-diff">—</div>
+      </div>
+    </div>
+    <div class="input-group">
+      <label>Stok Fisik (hasil hitung)</label>
+      <input type="number" min="0" class="input-fisik-big" id="input-fisik"
+        oninput="updateDiff()" placeholder="0">
+    </div>
+    <button class="btn-submit" id="btn-submit" onclick="submitScan()">✅ Simpan</button>
+    <button class="btn-scan-again" onclick="resumeScanner()">↩ Batal, Scan Lagi</button>
+  </div>
+
+  <!-- Recent scans -->
+  <div class="recent-wrap">
+    <div class="recent-title">Scan Terakhir di Sesi Ini</div>
+    <div id="recent-list"><div style="color:#475569;font-size:12px;padding:8px 0">Belum ada scan</div></div>
+  </div>
+
+  <div class="pb-safe"></div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let activeSession  = null;
+  let currentUser    = null;
+  let currentProduct = null;
+  let scanner        = null;
+  let scanning       = true;
+  let recentItems    = [];
+
+  async function init() {
+    const auth = await requireSales();
+    if (!auth) return;
+    currentUser = auth;
+
+    await checkActiveSession();
+    if (activeSession) {
+      startScanner();
+      loadRecentItems();
+    }
+  }
+
+  async function checkActiveSession() {
+    const { data } = await supabase
+      .from('opname_sessions')
+      .select('id,name,created_by_name')
+      .eq('status','active')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    const badge = document.getElementById('session-badge');
+    const label = document.getElementById('session-label');
+
+    if (data?.length) {
+      activeSession = data[0];
+      badge.className = 'session-badge active';
+      label.textContent = `Sesi: ${activeSession.name}`;
+      document.getElementById('scanner-wrap').style.display = 'block';
+      document.getElementById('scanner-hint').style.display = 'block';
+    } else {
+      badge.className = 'session-badge none';
+      label.textContent = 'Tidak ada sesi opname aktif';
+      document.getElementById('scanner-wrap').style.display = 'none';
+      document.getElementById('scanner-hint').style.display = 'none';
+    }
+  }
+
+  function startScanner() {
+    scanner = new Html5Qrcode('reader');
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 120 }, aspectRatio: 1.5 },
+      onScanSuccess,
+      () => {}
+    ).catch(err => {
+      document.getElementById('scanner-hint').textContent = 'Gagal akses kamera: ' + err;
+    });
+    scanning = true;
+  }
+
+  async function onScanSuccess(sku) {
+    if (!scanning || !activeSession) return;
+    scanning = false;
+
+    // Pause scanner visual
+    document.getElementById('scanner-hint').textContent = 'Mencari produk...';
+
+    // Cek apakah sudah di-scan di sesi ini
+    const { data: existing } = await supabase
+      .from('opname_items')
+      .select('id,product_name,physical_stock,system_stock,diff,scanned_by_name,scanned_at')
+      .eq('session_id', activeSession.id)
+      .eq('product_id',
+        // subquery via products
+        (await supabase.from('products').select('id').eq('sku', sku).single()).data?.id || '00000000-0000-0000-0000-000000000000'
+      )
+      .limit(1);
+
+    // Cari produk by SKU
+    const { data: prodList } = await supabase
+      .from('products')
+      .select('id,name,sku,stock_quantity,unit')
+      .eq('sku', sku)
+      .limit(1);
+
+    hideAllCards();
+
+    if (!prodList?.length) {
+      document.getElementById('nf-sku').textContent = `SKU: ${sku}`;
+      document.getElementById('notfound-card').classList.add('show');
+      return;
+    }
+
+    const prod = prodList[0];
+    currentProduct = prod;
+
+    // Check if already scanned (re-fetch properly)
+    const { data: alreadyScanned } = await supabase
+      .from('opname_items')
+      .select('id,physical_stock,system_stock,scanned_by_name,scanned_at')
+      .eq('session_id', activeSession.id)
+      .eq('product_id', prod.id)
+      .limit(1);
+
+    if (alreadyScanned?.length) {
+      const item = alreadyScanned[0];
+      const diff = item.physical_stock - item.system_stock;
+      document.getElementById('done-title').textContent = `✅ ${prod.name}`;
+      document.getElementById('done-sub').textContent =
+        `Sudah di-scan oleh ${item.scanned_by_name || 'Unknown'} · Fisik: ${item.physical_stock} · Selisih: ${diff >= 0 ? '+' : ''}${diff}`;
+      document.getElementById('done-card').classList.add('show');
+      return;
+    }
+
+    // Show input form
+    document.getElementById('res-name').textContent   = prod.name;
+    document.getElementById('res-sku').textContent    = `SKU: ${prod.sku}`;
+    document.getElementById('res-system').textContent = prod.stock_quantity;
+    document.getElementById('res-diff').textContent   = '—';
+    document.getElementById('input-fisik').value      = '';
+    document.getElementById('res-diff-box').className = 'stock-box';
+    document.getElementById('result-card').classList.add('show');
+    document.getElementById('input-fisik').focus();
+  }
+
+  function updateDiff() {
+    const fisik = parseInt(document.getElementById('input-fisik').value);
+    if (!currentProduct || isNaN(fisik)) {
+      document.getElementById('res-diff').textContent = '—';
+      document.getElementById('res-diff-box').className = 'stock-box';
+      return;
+    }
+    const diff = fisik - currentProduct.stock_quantity;
+    const el   = document.getElementById('res-diff');
+    const box  = document.getElementById('res-diff-box');
+    el.textContent = diff >= 0 ? `+${diff}` : `${diff}`;
+    box.className  = `stock-box ${diff > 0 ? 'diff-pos' : diff < 0 ? 'diff-neg' : 'diff-zero'}`;
+  }
+
+  async function submitScan() {
+    const fisikVal = document.getElementById('input-fisik').value.trim();
+    if (fisikVal === '' || isNaN(parseInt(fisikVal))) {
+      showToast('Isi stok fisik terlebih dahulu', 'error');
+      return;
+    }
+
+    const fisik  = parseInt(fisikVal);
+    const diff   = fisik - currentProduct.stock_quantity;
+    const btn    = document.getElementById('btn-submit');
+    setLoading(btn, true);
+
+    // Double-check belum di-scan (race condition guard)
+    const { data: check } = await supabase
+      .from('opname_items')
+      .select('id,scanned_by_name')
+      .eq('session_id', activeSession.id)
+      .eq('product_id', currentProduct.id)
+      .limit(1);
+
+    if (check?.length) {
+      setLoading(btn, false);
+      hideAllCards();
+      document.getElementById('done-title').textContent = `✅ ${currentProduct.name}`;
+      document.getElementById('done-sub').textContent   = `Baru saja di-scan oleh ${check[0].scanned_by_name || 'pengguna lain'}`;
+      document.getElementById('done-card').classList.add('show');
+      return;
+    }
+
+    // Update stok produk
+    const { error: errProd } = await supabase
+      .from('products')
+      .update({ stock_quantity: fisik })
+      .eq('id', currentProduct.id);
+
+    if (errProd) { setLoading(btn, false); showToast('Gagal update stok: ' + errProd.message, 'error'); return; }
+
+    // Catat di stock_movements
+    await supabase.from('stock_movements').insert({
+      product_id:      currentProduct.id,
+      product_name:    currentProduct.name,
+      type:            'adjustment',
+      quantity:        Math.abs(diff),
+      quantity_before: currentProduct.stock_quantity,
+      quantity_after:  fisik,
+      notes:           `Stock Opname: ${activeSession.name} (${diff >= 0 ? '+' : ''}${diff})`,
+    });
+
+    // Catat di opname_items
+    const userName = currentUser?.user_metadata?.name || currentUser?.email || 'Unknown';
+    await supabase.from('opname_items').insert({
+      session_id:      activeSession.id,
+      product_id:      currentProduct.id,
+      product_name:    currentProduct.name,
+      system_stock:    currentProduct.stock_quantity,
+      physical_stock:  fisik,
+      diff:            diff,
+      scanned_by_id:   currentUser.id,
+      scanned_by_name: userName,
+    });
+
+    setLoading(btn, false);
+
+    // Update local stock
+    currentProduct.stock_quantity = fisik;
+
+    // Show done
+    hideAllCards();
+    document.getElementById('done-title').textContent = `✅ ${currentProduct.name}`;
+    document.getElementById('done-sub').textContent   =
+      `Stok fisik: ${fisik} · Selisih: ${diff >= 0 ? '+' : ''}${diff}`;
+    document.getElementById('done-card').classList.add('show');
+
+    // Refresh recent
+    loadRecentItems();
+    showToast('Tersimpan!', 'success');
+  }
+
+  function resumeScanner() {
+    hideAllCards();
+    currentProduct = null;
+    scanning = true;
+    document.getElementById('scanner-hint').textContent = 'Arahkan kamera ke barcode produk';
+  }
+
+  function hideAllCards() {
+    ['result-card','done-card','notfound-card'].forEach(id => {
+      document.getElementById(id).classList.remove('show');
+    });
+  }
+
+  async function loadRecentItems() {
+    const { data } = await supabase
+      .from('opname_items')
+      .select('product_name,physical_stock,system_stock,diff,scanned_by_name,scanned_at')
+      .eq('session_id', activeSession.id)
+      .order('scanned_at', { ascending: false })
+      .limit(10);
+
+    recentItems = data || [];
+    const el = document.getElementById('recent-list');
+
+    if (!recentItems.length) {
+      el.innerHTML = '<div style="color:#475569;font-size:12px;padding:8px 0">Belum ada scan</div>';
+      return;
+    }
+
+    el.innerHTML = recentItems.map(item => {
+      const diff     = item.diff;
+      const diffCls  = diff > 0 ? 'pos' : diff < 0 ? 'neg' : 'zero';
+      const diffStr  = diff > 0 ? `+${diff}` : `${diff}`;
+      const time     = new Date(item.scanned_at).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' });
+      return `<div class="recent-item">
+        <div>
+          <div class="ri-name">${escapeHtml(item.product_name)}</div>
+          <div class="ri-by">${escapeHtml(item.scanned_by_name||'?')} · ${time}</div>
+        </div>
+        <div class="ri-diff ${diffCls}">${diffStr}</div>
+      </div>`;
+    }).join('');
+  }
+
+  init();
+</script>
+</body>
+</html>
