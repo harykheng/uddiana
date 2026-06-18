@@ -1135,32 +1135,61 @@
     openModal('modal-product-info');
 
     const [{ data: inList }, { data: outList }] = await Promise.all([
-      supabase.from('stock_movements').select('quantity,quantity_before,quantity_after,notes,created_at').eq('product_id', id).eq('type','in').order('created_at',{ascending:false}).limit(50),
-      supabase.from('stock_movements').select('quantity,quantity_before,quantity_after,notes,created_at').eq('product_id', id).eq('type','out').order('created_at',{ascending:false}).limit(50),
+      supabase.from('stock_movements').select('quantity,notes,reference_type,reference_id,created_at').eq('product_id', id).eq('type','in').order('created_at',{ascending:false}).limit(50),
+      supabase.from('stock_movements').select('quantity,notes,reference_type,reference_id,created_at').eq('product_id', id).eq('type','out').order('created_at',{ascending:false}).limit(50),
     ]);
+
+    // Lookup nomor PO untuk semua movements yang reference_type = 'purchase'
+    const poIds = [...new Set((inList||[]).filter(m=>m.reference_type==='purchase'&&m.reference_id).map(m=>m.reference_id))];
+    let poMap = {};
+    if (poIds.length) {
+      const { data: pos } = await supabase.from('purchases').select('id,purchase_number').in('id', poIds);
+      (pos||[]).forEach(po => { poMap[po.id] = po.purchase_number; });
+    }
+
+    // Lookup nomor faktur untuk movements yang reference_type = 'invoice' / 'sale'
+    const invIds = [...new Set((outList||[]).filter(m=>['invoice','sale'].includes(m.reference_type)&&m.reference_id).map(m=>m.reference_id))];
+    let invMap = {};
+    if (invIds.length) {
+      const { data: invs } = await supabase.from('invoices').select('id,invoice_number').in('id', invIds);
+      (invs||[]).forEach(inv => { invMap[inv.id] = inv.invoice_number; });
+    }
 
     const totalMasuk  = (inList||[]).reduce((s,m)=>s+m.quantity,0);
     const totalKeluar = (outList||[]).reduce((s,m)=>s+m.quantity,0);
 
-    const movRow = (m, color) => `
+    const getSubLabel = (m, map) => {
+      const ref = map[m.reference_id];
+      if (ref) return ref;
+      if (m.notes) return escapeHtml(m.notes);
+      return null;
+    };
+
+    const movRow = (m, color) => {
+      const sub = getSubLabel(m, poMap);
+      return `
       <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f1f5f9">
         <div style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:${color};margin-top:2px"></div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--text)">${formatDate(m.created_at)}</div>
-          ${m.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:1px">${escapeHtml(m.notes)}</div>` : ''}
+          ${sub ? `<div style="font-size:12px;color:var(--text-muted);margin-top:1px">${sub}</div>` : ''}
         </div>
         <div style="font-size:13px;font-weight:700;color:${color};flex-shrink:0">+${m.quantity} pcs</div>
       </div>`;
+    };
 
-    const movRowOut = (m) => `
+    const movRowOut = (m) => {
+      const sub = getSubLabel(m, invMap);
+      return `
       <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f1f5f9">
         <div style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#ef4444;margin-top:2px"></div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--text)">${formatDate(m.created_at)}</div>
-          ${m.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:1px">${escapeHtml(m.notes)}</div>` : ''}
+          ${sub ? `<div style="font-size:12px;color:var(--text-muted);margin-top:1px">${sub}</div>` : ''}
         </div>
         <div style="font-size:13px;font-weight:700;color:#ef4444;flex-shrink:0">−${m.quantity} pcs</div>
       </div>`;
+    };
 
     const emptyState = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">Belum ada data</div>';
 
