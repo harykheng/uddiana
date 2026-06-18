@@ -391,7 +391,7 @@
     });
 
     // Catat di opname_items
-    const userName = currentUser?.user_metadata?.name || currentUser?.email || 'Unknown';
+    const userName = currentUser?.profile?.name || currentUser?.session?.user?.email || 'Unknown';
     await supabase.from('opname_items').insert({
       session_id:      activeSession.id,
       product_id:      currentProduct.id,
@@ -399,7 +399,7 @@
       system_stock:    currentProduct.stock_quantity,
       physical_stock:  fisik,
       diff:            diff,
-      scanned_by_id:   currentUser.id,
+      scanned_by_id:   currentUser?.session?.user?.id,
       scanned_by_name: userName,
     });
 
