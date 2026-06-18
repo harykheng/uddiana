@@ -550,6 +550,7 @@
         <td class="col-hide-mobile" style="font-size:12px;color:var(--text-muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(p.description||'')}">${escapeHtml(p.description || '—')}</td>
         <td>
           <div class="table-actions">
+            <button class="btn btn-ghost btn-sm" onclick="openProductInfo('${p.id}')" title="Info Produk">ℹ️</button>
             <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}','${escapeHtml(p.name)}',${p.stock_quantity})" title="Sesuaikan Stok">📊</button>
             <button class="btn btn-ghost btn-sm" onclick="openEditProduct('${p.id}')" title="Edit">✏️</button>
             <button class="btn btn-ghost btn-sm" onclick="openDuplicateProduct('${p.id}')" title="Duplikat">📋</button>
@@ -1104,6 +1105,51 @@
     XLSX.writeFile(wb, `error_import_produk_${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
+  // ── PRODUCT INFO ─────────────────────────────────────────────
+  async function openProductInfo(id) {
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('pi-name').textContent = p.name;
+    document.getElementById('pi-sku').textContent  = p.sku || '—';
+    document.getElementById('pi-body').innerHTML   = '<div style="text-align:center;padding:24px;color:var(--text-muted)">Memuat data...</div>';
+    openModal('modal-product-info');
+
+    // Ambil 5 movement terakhir (in & out)
+    const now   = new Date();
+    const ym    = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const start = `${ym}-01`;
+
+    const [{ data: lastIn }, { data: lastOut }, { data: thisMonth }] = await Promise.all([
+      supabase.from('stock_movements').select('quantity,notes,created_at').eq('product_id', id).eq('type','in').order('created_at',{ascending:false}).limit(1),
+      supabase.from('stock_movements').select('quantity,notes,created_at').eq('product_id', id).eq('type','out').order('created_at',{ascending:false}).limit(1),
+      supabase.from('stock_movements').select('type,quantity').eq('product_id', id).gte('created_at', start),
+    ]);
+
+    const totalMasuk  = (thisMonth||[]).filter(m=>m.type==='in').reduce((s,m)=>s+m.quantity,0);
+    const totalKeluar = (thisMonth||[]).filter(m=>m.type==='out').reduce((s,m)=>s+m.quantity,0);
+
+    const row = (icon, label, val, sub='') => `
+      <div style="display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+        <div style="font-size:22px;line-height:1;width:28px;text-align:center;flex-shrink:0">${icon}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;text-transform:uppercase;font-weight:700;color:var(--text-muted);letter-spacing:.04em">${label}</div>
+          <div style="font-size:14px;font-weight:600;color:var(--text);margin-top:2px">${val}</div>
+          ${sub ? `<div style="font-size:12px;color:var(--text-muted);margin-top:1px">${sub}</div>` : ''}
+        </div>
+      </div>`;
+
+    const fmtMov = m => m?.length ? `${formatDate(m[0].created_at)}${m[0].notes ? ' · ' + escapeHtml(m[0].notes) : ''}` : 'Belum ada data';
+    const fmtQty = m => m?.length ? `${m[0].quantity} pcs` : '';
+
+    document.getElementById('pi-body').innerHTML = `
+      ${row('📦','Masuk Terakhir', fmtMov(lastIn), fmtQty(lastIn))}
+      ${row('📤','Keluar Terakhir', fmtMov(lastOut), fmtQty(lastOut))}
+      ${row('📈','Total Masuk Bulan Ini', totalMasuk ? `${totalMasuk} pcs` : '—', '')}
+      ${row('📉','Total Keluar Bulan Ini', totalKeluar ? `${totalKeluar} pcs` : '—', '')}
+      ${row('📋','Stok Sekarang', `${p.stock_quantity} pcs`, p.min_stock ? `Min stok: ${p.min_stock} pcs` : '')}
+    `;
+  }
+
   document.querySelectorAll('.modal-overlay').forEach(el => {
     el.addEventListener('click', e => { if (e.target === el && !el.hasAttribute('data-no-overlay-close')) closeModal(el.id); });
   });
@@ -1131,7 +1177,8 @@
     closeMobileAction();
     if (!id) return;
     const p = allProducts.find(x => x.id === id);
-    if (fn === 'stock')     openAdjustStock(id, p.name, p.stock_quantity);
+    if (fn === 'info')      openProductInfo(id);
+    else if (fn === 'stock')     openAdjustStock(id, p.name, p.stock_quantity);
     else if (fn === 'edit') openEditProduct(id);
     else if (fn === 'dup')  openDuplicateProduct(id);
     else if (fn === 'del')  deleteProduct(id, p.name);
@@ -1141,6 +1188,23 @@
     if (e.target === e.currentTarget) closeMobileAction();
   });
 </script>
+
+<!-- MODAL: PRODUCT INFO -->
+<div class="modal-overlay" id="modal-product-info">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <div>
+        <h3 id="pi-name" style="margin:0;font-size:15px"></h3>
+        <div id="pi-sku" style="font-size:12px;color:var(--text-muted);margin-top:2px"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-product-info')">×</button>
+    </div>
+    <div class="modal-body" id="pi-body" style="padding-top:0"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-product-info')">Tutup</button>
+    </div>
+  </div>
+</div>
 
 <!-- MOBILE ACTION SHEET -->
 <div id="mobile-action-sheet" style="
@@ -1152,6 +1216,7 @@
       <button onclick="closeMobileAction()" style="border:none;background:none;font-size:20px;color:#94a3b8;cursor:pointer;padding:0 0 0 12px;line-height:1;">✕</button>
     </div>
     <div id="mobile-action-name" style="font-size:13px;font-weight:700;color:#374151;margin-bottom:14px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+    <button onclick="mobileAction('info')"  style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">ℹ️ <span>Info Produk</span></button>
     <button onclick="mobileAction('stock')" style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">📊 <span>Sesuaikan Stok</span></button>
     <button onclick="mobileAction('edit')"  style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">✏️ <span>Edit Produk</span></button>
     <button onclick="mobileAction('dup')"   style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">📋 <span>Duplikat Produk</span></button>
