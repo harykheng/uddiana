@@ -46,12 +46,12 @@
       display: flex; align-items: center; justify-content: center;
     }
     .scan-frame {
-      width: 220px; height: 100px;
-      border: 2px solid rgba(99,179,237,.8);
-      border-radius: 10px; box-shadow: 0 0 0 999px rgba(0,0,0,.35);
+      width: 300px; height: 140px;
+      border: 3px solid rgba(99,179,237,.9);
+      border-radius: 10px; box-shadow: 0 0 0 999px rgba(0,0,0,.45);
     }
     .scan-line {
-      position: absolute; width: 200px; height: 2px;
+      position: absolute; width: 280px; height: 2px;
       background: linear-gradient(90deg, transparent, #63b3ed, transparent);
       animation: scanline 2s linear infinite;
     }
@@ -268,7 +268,7 @@
     scanner = new Html5Qrcode('reader');
     scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 260, height: 120 }, aspectRatio: 1.5 },
+      { fps: 10, qrbox: { width: 300, height: 140 }, aspectRatio: 1.7 },
       onScanSuccess,
       () => {}
     ).catch(err => {
