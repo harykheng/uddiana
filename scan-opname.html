@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Scan Opname - StokManager</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <link rel="stylesheet" href="css/style.css">
   <style>
     body { background: #0f172a; }
@@ -37,9 +37,10 @@
       border-radius: 14px; overflow: hidden;
       background: #1e293b; position: relative;
     }
-    #reader { width: 100% !important; }
-    #reader video { border-radius: 14px; }
-    #reader img { display: none !important; } /* hide html5-qrcode branding */
+    #reader { width: 100% !important; min-height: 240px; }
+    #reader video { border-radius: 14px; width: 100% !important; }
+    #reader img { display: none !important; }
+    #reader > div { border: none !important; box-shadow: none !important; }
     .scanner-overlay {
       position: absolute; inset: 0; pointer-events: none;
       display: flex; align-items: center; justify-content: center;
@@ -279,29 +280,15 @@
   async function onScanSuccess(sku) {
     if (!scanning || !activeSession) return;
     scanning = false;
-
-    // Pause scanner visual
     document.getElementById('scanner-hint').textContent = 'Mencari produk...';
+    hideAllCards();
 
-    // Cek apakah sudah di-scan di sesi ini
-    const { data: existing } = await supabase
-      .from('opname_items')
-      .select('id,product_name,physical_stock,system_stock,diff,scanned_by_name,scanned_at')
-      .eq('session_id', activeSession.id)
-      .eq('product_id',
-        // subquery via products
-        (await supabase.from('products').select('id').eq('sku', sku).single()).data?.id || '00000000-0000-0000-0000-000000000000'
-      )
-      .limit(1);
-
-    // Cari produk by SKU
+    // 1. Cari produk by SKU
     const { data: prodList } = await supabase
       .from('products')
       .select('id,name,sku,stock_quantity,unit')
       .eq('sku', sku)
       .limit(1);
-
-    hideAllCards();
 
     if (!prodList?.length) {
       document.getElementById('nf-sku').textContent = `SKU: ${sku}`;
@@ -312,25 +299,25 @@
     const prod = prodList[0];
     currentProduct = prod;
 
-    // Check if already scanned (re-fetch properly)
+    // 2. Cek apakah sudah di-scan di sesi ini
     const { data: alreadyScanned } = await supabase
       .from('opname_items')
-      .select('id,physical_stock,system_stock,scanned_by_name,scanned_at')
+      .select('physical_stock,scanned_by_name')
       .eq('session_id', activeSession.id)
       .eq('product_id', prod.id)
       .limit(1);
 
     if (alreadyScanned?.length) {
       const item = alreadyScanned[0];
-      const diff = item.physical_stock - item.system_stock;
-      document.getElementById('done-title').textContent = `✅ ${prod.name}`;
+      const diff = item.physical_stock - prod.stock_quantity;
+      document.getElementById('done-title').textContent = prod.name;
       document.getElementById('done-sub').textContent =
         `Sudah di-scan oleh ${item.scanned_by_name || 'Unknown'} · Fisik: ${item.physical_stock} · Selisih: ${diff >= 0 ? '+' : ''}${diff}`;
       document.getElementById('done-card').classList.add('show');
       return;
     }
 
-    // Show input form
+    // 3. Tampilkan form input
     document.getElementById('res-name').textContent   = prod.name;
     document.getElementById('res-sku').textContent    = `SKU: ${prod.sku}`;
     document.getElementById('res-system').textContent = prod.stock_quantity;
@@ -338,7 +325,7 @@
     document.getElementById('input-fisik').value      = '';
     document.getElementById('res-diff-box').className = 'stock-box';
     document.getElementById('result-card').classList.add('show');
-    document.getElementById('input-fisik').focus();
+    setTimeout(() => document.getElementById('input-fisik').focus(), 100);
   }
 
   function updateDiff() {
