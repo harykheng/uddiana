@@ -59,8 +59,30 @@
 
     .scanner-hint {
       text-align: center; color: #64748b; font-size: 12px;
-      margin: 0 16px 12px;
+      margin: 0 16px 8px;
     }
+    .search-wrap { margin: 0 16px 12px; position: relative; }
+    .search-input {
+      width: 100%; padding: 11px 14px; font-size: 14px;
+      background: #1e293b; border: 1.5px solid #334155;
+      border-radius: 10px; color: #f1f5f9; box-sizing: border-box;
+    }
+    .search-input::placeholder { color: #475569; }
+    .search-input:focus { outline: none; border-color: #3b82f6; }
+    .search-dropdown {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: #1e293b; border: 1.5px solid #334155; border-radius: 10px;
+      z-index: 100; max-height: 240px; overflow-y: auto; display: none;
+    }
+    .search-dropdown.show { display: block; }
+    .search-item {
+      padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #0f172a;
+      transition: background .1s;
+    }
+    .search-item:last-child { border-bottom: none; }
+    .search-item:hover, .search-item:active { background: #2d3f55; }
+    .search-item .si-name { font-size: 13px; font-weight: 600; color: #f1f5f9; }
+    .search-item .si-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
 
     /* Result card */
     .result-card {
@@ -168,6 +190,14 @@
   </div>
   <div class="scanner-hint" id="scanner-hint">Arahkan kamera ke barcode produk</div>
 
+  <!-- Manual search fallback -->
+  <div class="search-wrap" id="search-wrap" style="display:none">
+    <input type="text" class="search-input" id="search-input"
+      placeholder="🔍 Cari nama produk atau SKU..."
+      oninput="onSearchInput()" onblur="setTimeout(()=>closeDropdown(),200)" autocomplete="off">
+    <div class="search-dropdown" id="search-dropdown"></div>
+  </div>
+
   <!-- Done card -->
   <div class="done-card" id="done-card">
     <div class="done-icon">✅</div>
@@ -226,6 +256,7 @@
   let scanner        = null;
   let scanning       = true;
   let recentItems    = [];
+  let allProducts    = [];
 
   async function init() {
     const auth = await requireSales();
@@ -236,6 +267,8 @@
     if (activeSession) {
       startScanner();
       loadRecentItems();
+      loadAllProducts();
+      document.getElementById('search-wrap').style.display = 'block';
     }
   }
 
@@ -431,6 +464,81 @@
     ['result-card','done-card','notfound-card'].forEach(id => {
       document.getElementById(id).classList.remove('show');
     });
+  }
+
+  async function loadAllProducts() {
+    let all = [], from = 0, CHUNK = 1000;
+    while (true) {
+      const { data } = await supabase.from('products').select('id,name,sku,stock_quantity,unit').order('name').range(from, from + CHUNK - 1);
+      if (!data?.length) break;
+      all = all.concat(data);
+      if (data.length < CHUNK) break;
+      from += CHUNK;
+    }
+    allProducts = all;
+  }
+
+  function onSearchInput() {
+    const q = document.getElementById('search-input').value.trim().toLowerCase();
+    const dropdown = document.getElementById('search-dropdown');
+    if (!q) { dropdown.classList.remove('show'); return; }
+
+    const results = allProducts.filter(p =>
+      p.name.toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q)
+    ).slice(0, 8);
+
+    if (!results.length) {
+      dropdown.innerHTML = '<div class="search-item"><div class="si-name" style="color:#64748b">Produk tidak ditemukan</div></div>';
+    } else {
+      dropdown.innerHTML = results.map(p => `
+        <div class="search-item" onmousedown="selectProduct('${p.id}')">
+          <div class="si-name">${escapeHtml(p.name)}</div>
+          <div class="si-meta">SKU: ${p.sku||'—'} · Stok: ${p.stock_quantity} ${p.unit||'pcs'}</div>
+        </div>`).join('');
+    }
+    dropdown.classList.add('show');
+  }
+
+  function closeDropdown() {
+    document.getElementById('search-dropdown').classList.remove('show');
+  }
+
+  async function selectProduct(productId) {
+    closeDropdown();
+    document.getElementById('search-input').value = '';
+    scanning = false;
+
+    const prod = allProducts.find(p => p.id === productId);
+    if (!prod) return;
+    currentProduct = prod;
+    hideAllCards();
+
+    // Cek sudah di-scan di sesi ini
+    const { data: alreadyScanned } = await supabase
+      .from('opname_items')
+      .select('physical_stock,scanned_by_name')
+      .eq('session_id', activeSession.id)
+      .eq('product_id', prod.id)
+      .limit(1);
+
+    if (alreadyScanned?.length) {
+      const item = alreadyScanned[0];
+      const diff = item.physical_stock - prod.stock_quantity;
+      document.getElementById('done-title').textContent = prod.name;
+      document.getElementById('done-sub').textContent =
+        `Sudah di-scan oleh ${item.scanned_by_name || 'Unknown'} · Fisik: ${item.physical_stock} · Selisih: ${diff >= 0 ? '+' : ''}${diff}`;
+      document.getElementById('done-card').classList.add('show');
+      return;
+    }
+
+    document.getElementById('res-name').textContent   = prod.name;
+    document.getElementById('res-sku').textContent    = `SKU: ${prod.sku||'—'}`;
+    document.getElementById('res-system').textContent = prod.stock_quantity;
+    document.getElementById('res-diff').textContent   = '—';
+    document.getElementById('input-fisik').value      = '';
+    document.getElementById('res-diff-box').className = 'stock-box';
+    document.getElementById('result-card').classList.add('show');
+    setTimeout(() => document.getElementById('input-fisik').focus(), 100);
   }
 
   async function loadRecentItems() {
