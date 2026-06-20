@@ -359,7 +359,7 @@
       <div id="edit-items-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
         ${items.map((it, idx) => `
           <div class="edit-item-row" data-item-id="${it.id}" data-original-qty="${it.quantity}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:4px">
-            <div style="display:grid;grid-template-columns:minmax(0,1fr) 70px 150px 130px;gap:8px;align-items:end">
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) 60px 120px 110px 110px;gap:8px;align-items:end">
               <div>
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Produk</label>
                 <select class="edit-product-sel" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
@@ -371,8 +371,13 @@
                 <input type="number" class="edit-qty" value="${it.quantity}" min="1" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
               </div>
               <div>
-                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga</label>
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga Jual</label>
                 <input type="text" inputmode="numeric" data-number class="edit-price" value="${Number(it.price||0).toLocaleString('id-ID')}" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
+              </div>
+              <div>
+                <label style="font-size:11px;font-weight:600;color:#f59e0b;display:block;margin-bottom:4px">Harga Modal</label>
+                <input type="text" inputmode="numeric" data-number class="edit-cost" value="${(() => { const pr = allProducts.find(x => x.id === it.product_id); return Number(it.cost_price || pr?.cost || 0).toLocaleString('id-ID'); })()}" placeholder="0" style="width:100%;padding:8px;border:1.5px solid ${(it.cost_price || allProducts.find(x=>x.id===it.product_id)?.cost) ? '#e2e8f0' : '#f59e0b'};border-radius:6px;font-size:13px;outline:none;background:${(it.cost_price || allProducts.find(x=>x.id===it.product_id)?.cost) ? '#fff' : '#fffbeb'}">
+                ${!(it.cost_price || allProducts.find(x=>x.id===it.product_id)?.cost) ? '<span style="font-size:10px;color:#f59e0b;margin-top:3px;display:block">⚠ Belum ada, isi untuk update</span>' : ''}
               </div>
               <div>
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Subtotal</label>
@@ -441,7 +446,7 @@
       const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
       const sub = Math.ceil((qty * price) / 100) * 100;
       const opt = row.querySelector('.edit-product-sel').options[row.querySelector('.edit-product-sel').selectedIndex];
-      const cost = parseFloat(opt.dataset.cost) || 0;
+      const cost = parseFormattedNumber(row.querySelector('.edit-cost').value || '0');
       const productName = opt.text || '';
 
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); setLoading(btn, false); return; }
@@ -461,7 +466,9 @@
       total += sub;
 
       // Selalu update harga jual produk sesuai harga di faktur
-      await supabase.from('products').update({ price }).eq('id', productId);
+      const productUpdate = { price };
+      if (cost > 0) productUpdate.cost = cost;
+      await supabase.from('products').update(productUpdate).eq('id', productId);
     }
 
     const { data: { session } } = await supabase.auth.getSession();
