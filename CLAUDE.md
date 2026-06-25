@@ -316,7 +316,7 @@ git push -u origin feat/nama-fitur
 ## Print Invoice
 
 Nama perusahaan di print: **DIANA KOSMETIK**.  
-`@page { size: 9in 11.5in; margin: 0.3in 0.4in; }` — Continuous Form Epson LQ-310 (kertas 9" x 11.5").  
+`@page { size: 8.5in 11.5in; margin: 0.3in 0.4in; }` — Continuous Form Epson LQ-310.  
 **JANGAN** pakai `<img>` logo di print area — browser tidak load gambar dari `display:none`.
 
 ## Pending Migrations
