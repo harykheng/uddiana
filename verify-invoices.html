@@ -43,6 +43,22 @@
     .vi-card-actions .btn { flex: 1; min-width: 0; font-size: 12px; text-align: center; justify-content: center; }
     .vi-card-actions .btn-success { background: #dcfce7; color: #166534; border: none; }
     .vi-card-actions .btn-success:hover { background: #bbf7d0; }
+
+    /* ── EDIT ITEM GRID — responsive ── */
+    .edit-item-grid {
+      display: grid;
+      grid-template-columns: minmax(0,1fr) 60px 120px 110px 110px;
+      gap: 8px;
+      align-items: start;
+    }
+    @media (max-width: 768px) {
+      .edit-item-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .edit-item-grid > div:first-child {
+        grid-column: 1 / -1;
+      }
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
@@ -426,7 +442,7 @@
       <div id="edit-items-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
         ${items.map((it, idx) => `
           <div class="edit-item-row" data-item-id="${it.id}" data-original-qty="${it.quantity}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:4px">
-            <div style="display:grid;grid-template-columns:minmax(0,1fr) 60px 120px 110px 110px;gap:8px;align-items:start">
+            <div class="edit-item-grid">
               <div>
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Produk</label>
                 <select class="edit-product-sel" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
