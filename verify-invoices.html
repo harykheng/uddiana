@@ -16,6 +16,34 @@
     .ts-dropdown-content { max-height:220px; }
     .ts-dropdown { z-index:9999 !important; }
   </style>
+  <style>
+    /* ── MOBILE VERIFY CARDS ── */
+    @media (max-width: 768px) {
+      .table-wrap { display: none; }
+      #verify-mobile { display: block !important; }
+    }
+    .vi-card {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    .vi-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 6px;
+    }
+    .vi-card-num { font-weight: 800; font-size: 14px; color: #1e40af; }
+    .vi-card-customer { font-weight: 700; font-size: 15px; color: #0f172a; margin-bottom: 4px; }
+    .vi-card-meta { font-size: 12px; color: #64748b; margin-bottom: 8px; }
+    .vi-card-total { font-size: 16px; font-weight: 800; color: #2563eb; margin-bottom: 12px; }
+    .vi-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .vi-card-actions .btn { flex: 1; min-width: 0; font-size: 12px; text-align: center; justify-content: center; }
+    .vi-card-actions .btn-success { background: #dcfce7; color: #166534; border: none; }
+    .vi-card-actions .btn-success:hover { background: #bbf7d0; }
+  </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -100,6 +128,7 @@
             </tbody>
           </table>
         </div>
+        <div id="verify-mobile" style="display:none;padding:10px 12px"></div>
       </div>
     </main>
   </div>
@@ -201,6 +230,7 @@
     );
 
     document.getElementById('inv-count').textContent = filtered.length;
+    renderMobileCards(filtered);
     const tbody = document.getElementById('inv-table');
 
     if (!filtered.length) {
@@ -234,6 +264,43 @@
         <td>${vbadge}</td>
         <td>${actions}</td>
       </tr>`;
+    }).join('');
+  }
+
+  function renderMobileCards(filtered) {
+    const el = document.getElementById('verify-mobile');
+    if (!el) return;
+    if (!filtered.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><h4>Tidak ada faktur</h4><p>Tidak ada faktur yang perlu diverifikasi</p></div>`;
+      return;
+    }
+    const termMap = { cod:'COD', '14_days':'14 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
+    el.innerHTML = filtered.map(inv => {
+      const vs = inv.verification_status;
+      const badge = vs === 'pending'
+        ? `<span class="badge badge-warning">Menunggu</span>`
+        : vs === 'approved'
+        ? `<span class="badge badge-success">Disetujui</span>`
+        : `<span class="badge badge-danger">Ditolak</span>`;
+
+      const actions = vs === 'pending'
+        ? `<button class="btn btn-ghost btn-sm" onclick="openDetail('${inv.id}')">👁 Detail</button>
+           <button class="btn btn-ghost btn-sm" onclick="openEdit('${inv.id}')">✏️ Edit</button>
+           <button class="btn btn-success btn-sm" onclick="approveInvoice('${inv.id}')">✅ Setujui</button>
+           <button class="btn btn-danger btn-sm" onclick="openReject('${inv.id}')">❌ Tolak</button>`
+        : `<button class="btn btn-ghost btn-sm" onclick="openDetail('${inv.id}')">👁 Detail</button>`;
+
+      return `
+      <div class="vi-card">
+        <div class="vi-card-top">
+          <span class="vi-card-num">${escapeHtml(inv.invoice_number || '—')}</span>
+          ${badge}
+        </div>
+        <div class="vi-card-customer">${escapeHtml(inv.store_name || '—')}</div>
+        <div class="vi-card-meta">👤 ${escapeHtml(inv.sales_name || '—')} · ${formatDate(inv.invoice_date)} · ${termMap[inv.payment_term] || inv.payment_term || '—'}</div>
+        <div class="vi-card-total">${formatCurrency(inv.total)}</div>
+        <div class="vi-card-actions">${actions}</div>
+      </div>`;
     }).join('');
   }
 
