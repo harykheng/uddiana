@@ -216,7 +216,7 @@
   }
 
   async function loadProducts() {
-    const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit').eq('is_active', true).order('name'));
+    const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit,price_verified_at').eq('is_active', true).order('name'));
     allProducts = data || [];
   }
 
@@ -379,6 +379,16 @@
       verified_at: new Date().toISOString()
     }).eq('id', id);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+
+    // Tandai price_verified_at untuk semua produk di faktur ini
+    const inv = allInvoices.find(x => x.id === id);
+    const now = new Date().toISOString();
+    for (const item of (inv?.invoice_items || [])) {
+      if (item.product_id) {
+        await supabase.from('products').update({ price_verified_at: now }).eq('id', item.product_id);
+      }
+    }
+
     showToast('Faktur disetujui');
     closeModal('modal-detail');
     loadInvoices();
@@ -454,7 +464,14 @@
                 <input type="number" class="edit-qty" value="${it.quantity}" min="1" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
               </div>
               <div>
-                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga Jual</label>
+                ${(() => {
+                  const pr = allProducts.find(x => x.id === it.product_id);
+                  const vAt = pr?.price_verified_at;
+                  const badge = vAt
+                    ? `<span style="font-size:10px;color:#16a34a;font-weight:600;margin-left:4px">✓ ${formatDate(vAt)}</span>`
+                    : `<span style="font-size:10px;color:#94a3b8;margin-left:4px">belum</span>`;
+                  return `<label style="font-size:11px;font-weight:600;color:#64748b;display:flex;align-items:center;margin-bottom:4px">Harga Jual ${badge}</label>`;
+                })()}
                 <input type="text" inputmode="numeric" data-number class="edit-price" value="${Number(it.price||0).toLocaleString('id-ID')}" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
               </div>
               <div>
@@ -549,7 +566,7 @@
       total += sub;
 
       // Selalu update harga jual produk sesuai harga di faktur
-      const productUpdate = { price };
+      const productUpdate = { price, price_verified_at: new Date().toISOString() };
       if (cost > 0) productUpdate.cost = cost;
       await supabase.from('products').update(productUpdate).eq('id', productId);
     }
