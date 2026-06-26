@@ -470,7 +470,7 @@
                   const pr = allProducts.find(x => x.id === it.product_id);
                   const vAt = pr?.price_verified_at;
                   return vAt
-                    ? `<span style="font-size:10px;color:#16a34a;font-weight:600;display:block;margin-top:3px">✓ Sudah terverifikasi · ${formatDate(vAt)}</span>`
+                    ? `<span style="font-size:10px;color:#16a34a;font-weight:600;display:block;margin-top:3px">✓ Sudah terverifikasi<br>${formatDate(vAt)}</span>`
                     : `<span style="font-size:10px;color:#94a3b8;display:block;margin-top:3px">belum diverifikasi</span>`;
                 })()}
               </div>
