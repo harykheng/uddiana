@@ -152,7 +152,7 @@
       <div class="filter-bar">
         <div class="search-input-wrap" style="flex:1;max-width:300px">
           <span class="search-icon">🔍</span>
-          <input type="text" id="search-input" placeholder="No. faktur, pelanggan..." oninput="handleSearch()">
+          <input type="text" id="search-input" placeholder="No. faktur, pelanggan, produk..." oninput="handleSearch()">
         </div>
         <select id="filter-status" onchange="loadInvoices()">
           <option value="">Semua Status</option>
@@ -531,7 +531,7 @@
     const dateFrom = document.getElementById('filter-date-from').value;
     const dateTo   = document.getElementById('filter-date-to').value;
 
-    let q = supabase.from('invoices').select('*').order('created_at', { ascending: false })
+    let q = supabase.from('invoices').select('*, invoice_items(product_name)').order('created_at', { ascending: false })
       .or('verification_status.is.null,verification_status.eq.approved');
     if (status)   q = q.eq('status', status);
     if (dateFrom) q = q.gte('invoice_date', dateFrom);
@@ -555,9 +555,14 @@
     const search     = document.getElementById('search-input').value.toLowerCase();
     const salesFilter = document.getElementById('filter-sales').value;
     let filtered = allInvoices.filter(inv => {
-      if (search && !inv.invoice_number.toLowerCase().includes(search) &&
-          !inv.customer_name.toLowerCase().includes(search) &&
-          !(inv.store_name || '').toLowerCase().includes(search)) return false;
+      if (search) {
+        const inHeader = inv.invoice_number.toLowerCase().includes(search) ||
+          inv.customer_name.toLowerCase().includes(search) ||
+          (inv.store_name || '').toLowerCase().includes(search);
+        const inItems = (inv.invoice_items || []).some(it =>
+          (it.product_name || '').toLowerCase().includes(search));
+        if (!inHeader && !inItems) return false;
+      }
       if (salesFilter && (inv.sales_name || '') !== salesFilter) return false;
       return true;
     });
