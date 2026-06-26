@@ -464,15 +464,15 @@
                 <input type="number" class="edit-qty" value="${it.quantity}" min="1" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
               </div>
               <div>
+                <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga Jual</label>
+                <input type="text" inputmode="numeric" data-number class="edit-price" value="${Number(it.price||0).toLocaleString('id-ID')}" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
                 ${(() => {
                   const pr = allProducts.find(x => x.id === it.product_id);
                   const vAt = pr?.price_verified_at;
-                  const badge = vAt
-                    ? `<span style="font-size:10px;color:#16a34a;font-weight:600;margin-left:4px">✓ ${formatDate(vAt)}</span>`
-                    : `<span style="font-size:10px;color:#94a3b8;margin-left:4px">belum</span>`;
-                  return `<label style="font-size:11px;font-weight:600;color:#64748b;display:flex;align-items:center;margin-bottom:4px">Harga Jual ${badge}</label>`;
+                  return vAt
+                    ? `<span style="font-size:10px;color:#16a34a;font-weight:600;display:block;margin-top:3px">✓ ${formatDate(vAt)}</span>`
+                    : `<span style="font-size:10px;color:#94a3b8;display:block;margin-top:3px">belum diverifikasi</span>`;
                 })()}
-                <input type="text" inputmode="numeric" data-number class="edit-price" value="${Number(it.price||0).toLocaleString('id-ID')}" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
               </div>
               <div>
                 <label style="font-size:11px;font-weight:600;color:#f59e0b;display:block;margin-bottom:4px">Harga Modal</label>
