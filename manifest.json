@@ -1,0 +1,25 @@
+{
+  "name": "Diana Kosmetik",
+  "short_name": "UD Diana",
+  "description": "Sistem Manajemen Stok Diana Kosmetik",
+  "start_url": "/sales.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0d9488",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
