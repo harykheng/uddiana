@@ -232,7 +232,7 @@
     <div class="input-group">
       <label>Stok Fisik (hasil hitung)</label>
       <input type="number" min="0" class="input-fisik-big" id="input-fisik"
-        oninput="updateDiff()" placeholder="0">
+        oninput="updateDiff()" onkeydown="onFisikKeydown(event)" placeholder="0">
     </div>
     <button class="btn-submit" id="btn-submit" onclick="submitScan()">✅ Simpan</button>
     <button class="btn-scan-again" onclick="resumeScanner()">↩ Batal, Scan Lagi</button>
@@ -501,6 +501,11 @@
     // Refresh recent
     loadRecentItems();
     showToast('Tersimpan!', 'success');
+
+    // Desktop: auto-focus search bar supaya langsung bisa scan berikutnya
+    if (!window.matchMedia('(pointer: coarse)').matches) {
+      setTimeout(() => document.getElementById('search-input')?.focus(), 150);
+    }
   }
 
   function resumeScanner() {
@@ -551,6 +556,13 @@
         </div>`).join('');
     }
     dropdown.classList.add('show');
+  }
+
+  function onFisikKeydown(e) {
+    if (e.key !== 'Enter') return;
+    if (window.matchMedia('(pointer: coarse)').matches) return; // skip di mobile
+    e.preventDefault();
+    submitScan();
   }
 
   function onSearchKeydown(e) {
