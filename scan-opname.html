@@ -5,10 +5,13 @@
   <link rel="icon" href="favicon.ico" type="image/x-icon">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Scan Opname - StokManager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <link rel="stylesheet" href="css/style.css">
   <style>
+    * { font-family: 'Plus Jakarta Sans', sans-serif; }
     body { background: #0f172a; }
     .scan-page { min-height: 100vh; display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; }
 
@@ -163,6 +166,98 @@
     .ri-diff.zero { color: #475569; }
 
     .pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
+
+    /* ── DESKTOP LAYOUT ─────────────────────────────── */
+    @media (min-width: 769px) {
+      body { background: #f1f5f9; }
+
+      .scan-page {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 0 28px 32px;
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        grid-template-areas: "topbar topbar" "badge badge" "main recent" "pb pb";
+        gap: 0 20px;
+        align-content: start;
+      }
+
+      /* Topbar */
+      .scan-topbar {
+        grid-area: topbar;
+        background: #fff;
+        border-radius: 16px;
+        margin: 24px 0 14px;
+        padding: 18px 28px;
+        box-shadow: 0 1px 4px rgba(0,0,0,.07);
+      }
+      .scan-topbar h1 { color: #0f172a; font-size: 20px; font-weight: 800; }
+      .scan-topbar a  { color: #64748b; font-size: 13px; font-weight: 600; }
+
+      /* Session badge */
+      .session-badge { grid-area: badge; margin: 0 0 16px; border-radius: 10px; }
+
+      /* Camera hidden */
+      .scanner-wrap, .scanner-hint { display: none !important; }
+
+      /* Main column */
+      .desktop-main { grid-area: main; }
+
+      /* Search */
+      .search-wrap { margin: 0 0 14px; }
+      .search-input {
+        background: #fff; border-color: #e2e8f0; color: #0f172a;
+        border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 500;
+        box-shadow: 0 1px 3px rgba(0,0,0,.06);
+      }
+      .search-input::placeholder { color: #94a3b8; }
+      .search-dropdown { background: #fff; border-color: #e2e8f0; box-shadow: 0 8px 24px rgba(0,0,0,.1); border-radius: 12px; }
+      .search-item { border-bottom-color: #f1f5f9; }
+      .search-item:hover, .search-item:active { background: #f8fafc; }
+      .search-item .si-name { color: #0f172a; }
+      .search-item .si-meta { color: #64748b; }
+
+      /* Result card */
+      .result-card { background: #fff; border-radius: 16px; margin: 0 0 14px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+      .result-card .prod-name { color: #0f172a; font-size: 17px; }
+      .result-card .prod-sku  { color: #64748b; }
+      .stock-box { background: #f8fafc; }
+      .stock-box .label { color: #64748b; }
+      .stock-box .value { color: #0f172a; }
+      .stock-box.diff-pos .value { color: #16a34a; }
+      .stock-box.diff-neg .value { color: #dc2626; }
+      .stock-box.diff-zero .value { color: #94a3b8; }
+      .input-fisik-big {
+        background: #f8fafc; border-color: #e2e8f0; color: #0f172a;
+        border-radius: 12px; font-size: 28px;
+      }
+      .input-fisik-big:focus { border-color: #3b82f6; background: #fff; }
+
+      /* Done card */
+      .done-card { background: #f0fdf4; border-radius: 16px; margin: 0 0 14px; }
+      .done-card .done-title { color: #15803d; }
+      .done-card .done-sub   { color: #166534; }
+      .done-card .btn-scan-again { color: #15803d; border-color: #86efac; background: transparent; }
+
+      /* Not found card */
+      .notfound-card { background: #fff; border-radius: 16px; margin: 0 0 14px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+      .notfound-card .nf-title { color: #dc2626; }
+      .notfound-card .nf-sub   { color: #64748b; }
+
+      /* Recent column */
+      .recent-wrap {
+        grid-area: recent;
+        background: #fff; border-radius: 16px; padding: 20px;
+        box-shadow: 0 1px 4px rgba(0,0,0,.07);
+        height: fit-content; position: sticky; top: 20px; margin: 0;
+      }
+      .recent-title { color: #0f172a; font-size: 12px; font-weight: 700; }
+      .recent-item  { border-bottom-color: #f1f5f9; }
+      .recent-item .ri-name { color: #0f172a; }
+      .recent-item .ri-by   { color: #94a3b8; }
+
+      .pb-safe { grid-area: pb; }
+    }
   </style>
 </head>
 <body>
@@ -189,6 +284,9 @@
     </div>
   </div>
   <div class="scanner-hint" id="scanner-hint">Arahkan kamera ke barcode produk</div>
+
+  <!-- Main content (desktop: left column) -->
+  <div class="desktop-main">
 
   <!-- Manual search fallback -->
   <div class="search-wrap" id="search-wrap" style="display:none">
@@ -238,7 +336,9 @@
     <button class="btn-scan-again" onclick="resumeScanner()">↩ Batal, Scan Lagi</button>
   </div>
 
-  <!-- Recent scans -->
+  </div><!-- /desktop-main -->
+
+  <!-- Recent scans (desktop: right column) -->
   <div class="recent-wrap">
     <div class="recent-title">Scan Terakhir di Sesi Ini</div>
     <div id="recent-list"><div style="color:#475569;font-size:12px;padding:8px 0">Belum ada scan</div></div>
