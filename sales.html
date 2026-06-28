@@ -1047,6 +1047,14 @@ function recalcTotal() {
 
   async function submitInvoice() {
     const btn = document.getElementById('btn-submit');
+
+    // Cek sesi stock opname aktif
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa buat faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const customerId = customerTS ? customerTS.getValue() : document.getElementById('inv-customer').value;
     const date = document.getElementById('inv-date').value;
     const term = document.getElementById('inv-term').value;
