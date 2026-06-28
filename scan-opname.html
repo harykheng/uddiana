@@ -194,7 +194,7 @@
   <div class="search-wrap" id="search-wrap" style="display:none">
     <input type="text" class="search-input" id="search-input"
       placeholder="🔍 Cari nama produk atau SKU..."
-      oninput="onSearchInput()" onblur="setTimeout(()=>closeDropdown(),200)" autocomplete="off">
+      oninput="onSearchInput()" onkeydown="onSearchKeydown(event)" onblur="setTimeout(()=>closeDropdown(),200)" autocomplete="off">
     <div class="search-dropdown" id="search-dropdown"></div>
   </div>
 
@@ -551,6 +551,21 @@
         </div>`).join('');
     }
     dropdown.classList.add('show');
+  }
+
+  function onSearchKeydown(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const q = document.getElementById('search-input').value.trim();
+    if (!q) return;
+    // Exact SKU match — langsung select (untuk barcode scanner)
+    const exact = allProducts.find(p => (p.sku||'').toLowerCase() === q.toLowerCase());
+    if (exact) { selectProduct(exact.id); return; }
+    // Fallback: kalau hasil filter cuma 1, langsung select juga
+    const results = allProducts.filter(p =>
+      p.name.toLowerCase().includes(q.toLowerCase()) || (p.sku||'').toLowerCase().includes(q.toLowerCase())
+    );
+    if (results.length === 1) selectProduct(results[0].id);
   }
 
   function closeDropdown() {
