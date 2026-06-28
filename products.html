@@ -433,6 +433,9 @@
   async function init() {
     const auth = await requireAdmin(); if (!auth) return;
     isSuperAdmin = auth.profile.role === 'super_admin';
+    document.getElementById('mobile-action-sheet')?.addEventListener('click', e => {
+      if (e.target === e.currentTarget) closeMobileAction();
+    });
     // Sembunyikan th & form field harga modal untuk admin biasa
     if (!isSuperAdmin) {
       document.querySelectorAll('.col-harga-modal').forEach(el => el.style.display = 'none');
@@ -586,10 +589,10 @@
         <td>
           <div class="table-actions">
             <button class="btn btn-ghost btn-sm" onclick="openProductInfo('${p.id}')" title="Info Produk">ℹ️</button>
-            <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}','${escapeHtml(p.name)}',${p.stock_quantity})" title="Sesuaikan Stok">📊</button>
+            <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}')" title="Sesuaikan Stok">📊</button>
             <button class="btn btn-ghost btn-sm" onclick="openEditProduct('${p.id}')" title="Edit">✏️</button>
             <button class="btn btn-ghost btn-sm" onclick="openDuplicateProduct('${p.id}')" title="Duplikat">📋</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}','${escapeHtml(p.name)}')" title="Hapus">🗑</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteProduct('${p.id}')" title="Hapus">🗑</button>
           </div>
         </td>
       </tr>`;
@@ -777,11 +780,13 @@
     loadProducts();
   }
 
-  async function deleteProduct(id, name) {
-    if (!showConfirm(`Hapus produk "${name}"?`)) return;
+  async function deleteProduct(id) {
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    if (!showConfirm(`Hapus produk "${p.name}"?`)) return;
     const { error } = await supabase.from('products').update({ is_active: false }).eq('id', id);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
-    showToast(`Produk "${name}" dihapus`);
+    showToast(`Produk "${p.name}" dihapus`);
     loadProducts();
   }
 
@@ -814,10 +819,12 @@
   }
 
   // ── ADJUST STOCK ───────────────────────────────────────────
-  function openAdjustStock(id, name, currentStock) {
+  function openAdjustStock(id) {
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
     document.getElementById('adjust-product-id').value = id;
-    document.getElementById('adjust-product-name').value = name;
-    document.getElementById('adjust-current-stock').value = currentStock;
+    document.getElementById('adjust-product-name').value = p.name;
+    document.getElementById('adjust-current-stock').value = p.stock_quantity;
     document.getElementById('adjust-qty').value = '';
     document.getElementById('adjust-notes').value = '';
     openModal('modal-adjust');
@@ -1265,15 +1272,12 @@
     if (!id) return;
     const p = allProducts.find(x => x.id === id);
     if (fn === 'info')      openProductInfo(id);
-    else if (fn === 'stock')     openAdjustStock(id, p.name, p.stock_quantity);
+    else if (fn === 'stock')     openAdjustStock(id);
     else if (fn === 'edit') openEditProduct(id);
     else if (fn === 'dup')  openDuplicateProduct(id);
-    else if (fn === 'del')  deleteProduct(id, p.name);
+    else if (fn === 'del')  deleteProduct(id);
   }
 
-  document.getElementById('mobile-action-sheet').addEventListener('click', e => {
-    if (e.target === e.currentTarget) closeMobileAction();
-  });
 </script>
 
 <!-- MODAL: PRODUCT INFO -->
