@@ -555,6 +555,7 @@
 
   function onSearchKeydown(e) {
     if (e.key !== 'Enter') return;
+    if (window.matchMedia('(pointer: coarse)').matches) return; // skip di mobile/touch
     e.preventDefault();
     const q = document.getElementById('search-input').value.trim();
     if (!q) return;
