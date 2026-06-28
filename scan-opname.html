@@ -407,7 +407,7 @@
     // Update stok produk
     const { error: errProd } = await supabase
       .from('products')
-      .update({ stock_quantity: fisik })
+      .update({ stock_quantity: fisik, last_opname_session_id: activeSession.id })
       .eq('id', currentProduct.id);
 
     if (errProd) { setLoading(btn, false); showToast('Gagal update stok: ' + errProd.message, 'error'); return; }

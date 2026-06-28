@@ -173,6 +173,13 @@
           <option value="out">Stok Habis</option>
           <option value="ok">Stok Normal</option>
         </select>
+        <div id="filter-opname-wrap" style="display:none">
+          <select id="filter-opname" onchange="renderProducts()">
+            <option value="">Semua Opname</option>
+            <option value="done">Sudah Opname</option>
+            <option value="not">Belum Opname</option>
+          </select>
+        </div>
       </div>
 
       <div class="card">
@@ -421,6 +428,7 @@
   const handleSearch = debounce(() => { currentPage = 1; renderProducts(); }, 350);
 
   let isSuperAdmin = false;
+  let activeOpnameSession = null;
 
   async function init() {
     const auth = await requireAdmin(); if (!auth) return;
@@ -429,8 +437,16 @@
     if (!isSuperAdmin) {
       document.querySelectorAll('.col-harga-modal').forEach(el => el.style.display = 'none');
     }
+    await loadActiveOpnameSession();
     await loadCategories();
     await loadProducts();
+  }
+
+  async function loadActiveOpnameSession() {
+    const { data } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    activeOpnameSession = data?.[0] || null;
+    const wrap = document.getElementById('filter-opname-wrap');
+    if (wrap) wrap.style.display = activeOpnameSession ? '' : 'none';
   }
 
   async function loadCategories() {
@@ -497,13 +513,17 @@
   function renderProducts() {
     const search = document.getElementById('search-input').value.toLowerCase();
     const stockFilter = document.getElementById('filter-stock').value;
+    const opnameFilter = document.getElementById('filter-opname')?.value || '';
     let filtered = allProducts.filter(p => {
       const matchSearch = !search || p.name.toLowerCase().includes(search) || (p.sku||'').toLowerCase().includes(search) || (p.description||'').toLowerCase().includes(search);
       let matchStock = true;
       if (stockFilter === 'low') matchStock = p.stock_quantity > 0 && p.stock_quantity <= p.min_stock;
       if (stockFilter === 'out') matchStock = p.stock_quantity <= 0;
       if (stockFilter === 'ok') matchStock = p.stock_quantity > p.min_stock;
-      return matchSearch && matchStock;
+      let matchOpname = true;
+      if (opnameFilter === 'done') matchOpname = activeOpnameSession && p.last_opname_session_id === activeOpnameSession.id;
+      if (opnameFilter === 'not') matchOpname = !activeOpnameSession || p.last_opname_session_id !== activeOpnameSession.id;
+      return matchSearch && matchStock && matchOpname;
     });
 
     // Sort
@@ -537,6 +557,12 @@
       let stockClass = 'stock-ok';
       if (p.stock_quantity <= 0) stockClass = 'stock-low';
       else if (p.stock_quantity <= p.min_stock) stockClass = 'stock-warn';
+      const isOpnamed = activeOpnameSession && p.last_opname_session_id === activeOpnameSession.id;
+      const opnameBadge = activeOpnameSession
+        ? (isOpnamed
+          ? `<div style="font-size:10px;color:#16a34a;font-weight:600;margin-top:3px">✓ Opname</div>`
+          : `<div style="font-size:10px;color:#94a3b8;margin-top:3px">Belum</div>`)
+        : '';
       return `<tr>
         <td class="text-muted col-hide-mobile" style="font-size:12px">${start + i + 1}</td>
         <td><code style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px">${escapeHtml(p.sku)}</code></td>
@@ -551,6 +577,7 @@
         <td class="text-right font-bold ${stockClass}">
           ${p.stock_quantity}
           ${p.stock_quantity >= 12 && p.unit === 'pcs' ? `<div class="col-lusin-hint" style="font-size:10px;font-weight:400;color:var(--text-muted);margin-top:2px">${toLosinDisplay(p.stock_quantity)}</div>` : ''}
+          ${opnameBadge}
         </td>
         <td class="text-right col-hide-mobile">${p.min_stock}</td>
         <td class="col-hide-mobile">${escapeHtml(p.unit)}</td>
@@ -588,6 +615,11 @@
       else if (stockQty <= p.min_stock) { stockCls = 'product-card-stock-warn'; stockLabel = 'Menipis'; }
       const lusin = stockQty >= 12 && p.unit === 'pcs' ? ` · ${toLosinDisplay(stockQty)}` : '';
       const unitLabel = p.unit || 'pcs';
+      const mobileOpnameBadge = activeOpnameSession
+        ? (p.last_opname_session_id === activeOpnameSession.id
+          ? `<span style="font-size:10px;background:#dcfce7;color:#16a34a;padding:2px 6px;border-radius:4px;font-weight:600">✓ Opname</span>`
+          : `<span style="font-size:10px;background:#f1f5f9;color:#94a3b8;padding:2px 6px;border-radius:4px">Belum</span>`)
+        : '';
       return `
       <div class="product-card">
         <div class="product-card-top">
@@ -601,6 +633,7 @@
           <span class="${stockCls}">${stockQty} ${unitLabel}${lusin}</span>
           <span class="product-card-price">${formatCurrency(p.price)}</span>
           ${isSuperAdmin ? `<span class="product-card-cost">Modal: ${formatCurrency(p.cost)}</span>` : ''}
+          ${mobileOpnameBadge}
         </div>
       </div>`;
     }).join('');
