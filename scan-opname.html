@@ -166,6 +166,13 @@
     .ri-diff.zero { color: #475569; }
 
     .pb-safe { padding-bottom: env(safe-area-inset-bottom, 16px); }
+
+    @media (min-width: 769px) {
+      .scan-page { max-width: 860px; flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+      .scan-topbar, .session-badge, .scanner-wrap, .scanner-hint { width: 100%; }
+      .desktop-main { flex: 1; min-width: 0; }
+      .recent-wrap { width: 260px; flex-shrink: 0; margin: 0 0 0 16px; }
+    }
   </style>
 </head>
 <body>
@@ -193,6 +200,7 @@
   </div>
   <div class="scanner-hint" id="scanner-hint">Arahkan kamera ke barcode produk</div>
 
+  <div class="desktop-main">
   <!-- Manual search fallback -->
   <div class="search-wrap" id="search-wrap" style="display:none">
     <input type="text" class="search-input" id="search-input"
@@ -240,6 +248,8 @@
     <button class="btn-submit" id="btn-submit" onclick="submitScan()">✅ Simpan</button>
     <button class="btn-scan-again" onclick="resumeScanner()">↩ Batal, Scan Lagi</button>
   </div>
+
+  </div><!-- /desktop-main -->
 
   <!-- Recent scans -->
   <div class="recent-wrap">
