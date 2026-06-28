@@ -203,6 +203,7 @@
     <div class="done-icon">✅</div>
     <div class="done-title" id="done-title">Sudah Di-scan</div>
     <div class="done-sub" id="done-sub"></div>
+    <button class="btn-submit" id="btn-koreksi" onclick="openCorrection()" style="display:none;margin-bottom:10px;background:#d97706">✏️ Koreksi Stok</button>
     <button class="btn-scan-again" onclick="resumeScanner()">🔄 Scan Produk Lain</button>
   </div>
 
@@ -250,13 +251,16 @@
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
 <script>
-  let activeSession  = null;
-  let currentUser    = null;
-  let currentProduct = null;
-  let scanner        = null;
-  let scanning       = true;
-  let recentItems    = [];
-  let allProducts    = [];
+  let activeSession         = null;
+  let currentUser           = null;
+  let currentProduct        = null;
+  let scanner               = null;
+  let scanning              = true;
+  let recentItems           = [];
+  let allProducts           = [];
+  let isCorrection          = false;
+  let correctionSystemStock = 0;
+  let prevPhysicalStock     = 0;
 
   async function init() {
     const auth = await requireSales();
@@ -335,20 +339,24 @@
     // 2. Cek apakah sudah di-scan di sesi ini
     const { data: alreadyScanned } = await supabase
       .from('opname_items')
-      .select('physical_stock,scanned_by_name')
+      .select('physical_stock,system_stock,scanned_by_name')
       .eq('session_id', activeSession.id)
       .eq('product_id', prod.id)
       .limit(1);
 
     if (alreadyScanned?.length) {
       const item = alreadyScanned[0];
-      const diff = item.physical_stock - prod.stock_quantity;
+      const diff = item.physical_stock - item.system_stock;
+      prevPhysicalStock     = item.physical_stock;
+      correctionSystemStock = item.system_stock;
       document.getElementById('done-title').textContent = prod.name;
       document.getElementById('done-sub').textContent =
         `Sudah di-scan oleh ${item.scanned_by_name || 'Unknown'} · Fisik: ${item.physical_stock} · Selisih: ${diff >= 0 ? '+' : ''}${diff}`;
+      document.getElementById('btn-koreksi').style.display = '';
       document.getElementById('done-card').classList.add('show');
       return;
     }
+    document.getElementById('btn-koreksi').style.display = 'none';
 
     // 3. Tampilkan form input
     document.getElementById('res-name').textContent   = prod.name;
@@ -361,6 +369,19 @@
     setTimeout(() => document.getElementById('input-fisik').focus(), 100);
   }
 
+  function openCorrection() {
+    isCorrection = true;
+    hideAllCards();
+    document.getElementById('res-name').textContent   = currentProduct.name;
+    document.getElementById('res-sku').textContent    = `SKU: ${currentProduct.sku||'—'}`;
+    document.getElementById('res-system').textContent = correctionSystemStock;
+    document.getElementById('input-fisik').value      = prevPhysicalStock;
+    document.getElementById('res-diff-box').className = 'stock-box';
+    document.getElementById('result-card').classList.add('show');
+    updateDiff();
+    setTimeout(() => document.getElementById('input-fisik').focus(), 100);
+  }
+
   function updateDiff() {
     const fisik = parseInt(document.getElementById('input-fisik').value);
     if (!currentProduct || isNaN(fisik)) {
@@ -368,7 +389,8 @@
       document.getElementById('res-diff-box').className = 'stock-box';
       return;
     }
-    const diff = fisik - currentProduct.stock_quantity;
+    const base = isCorrection ? correctionSystemStock : currentProduct.stock_quantity;
+    const diff = fisik - base;
     const el   = document.getElementById('res-diff');
     const box  = document.getElementById('res-diff-box');
     el.textContent = diff >= 0 ? `+${diff}` : `${diff}`;
@@ -382,59 +404,87 @@
       return;
     }
 
-    const fisik  = parseInt(fisikVal);
-    const diff   = fisik - currentProduct.stock_quantity;
-    const btn    = document.getElementById('btn-submit');
+    const fisik     = parseInt(fisikVal);
+    const baseStock = isCorrection ? correctionSystemStock : currentProduct.stock_quantity;
+    const diff      = fisik - baseStock;
+    const btn       = document.getElementById('btn-submit');
     setLoading(btn, true);
 
-    // Double-check belum di-scan (race condition guard)
-    const { data: check } = await supabase
-      .from('opname_items')
-      .select('id,scanned_by_name')
-      .eq('session_id', activeSession.id)
-      .eq('product_id', currentProduct.id)
-      .limit(1);
-
-    if (check?.length) {
-      setLoading(btn, false);
-      hideAllCards();
-      document.getElementById('done-title').textContent = `✅ ${currentProduct.name}`;
-      document.getElementById('done-sub').textContent   = `Baru saja di-scan oleh ${check[0].scanned_by_name || 'pengguna lain'}`;
-      document.getElementById('done-card').classList.add('show');
-      return;
-    }
-
-    // Update stok produk
-    const { error: errProd } = await supabase
-      .from('products')
-      .update({ stock_quantity: fisik, last_opname_session_id: activeSession.id })
-      .eq('id', currentProduct.id);
-
-    if (errProd) { setLoading(btn, false); showToast('Gagal update stok: ' + errProd.message, 'error'); return; }
-
-    // Catat di stock_movements
-    await supabase.from('stock_movements').insert({
-      product_id:      currentProduct.id,
-      product_name:    currentProduct.name,
-      type:            'adjustment',
-      quantity:        Math.abs(diff),
-      quantity_before: currentProduct.stock_quantity,
-      quantity_after:  fisik,
-      notes:           `Stock Opname: ${activeSession.name} (${diff >= 0 ? '+' : ''}${diff})`,
-    });
-
-    // Catat di opname_items
     const userName = currentUser?.profile?.name || currentUser?.session?.user?.email || 'Unknown';
-    await supabase.from('opname_items').insert({
-      session_id:      activeSession.id,
-      product_id:      currentProduct.id,
-      product_name:    currentProduct.name,
-      system_stock:    currentProduct.stock_quantity,
-      physical_stock:  fisik,
-      diff:            diff,
-      scanned_by_id:   currentUser?.session?.user?.id,
-      scanned_by_name: userName,
-    });
+
+    if (isCorrection) {
+      // Mode koreksi: UPDATE opname_items & products
+      const { error: errProd } = await supabase
+        .from('products')
+        .update({ stock_quantity: fisik, last_opname_session_id: activeSession.id })
+        .eq('id', currentProduct.id);
+
+      if (errProd) { setLoading(btn, false); showToast('Gagal update stok: ' + errProd.message, 'error'); return; }
+
+      await supabase.from('stock_movements').insert({
+        product_id:      currentProduct.id,
+        product_name:    currentProduct.name,
+        type:            'adjustment',
+        quantity:        Math.abs(diff),
+        quantity_before: prevPhysicalStock,
+        quantity_after:  fisik,
+        notes:           `Koreksi Opname: ${activeSession.name} (${diff >= 0 ? '+' : ''}${diff})`,
+      });
+
+      await supabase.from('opname_items')
+        .update({ physical_stock: fisik, diff, scanned_by_id: currentUser?.session?.user?.id, scanned_by_name: userName })
+        .eq('session_id', activeSession.id)
+        .eq('product_id', currentProduct.id);
+
+      isCorrection = false;
+    } else {
+      // Double-check belum di-scan (race condition guard)
+      const { data: check } = await supabase
+        .from('opname_items')
+        .select('id,scanned_by_name')
+        .eq('session_id', activeSession.id)
+        .eq('product_id', currentProduct.id)
+        .limit(1);
+
+      if (check?.length) {
+        setLoading(btn, false);
+        hideAllCards();
+        document.getElementById('done-title').textContent = `✅ ${currentProduct.name}`;
+        document.getElementById('done-sub').textContent   = `Baru saja di-scan oleh ${check[0].scanned_by_name || 'pengguna lain'}`;
+        document.getElementById('btn-koreksi').style.display = 'none';
+        document.getElementById('done-card').classList.add('show');
+        return;
+      }
+
+      // Update stok produk
+      const { error: errProd } = await supabase
+        .from('products')
+        .update({ stock_quantity: fisik, last_opname_session_id: activeSession.id })
+        .eq('id', currentProduct.id);
+
+      if (errProd) { setLoading(btn, false); showToast('Gagal update stok: ' + errProd.message, 'error'); return; }
+
+      await supabase.from('stock_movements').insert({
+        product_id:      currentProduct.id,
+        product_name:    currentProduct.name,
+        type:            'adjustment',
+        quantity:        Math.abs(diff),
+        quantity_before: currentProduct.stock_quantity,
+        quantity_after:  fisik,
+        notes:           `Stock Opname: ${activeSession.name} (${diff >= 0 ? '+' : ''}${diff})`,
+      });
+
+      await supabase.from('opname_items').insert({
+        session_id:      activeSession.id,
+        product_id:      currentProduct.id,
+        product_name:    currentProduct.name,
+        system_stock:    currentProduct.stock_quantity,
+        physical_stock:  fisik,
+        diff:            diff,
+        scanned_by_id:   currentUser?.session?.user?.id,
+        scanned_by_name: userName,
+      });
+    }
 
     setLoading(btn, false);
 
@@ -455,8 +505,12 @@
 
   function resumeScanner() {
     hideAllCards();
-    currentProduct = null;
-    scanning = true;
+    currentProduct        = null;
+    scanning              = true;
+    isCorrection          = false;
+    correctionSystemStock = 0;
+    prevPhysicalStock     = 0;
+    document.getElementById('btn-koreksi').style.display = 'none';
     document.getElementById('scanner-hint').textContent = 'Arahkan kamera ke barcode produk';
   }
 
@@ -516,20 +570,24 @@
     // Cek sudah di-scan di sesi ini
     const { data: alreadyScanned } = await supabase
       .from('opname_items')
-      .select('physical_stock,scanned_by_name')
+      .select('physical_stock,system_stock,scanned_by_name')
       .eq('session_id', activeSession.id)
       .eq('product_id', prod.id)
       .limit(1);
 
     if (alreadyScanned?.length) {
       const item = alreadyScanned[0];
-      const diff = item.physical_stock - prod.stock_quantity;
+      const diff = item.physical_stock - item.system_stock;
+      prevPhysicalStock     = item.physical_stock;
+      correctionSystemStock = item.system_stock;
       document.getElementById('done-title').textContent = prod.name;
       document.getElementById('done-sub').textContent =
         `Sudah di-scan oleh ${item.scanned_by_name || 'Unknown'} · Fisik: ${item.physical_stock} · Selisih: ${diff >= 0 ? '+' : ''}${diff}`;
+      document.getElementById('btn-koreksi').style.display = '';
       document.getElementById('done-card').classList.add('show');
       return;
     }
+    document.getElementById('btn-koreksi').style.display = 'none';
 
     document.getElementById('res-name').textContent   = prod.name;
     document.getElementById('res-sku').textContent    = `SKU: ${prod.sku||'—'}`;
