@@ -1612,6 +1612,7 @@
 
     const sortedItems = (items||[]).slice().sort((a,b) => (a.product_name||'').localeCompare(b.product_name||'', 'id'));
     const hasItemDisc = sortedItems.some(item => Number(item.item_discount) > 0);
+    const totalQty = sortedItems.reduce((s, item) => s + (Number(item.quantity) || 0), 0);
 
     const itemsHtml = sortedItems.map(item => {
       const disc     = Number(item.item_discount) || 0;
@@ -1674,6 +1675,7 @@
         <tbody>${itemsHtml}</tbody>
       </table>
       <div class="invoice-summary" style="margin-top:12px">
+        <div class="invoice-summary-row"><span>Total Qty</span><span style="font-weight:600">${totalQty} pcs</span></div>
         <div class="invoice-summary-row"><span>Subtotal</span><span>${formatCurrency(inv.subtotal)}</span></div>
         ${Number(inv.discount) > 0 ? `<div class="invoice-summary-row"><span>Diskon</span><span>- ${formatCurrency(inv.discount)}</span></div>` : ''}
         ${(inv.additional_charges||[]).map(c => `<div class="invoice-summary-row" style="color:var(--text-muted)"><span>${escapeHtml(c.name)}${c.type==='percent'?` (${c.value}%)`:''}</span><span>+${formatCurrency(c.amount)}</span></div>`).join('')}
