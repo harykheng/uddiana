@@ -46,13 +46,7 @@
     .pay-method-btn .method-icon { font-size:22px; display:block; margin-bottom:4px; }
 
   @media print {
-    .sidebar, .topbar, .filter-bar, .no-print,
-    .modal-overlay, .btn, .pagination { display: none !important; }
-    .layout { display: block; }
-    .main { margin-left: 0 !important; }
-    .page { padding: 16px; }
-    .card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
-    th:last-child, td:last-child { display: none; } /* hide Aksi column */
+    body > *:not(#print-piutang) { display: none !important; }
     #print-piutang { display: block !important; }
   }
   #print-piutang { display: none; }
