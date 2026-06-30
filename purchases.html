@@ -154,11 +154,13 @@
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
             <tr style="background:#f8fafc">
-              <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:38%">Produk</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Stok</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Qty</th>
-              <th class="col-harga-modal-po" style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Harga Modal / Unit</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Subtotal</th>
+              <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:28%">Produk</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Stok</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:7%">Qty</th>
+              <th class="col-harga-modal-po" style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Harga Modal</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:13%">Batch/Lot</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:12%">Kadaluarsa</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Subtotal</th>
               <th style="width:8%"></th>
             </tr>
           </thead>
@@ -373,8 +375,10 @@
       </td>
       <td style="padding:5px 6px"><input type="number" id="postock-${id}" readonly value="0" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="number" id="poqty-${id}" value="1" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
-      <td class="col-harga-modal-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
-      <td style="padding:5px 6px"><input type="text" id="posub-${id}" readonly value="0" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td class="col-harga-modal-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
+      <td style="padding:5px 6px"><input type="text" id="pobatch-${id}" placeholder="No. Lot" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="date" id="poexpiry-${id}" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="text" id="posub-${id}" readonly value="0" style="background:#f8fafc;width:90px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 4px"><button onclick="removePoRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
@@ -458,14 +462,16 @@
       const costEl = tr.querySelector('[id^="pocost-"]');
       if (!sel?.value) return;
 
-      const qty  = parseInt(qtyEl?.value) || 0;
-      const cost = parseFormattedNumber(costEl?.value || '0');
-      const prod = products.find(p => p.id === sel.value);
+      const qty    = parseInt(qtyEl?.value) || 0;
+      const cost   = parseFormattedNumber(costEl?.value || '0');
+      const prod   = products.find(p => p.id === sel.value);
+      const batch  = tr.querySelector('[id^="pobatch-"]')?.value?.trim() || null;
+      const expiry = tr.querySelector('[id^="poexpiry-"]')?.value || null;
 
       if (qty <= 0) { showToast('Jumlah harus > 0', 'error'); valid = false; return; }
       const sub = qty * cost;
       totalCost += sub;
-      items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, cost_price: cost, subtotal: sub });
+      items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, cost_price: cost, subtotal: sub, batch_number: batch, expired_date: expiry || null });
     });
 
     if (!valid) return;
@@ -508,13 +514,25 @@
       ? '<span class="badge badge-danger">Dibatalkan</span>'
       : '<span class="badge badge-success">Diterima</span>';
 
-    const itemsHtml = (items||[]).map(item => `
-      <tr>
-        <td style="padding:8px 10px">${escapeHtml(item.product_name)}</td>
+    const today = new Date(); today.setHours(0,0,0,0);
+    const itemsHtml = (items||[]).map(item => {
+      const expDate = item.expired_date ? new Date(item.expired_date) : null;
+      const daysLeft = expDate ? Math.ceil((expDate - today) / 86400000) : null;
+      const expBadge = !expDate ? '<span class="text-muted">—</span>'
+        : daysLeft < 0   ? `<span style="background:#fee2e2;color:#991b1b;padding:2px 7px;border-radius:12px;font-size:11px;font-weight:700">Expired</span>`
+        : daysLeft <= 30 ? `<span style="background:#fef9c3;color:#92400e;padding:2px 7px;border-radius:12px;font-size:11px;font-weight:700">⚠️ ${formatDate(item.expired_date)}</span>`
+        : `<span style="font-size:12px">${formatDate(item.expired_date)}</span>`;
+      return `<tr>
+        <td style="padding:8px 10px">
+          ${escapeHtml(item.product_name)}
+          ${item.batch_number ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">Batch: ${escapeHtml(item.batch_number)}</div>` : ''}
+        </td>
         <td style="padding:8px 10px;text-align:right">${item.quantity}</td>
         <td style="padding:8px 10px;text-align:right">${formatCurrency(item.cost_price)}</td>
+        <td style="padding:8px 10px">${expBadge}</td>
         <td style="padding:8px 10px;text-align:right;font-weight:700">${formatCurrency(item.subtotal)}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     document.getElementById('view-po-body').innerHTML = `
       <div style="display:flex;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">
@@ -531,9 +549,10 @@
       <table style="width:100%;border-collapse:collapse">
         <thead>
           <tr style="background:#f8fafc">
-            <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Produk</th>
+            <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Produk / Batch</th>
             <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Qty</th>
             <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Harga Modal</th>
+            <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Kadaluarsa</th>
             <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Subtotal</th>
           </tr>
         </thead>

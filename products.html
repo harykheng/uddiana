@@ -1203,12 +1203,17 @@
       supabase.from('stock_movements').select('quantity,notes,reference_type,reference_id,created_at').eq('product_id', id).eq('type','out').order('created_at',{ascending:false}).limit(50),
     ]);
 
-    // Lookup nomor PO untuk semua movements yang reference_type = 'purchase'
+    // Lookup nomor PO + batch/expiry untuk movements yang reference_type = 'purchase'
     const poIds = [...new Set((inList||[]).filter(m=>m.reference_type==='purchase'&&m.reference_id).map(m=>m.reference_id))];
     let poMap = {};
+    let poBatchMap = {}; // key: purchase_id → {batch_number, expired_date}
     if (poIds.length) {
-      const { data: pos } = await supabase.from('purchases').select('id,purchase_number').in('id', poIds);
+      const [{ data: pos }, { data: piItems }] = await Promise.all([
+        supabase.from('purchases').select('id,purchase_number').in('id', poIds),
+        supabase.from('purchase_items').select('purchase_id,batch_number,expired_date').in('purchase_id', poIds).eq('product_id', id),
+      ]);
       (pos||[]).forEach(po => { poMap[po.id] = po.purchase_number; });
+      (piItems||[]).forEach(pi => { poBatchMap[pi.purchase_id] = { batch: pi.batch_number, expiry: pi.expired_date }; });
     }
 
     // Lookup nomor faktur untuk movements yang reference_type = 'invoice' / 'sale'
@@ -1231,12 +1236,28 @@
 
     const movRow = (m, color) => {
       const sub = getSubLabel(m, poMap);
+      const batchInfo = poBatchMap[m.reference_id];
+      const today = new Date(); today.setHours(0,0,0,0);
+      let expBadge = '';
+      if (batchInfo?.expiry) {
+        const expDate = new Date(batchInfo.expiry);
+        const daysLeft = Math.ceil((expDate - today) / 86400000);
+        expBadge = daysLeft < 0
+          ? `<span style="background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px">Expired</span>`
+          : daysLeft <= 30
+            ? `<span style="background:#fef9c3;color:#92400e;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px">⚠️ Exp ${formatDate(batchInfo.expiry)}</span>`
+            : `<span style="color:var(--text-muted);font-size:11px;margin-left:4px">Exp: ${formatDate(batchInfo.expiry)}</span>`;
+      }
       return `
       <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f1f5f9">
         <div style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:${color};margin-top:2px"></div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:600;color:var(--text)">${formatDate(m.created_at)}</div>
-          ${sub ? `<div style="font-size:12px;color:var(--text-muted);margin-top:1px">${sub}</div>` : ''}
+          <div style="font-size:12px;color:var(--text-muted);margin-top:1px;display:flex;align-items:center;flex-wrap:wrap;gap:2px">
+            ${sub ? escapeHtml(sub) : ''}
+            ${batchInfo?.batch ? `<span style="background:#f1f5f9;padding:1px 6px;border-radius:10px;font-size:10px;font-family:monospace">${escapeHtml(batchInfo.batch)}</span>` : ''}
+            ${expBadge}
+          </div>
         </div>
         <div style="font-size:13px;font-weight:700;color:${color};flex-shrink:0">+${m.quantity} pcs</div>
       </div>`;
