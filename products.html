@@ -68,10 +68,20 @@
     .import-result ul { margin: 6px 0 0 16px; }
 
     /* ── PRODUCT INFO TABS ── */
-    #pi-tab-in.active, #pi-tab-out.active {
+    #pi-tab-in.active, #pi-tab-out.active, #pi-tab-card.active {
       color: var(--primary) !important;
       border-bottom-color: var(--primary) !important;
     }
+    .kartu-stok-table { width:100%; border-collapse:collapse; font-size:12px; }
+    .kartu-stok-table th { background:#f8fafc; padding:7px 8px; text-align:left; border-bottom:1px solid #e2e8f0; font-size:11px; text-transform:uppercase; color:var(--text-muted); font-weight:700; position:sticky; top:0; }
+    .kartu-stok-table td { padding:7px 8px; border-bottom:1px solid #f1f5f9; vertical-align:top; }
+    .kartu-stok-table .num { text-align:right; }
+    .kartu-stok-table .in-qty  { color:#16a34a; font-weight:700; }
+    .kartu-stok-table .out-qty { color:#ef4444; font-weight:700; }
+    .kartu-stok-table .saldo   { font-weight:700; color:var(--text); }
+    .ks-filter { display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+    .ks-filter input[type=date] { padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; background:var(--surface); color:var(--text); }
+    .ks-filter .ks-summary { font-size:12px; color:var(--text-muted); margin-left:auto; }
 
     /* ── MOBILE CARDS ── */
     @media (max-width: 768px) {
@@ -1155,23 +1165,35 @@
 
   // ── PRODUCT INFO ─────────────────────────────────────────────
   let _piTab = 'in';
+  let _piProductId = null;
+  let _piCurrentStock = 0;
+  let _piCardLoaded = false;
+  let _piAllMovements = [];
+  let _piRefMap = {};
 
   function piSwitchTab(tab) {
     _piTab = tab;
-    ['in','out'].forEach(t => {
+    ['in','out','card'].forEach(t => {
       document.getElementById(`pi-tab-${t}`).classList.toggle('active', t === tab);
       document.getElementById(`pi-panel-${t}`).style.display = t === tab ? 'block' : 'none';
     });
+    if (tab === 'card' && !_piCardLoaded) loadKartuStok();
   }
 
   async function openProductInfo(id) {
     const p = allProducts.find(x => x.id === id);
     if (!p) return;
+    _piProductId = id;
+    _piCurrentStock = p.stock_quantity;
+    _piCardLoaded = false;
+    _piAllMovements = [];
+    _piRefMap = {};
     document.getElementById('pi-name').textContent = p.name;
     document.getElementById('pi-sku').textContent  = p.sku ? `SKU: ${p.sku}` : '';
     document.getElementById('pi-stock').textContent = `Stok: ${p.stock_quantity} pcs`;
     document.getElementById('pi-panel-in').innerHTML  = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Memuat...</div>';
     document.getElementById('pi-panel-out').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Memuat...</div>';
+    document.getElementById('pi-panel-card').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Klik tab untuk memuat...</div>';
     _piTab = 'in';
     piSwitchTab('in');
     openModal('modal-product-info');
@@ -1244,6 +1266,99 @@
       : emptyState;
   }
 
+  async function loadKartuStok() {
+    document.getElementById('pi-panel-card').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Memuat kartu stok...</div>';
+    const id = _piProductId;
+
+    // Fetch ALL movements dengan pagination loop
+    let all = [], from = 0, CHUNK = 1000;
+    while (true) {
+      const { data } = await supabase.from('stock_movements')
+        .select('id,type,quantity,notes,reference_type,reference_id,created_at')
+        .eq('product_id', id)
+        .order('created_at', { ascending: true })
+        .range(from, from + CHUNK - 1);
+      if (!data?.length) break;
+      all = all.concat(data);
+      if (data.length < CHUNK) break;
+      from += CHUNK;
+    }
+
+    // Lookup semua referensi (PO + invoice) sekaligus
+    const poIds  = [...new Set(all.filter(m => m.reference_type === 'purchase' && m.reference_id).map(m => m.reference_id))];
+    const invIds = [...new Set(all.filter(m => ['invoice','sale'].includes(m.reference_type) && m.reference_id).map(m => m.reference_id))];
+    const refMap = {};
+    if (poIds.length) {
+      const { data: pos } = await supabase.from('purchases').select('id,purchase_number').in('id', poIds);
+      (pos||[]).forEach(po => { refMap[po.id] = po.purchase_number; });
+    }
+    if (invIds.length) {
+      const { data: invs } = await supabase.from('invoices').select('id,invoice_number').in('id', invIds);
+      (invs||[]).forEach(inv => { refMap[inv.id] = inv.invoice_number; });
+    }
+
+    // Hitung running balance mundur dari stok sekarang
+    const sumIn  = all.filter(m => m.type === 'in').reduce((s,m) => s + m.quantity, 0);
+    const sumOut = all.filter(m => m.type === 'out').reduce((s,m) => s + m.quantity, 0);
+    let balance = _piCurrentStock - sumIn + sumOut; // initial stock
+    all.forEach(m => {
+      if (m.type === 'in')  balance += m.quantity;
+      else                  balance -= m.quantity;
+      m._saldo = balance;
+    });
+
+    _piAllMovements = all;
+    _piRefMap = refMap;
+    _piCardLoaded = true;
+    renderKartuStok();
+  }
+
+  function renderKartuStok() {
+    const dateFrom = document.getElementById('ks-date-from')?.value || '';
+    const dateTo   = document.getElementById('ks-date-to')?.value   || '';
+
+    const visible = _piAllMovements.filter(m => {
+      const d = m.created_at.slice(0, 10);
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo   && d > dateTo)   return false;
+      return true;
+    });
+
+    const totalMasuk  = visible.filter(m => m.type === 'in').reduce((s,m) => s + m.quantity, 0);
+    const totalKeluar = visible.filter(m => m.type === 'out').reduce((s,m) => s + m.quantity, 0);
+
+    const rows = [...visible].reverse().map(m => {
+      const ref   = _piRefMap[m.reference_id];
+      const label = ref ? escapeHtml(ref) : (m.notes ? escapeHtml(m.notes) : `<span class="text-muted">${m.reference_type||'—'}</span>`);
+      const inQty  = m.type === 'in'  ? `<span class="in-qty">+${m.quantity}</span>`  : '';
+      const outQty = m.type === 'out' ? `<span class="out-qty">−${m.quantity}</span>` : '';
+      return `<tr>
+        <td style="white-space:nowrap;color:var(--text-muted)">${formatDate(m.created_at)}</td>
+        <td>${label}</td>
+        <td class="num">${inQty}</td>
+        <td class="num">${outQty}</td>
+        <td class="num saldo">${m._saldo}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('pi-panel-card').innerHTML = `
+      <div class="ks-filter">
+        <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Dari</span>
+        <input type="date" id="ks-date-from" value="${dateFrom}" onchange="renderKartuStok()">
+        <span style="font-size:12px;font-weight:600;color:var(--text-muted)">s/d</span>
+        <input type="date" id="ks-date-to"   value="${dateTo}"   onchange="renderKartuStok()">
+        ${dateFrom||dateTo ? `<button onclick="document.getElementById('ks-date-from').value='';document.getElementById('ks-date-to').value='';renderKartuStok()" style="font-size:11px;padding:4px 8px;border:1px solid var(--border);border-radius:5px;background:none;cursor:pointer;color:var(--text-muted)">✕ Reset</button>` : ''}
+        <span class="ks-summary">${visible.length} baris · +${totalMasuk} masuk · −${totalKeluar} keluar</span>
+      </div>
+      ${!visible.length ? '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">Tidak ada data pada rentang ini</div>' : `
+      <div style="max-height:360px;overflow-y:auto">
+        <table class="kartu-stok-table">
+          <thead><tr><th>Tanggal</th><th>Keterangan</th><th class="num">Masuk</th><th class="num">Keluar</th><th class="num">Saldo</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`}`;
+  }
+
   document.querySelectorAll('.modal-overlay').forEach(el => {
     el.addEventListener('click', e => { if (e.target === el && !el.hasAttribute('data-no-overlay-close')) closeModal(el.id); });
   });
@@ -1282,7 +1397,7 @@
 
 <!-- MODAL: PRODUCT INFO -->
 <div class="modal-overlay" id="modal-product-info">
-  <div class="modal" style="max-width:460px">
+  <div class="modal" style="max-width:680px">
     <div class="modal-header">
       <div style="min-width:0">
         <h3 id="pi-name" style="margin:0;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></h3>
@@ -1296,11 +1411,13 @@
     <div class="modal-body" style="padding-top:0">
       <!-- Tabs -->
       <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:12px">
-        <button id="pi-tab-in"  onclick="piSwitchTab('in')"  class="active" style="flex:1;padding:10px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);transition:all .15s">📦 Barang Masuk</button>
-        <button id="pi-tab-out" onclick="piSwitchTab('out')" style="flex:1;padding:10px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);transition:all .15s">📤 Barang Keluar</button>
+        <button id="pi-tab-in"   onclick="piSwitchTab('in')"   class="active" style="flex:1;padding:10px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);transition:all .15s">📦 Masuk</button>
+        <button id="pi-tab-out"  onclick="piSwitchTab('out')"  style="flex:1;padding:10px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);transition:all .15s">📤 Keluar</button>
+        <button id="pi-tab-card" onclick="piSwitchTab('card')" style="flex:1;padding:10px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);transition:all .15s">📋 Kartu Stok</button>
       </div>
-      <div id="pi-panel-in"  style="max-height:380px;overflow-y:auto"></div>
-      <div id="pi-panel-out" style="max-height:380px;overflow-y:auto;display:none"></div>
+      <div id="pi-panel-in"   style="max-height:400px;overflow-y:auto"></div>
+      <div id="pi-panel-out"  style="max-height:400px;overflow-y:auto;display:none"></div>
+      <div id="pi-panel-card" style="display:none"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-product-info')">Tutup</button>
