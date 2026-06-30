@@ -353,6 +353,13 @@
           </div>
         </div>
         <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">Item Penjualan</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px">
+          <span style="font-size:15px">🔍</span>
+          <input type="text" id="edit-barcode-scan-input" placeholder="Scan barcode / ketik SKU lalu Enter..."
+            style="flex:1;padding:7px 10px;border:1px solid #86efac;border-radius:6px;font-size:13px;outline:none;background:#fff"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();scanBarcodeEditInvoice(this.value.trim());this.value='';this.focus();}">
+          <span style="font-size:11px;color:#16a34a;white-space:nowrap">Enter setelah scan</span>
+        </div>
         <div class="table-wrap" style="margin-bottom:8px">
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead>
@@ -1260,13 +1267,16 @@
   // ── EDIT INVOICE ───────────────────────────────────────────
   let editInvoiceId = null;
   let editItemRowCount = 0;
-  let editInvoiceItems = []; // cache invoice_items yang di-fetch saat openEditInvoice
+  let editInvoiceItems = [];
+  let editTomSelectInstances = {};
 
   async function openEditInvoice(id) {
     const inv = allInvoices.find(x => x.id === id);
     if (!inv) return;
     editInvoiceId = id;
     editItemRowCount = 0;
+    Object.values(editTomSelectInstances).forEach(ts => ts.destroy());
+    editTomSelectInstances = {};
     document.getElementById('edit-invoice-title').textContent = `Edit Faktur: ${inv.invoice_number}`;
     document.getElementById('edit-inv-payment-term').value = inv.payment_term || 'cod';
     document.getElementById('edit-inv-notes').value = inv.notes || '';
@@ -1318,11 +1328,11 @@
         </div>
       </td>
       <td style="padding:5px 6px"><input type="text" id="esub-${id}" readonly value="${existingItem ? Number(existingItem.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:90px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)"></td>
-      <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcEditInvoiceTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
+      <td style="padding:5px 4px"><button onclick="removeEditItemRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
     const sel = tr.querySelector('select');
-    new TomSelect(sel, {
+    editTomSelectInstances[id] = new TomSelect(sel, {
       placeholder: '— Cari & pilih produk —',
       maxOptions: 200,
       dropdownParent: 'body',
@@ -1337,6 +1347,40 @@
         recalcEditInvoiceRow(id);
       }
     });
+  }
+
+  function removeEditItemRow(id) {
+    editTomSelectInstances[id]?.destroy();
+    delete editTomSelectInstances[id];
+    document.getElementById(id)?.remove();
+    recalcEditInvoiceTotal();
+  }
+
+  function scanBarcodeEditInvoice(sku) {
+    if (!sku) return;
+    const product = products.find(p => p.sku && p.sku.trim() === sku.trim());
+    if (!product) { showToast(`Produk SKU "${sku}" tidak ditemukan`, 'error'); return; }
+
+    const rows = document.querySelectorAll('#edit-invoice-items-body tr[id]');
+    let existingRowId = null;
+    for (const tr of rows) {
+      const ts = editTomSelectInstances[tr.id];
+      if (ts && ts.getValue() === product.id) { existingRowId = tr.id; break; }
+    }
+
+    if (existingRowId) {
+      const qtyInput = document.getElementById(`eqty-${existingRowId}`);
+      const current = parseFormattedNumber(qtyInput.value) || 0;
+      qtyInput.value = (current + 1).toLocaleString('id-ID');
+      onEditQtyChange(existingRowId);
+      showToast(`+1 ${product.name} → total ${current + 1}`, 'success');
+    } else {
+      addEditItemRow();
+      const allRows = document.querySelectorAll('#edit-invoice-items-body tr[id]');
+      const lastRowId = allRows[allRows.length - 1].id;
+      editTomSelectInstances[lastRowId]?.setValue(product.id);
+      showToast(`Ditambahkan: ${product.name}`, 'success');
+    }
   }
 
   function recalcEditInvoiceRow(rowId) {
