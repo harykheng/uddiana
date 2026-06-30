@@ -44,6 +44,25 @@
     }
     .pay-method-btn.active { border-color:var(--primary); background:var(--primary-light); color:var(--primary); }
     .pay-method-btn .method-icon { font-size:22px; display:block; margin-bottom:4px; }
+
+  @media print {
+    body > *:not(#print-piutang) { display: none !important; }
+    #print-piutang { display: block !important; }
+  }
+  #print-piutang { display: none; }
+  .print-piutang { font-family: Arial, sans-serif; padding: 32px; font-size: 13px; color: #111; }
+  .print-piutang h2 { font-size: 20px; font-weight: 800; margin: 0 0 2px; }
+  .print-piutang .sub { font-size: 12px; color: #555; margin: 0 0 16px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+  .print-piutang .aging-row { display: flex; gap: 24px; margin-bottom: 16px; flex-wrap: wrap; }
+  .print-piutang .aging-item { flex: 1; min-width: 120px; border-left: 3px solid #2563eb; padding-left: 10px; }
+  .print-piutang .aging-item.warn { border-color: #d97706; }
+  .print-piutang .aging-item.danger { border-color: #dc2626; }
+  .print-piutang .aging-item label { font-size: 10px; text-transform: uppercase; font-weight: 700; color: #666; display: block; }
+  .print-piutang .aging-item span { font-size: 16px; font-weight: 800; }
+  .print-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  .print-table th { background: #f1f5f9; padding: 7px 8px; text-align: left; border-bottom: 1px solid #ddd; font-size: 10px; text-transform: uppercase; }
+  .print-table td { padding: 6px 8px; border-bottom: 1px solid #eee; }
+  .print-table .num { text-align: right; }
   </style>
 </head>
 <body>
@@ -86,7 +105,8 @@
         <p>Faktur belum lunas & aging receivables</p>
       </div>
       <div class="topbar-right">
-        <button class="btn btn-ghost btn-sm" onclick="exportXls()">⬇️ Export XLS</button>
+        <button class="btn btn-ghost btn-sm no-print" onclick="exportPdf()">🖨 Print PDF</button>
+        <button class="btn btn-ghost btn-sm no-print" onclick="exportXls()">⬇️ Export XLS</button>
         <div class="user-avatar" id="user-avatar">A</div>
       </div>
     </header>
@@ -205,6 +225,7 @@
   </div>
 </div>
 
+<div id="print-piutang"></div>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
@@ -444,6 +465,85 @@
     XLSX.utils.book_append_sheet(wb, ws, 'Piutang');
     const stamp = new Date().toISOString().split('T')[0].replace(/-/g,'');
     XLSX.writeFile(wb, `piutang_uddiana_${stamp}.xlsx`);
+  }
+
+  // ── EXPORT PDF ────────────────────────────────────────────
+  function exportPdf() {
+    if (!allInvoices.length) { showToast('Tidak ada data piutang', 'error'); return; }
+    const terminMap = { cod:'COD', '7':'7 Hari', '14':'14 Hari', '15':'15 Hari', '30':'30 Hari', '45':'45 Hari', '60':'60 Hari' };
+    const total   = allInvoices.reduce((s,i) => s + Number(i.total), 0);
+    const current = allInvoices.filter(i => i._daysOverdue <= 0);
+    const b30     = allInvoices.filter(i => i._daysOverdue > 0 && i._daysOverdue <= 30);
+    const b60     = allInvoices.filter(i => i._daysOverdue > 30 && i._daysOverdue <= 60);
+    const b90p    = allInvoices.filter(i => i._daysOverdue > 60);
+    const sum = arr => arr.reduce((s,i) => s + Number(i.total), 0);
+    const today = new Date().toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' });
+
+    const sorted = [...allInvoices].sort((a,b) => b._daysOverdue - a._daysOverdue);
+    const agingLabel = { current:'Belum JT', '30':'1–30 Hari', '60':'31–60 Hari', '90p':'>60 Hari' };
+
+    document.getElementById('print-piutang').innerHTML = `
+      <div class="print-piutang">
+        <h2>DIANA KOSMETIK</h2>
+        <p class="sub">Laporan Piutang — Dicetak: ${today}</p>
+        <div class="aging-row">
+          <div class="aging-item">
+            <label>Total Piutang</label>
+            <span>${formatCurrency(total)}</span>
+          </div>
+          <div class="aging-item">
+            <label>Belum Jatuh Tempo</label>
+            <span>${formatCurrency(sum(current))} <small>(${current.length} faktur)</small></span>
+          </div>
+          <div class="aging-item warn">
+            <label>Lewat 1–30 Hari</label>
+            <span>${formatCurrency(sum(b30))} <small>(${b30.length} faktur)</small></span>
+          </div>
+          <div class="aging-item warn">
+            <label>Lewat 31–60 Hari</label>
+            <span>${formatCurrency(sum(b60))} <small>(${b60.length} faktur)</small></span>
+          </div>
+          <div class="aging-item danger">
+            <label>Lewat >60 Hari</label>
+            <span>${formatCurrency(sum(b90p))} <small>(${b90p.length} faktur)</small></span>
+          </div>
+        </div>
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>No. Faktur</th>
+              <th>Customer</th>
+              <th>Sales</th>
+              <th>Tgl Faktur</th>
+              <th>Jatuh Tempo</th>
+              <th>Termin</th>
+              <th class="num">Total</th>
+              <th>Aging</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${sorted.map(inv => `
+              <tr>
+                <td>${escapeHtml(inv.invoice_number||'—')}</td>
+                <td>${escapeHtml(inv.store_name||inv.customer_name||'—')}</td>
+                <td>${escapeHtml(inv.sales_name||'—')}</td>
+                <td>${formatDate(inv.invoice_date)}</td>
+                <td style="${inv._daysOverdue > 0 ? 'font-weight:700' : ''}">${formatDate(inv._dueDate)}</td>
+                <td>${escapeHtml(terminMap[inv.payment_term]||inv.payment_term||'—')}</td>
+                <td class="num" style="font-weight:700">${formatCurrency(inv.total)}</td>
+                <td>${agingLabel[agingBucket(inv._daysOverdue)]}</td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="font-weight:700;border-top:2px solid #111;background:#f8fafc">
+              <td colspan="6">Total (${allInvoices.length} faktur)</td>
+              <td class="num">${formatCurrency(total)}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+    window.print();
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
