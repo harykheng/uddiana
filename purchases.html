@@ -143,6 +143,13 @@
       </div>
 
       <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">Daftar Barang</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px">
+        <span style="font-size:15px">🔍</span>
+        <input type="text" id="po-barcode-input" placeholder="Scan barcode / ketik SKU lalu Enter..."
+          style="flex:1;padding:7px 10px;border:1px solid #86efac;border-radius:6px;font-size:13px;outline:none;background:#fff"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();scanBarcodePO(this.value.trim());this.value='';this.focus();}">
+        <span style="font-size:11px;color:#16a34a;white-space:nowrap">Enter setelah scan</span>
+      </div>
       <div class="table-wrap" style="margin-bottom:8px">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
@@ -258,6 +265,7 @@
   let products = [];
   let currentPo = null;
   let poRowCount = 0;
+  let poTomSelectInstances = {};
   const handleSearch = debounce(() => renderPurchases(), 350);
 
   let poIsSuperAdmin = false;
@@ -343,6 +351,8 @@
     document.getElementById('po-date').value = todayISO();
     document.getElementById('po-notes').value = '';
     document.getElementById('po-items-body').innerHTML = '';
+    Object.values(poTomSelectInstances).forEach(ts => ts.destroy());
+    poTomSelectInstances = {};
     poRowCount = 0;
     addPoRow();
     recalcPoTotal();
@@ -365,16 +375,51 @@
       <td style="padding:5px 6px"><input type="number" id="poqty-${id}" value="1" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
       <td class="col-harga-modal-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" id="posub-${id}" readonly value="0" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
-      <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcPoTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
+      <td style="padding:5px 4px"><button onclick="removePoRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
     const selEl = tr.querySelector('select');
-    new TomSelect(selEl, {
+    poTomSelectInstances[id] = new TomSelect(selEl, {
       placeholder: '— Cari & pilih produk —',
       maxOptions: 200,
       dropdownParent: 'body',
       onChange: () => onPoProductSelect(selEl, id)
     });
+  }
+
+  function removePoRow(id) {
+    poTomSelectInstances[id]?.destroy();
+    delete poTomSelectInstances[id];
+    document.getElementById(id)?.remove();
+    recalcPoTotal();
+  }
+
+  function scanBarcodePO(sku) {
+    if (!sku) return;
+    const product = products.find(p => p.sku && p.sku.trim() === sku.trim());
+    if (!product) { showToast(`Produk SKU "${sku}" tidak ditemukan`, 'error'); return; }
+
+    // Cek apakah produk sudah ada di baris
+    const rows = document.querySelectorAll('#po-items-body tr[id]');
+    let existingRowId = null;
+    for (const tr of rows) {
+      const ts = poTomSelectInstances[tr.id];
+      if (ts && ts.getValue() === product.id) { existingRowId = tr.id; break; }
+    }
+
+    if (existingRowId) {
+      const qtyInput = document.getElementById(`poqty-${existingRowId}`);
+      const current = parseInt(qtyInput.value) || 0;
+      qtyInput.value = current + 1;
+      recalcPoRow(existingRowId);
+      showToast(`+1 ${product.name} → total ${current + 1}`, 'success');
+    } else {
+      addPoRow();
+      const allRows = document.querySelectorAll('#po-items-body tr[id]');
+      const lastRowId = allRows[allRows.length - 1].id;
+      poTomSelectInstances[lastRowId]?.setValue(product.id);
+      showToast(`Ditambahkan: ${product.name}`, 'success');
+    }
   }
 
   function onPoProductSelect(sel, rowId) {
