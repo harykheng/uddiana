@@ -38,6 +38,26 @@
       height: 100%; background: var(--primary); border-radius: 4px; transition: width .5s;
     }
     .top-product-bar .bar-label { font-size: 13px; font-weight: 600; min-width: 40px; text-align: right; }
+
+  @media print {
+    .sidebar, .topbar, .week-nav, .no-print,
+    .chart-container, #filter-movement-type,
+    .pagination, .btn { display: none !important; }
+    .layout { display: block; }
+    .main { margin-left: 0 !important; }
+    .page { padding: 16px; }
+    .card { box-shadow: none; border: 1px solid #ddd; break-inside: avoid; }
+    .print-header { display: block !important; }
+  }
+  .print-header {
+    display: none;
+    font-family: Arial, sans-serif;
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #111;
+  }
+  .print-header h2 { font-size: 18px; font-weight: 800; margin: 0 0 2px; }
+  .print-header p { font-size: 12px; color: #555; margin: 0; }
   </style>
 </head>
 <body>
@@ -87,6 +107,10 @@
     </header>
 
     <main class="page">
+      <div class="print-header">
+        <h2>DIANA KOSMETIK</h2>
+        <p id="print-report-title">Laporan Stok Mingguan</p>
+      </div>
       <!-- WEEK NAVIGATOR -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
         <div class="week-nav">
@@ -265,7 +289,9 @@
 
   async function loadReport() {
     const { start, end } = getWeekRange(weekOffset);
-    document.getElementById('week-label').textContent = formatWeekLabel(start, end);
+    const weekLabelText = formatWeekLabel(start, end);
+    document.getElementById('week-label').textContent = weekLabelText;
+    document.getElementById('print-report-title').textContent = 'Laporan Stok Mingguan — ' + weekLabelText;
     document.getElementById('btn-next-week').disabled = weekOffset >= 0;
 
     const startISO = start.toISOString();
