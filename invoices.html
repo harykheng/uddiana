@@ -274,6 +274,13 @@
 
       <!-- ITEMS -->
       <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">Item Penjualan</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px">
+        <span style="font-size:15px">🔍</span>
+        <input type="text" id="barcode-scan-input" placeholder="Scan barcode / ketik SKU lalu Enter..."
+          style="flex:1;padding:7px 10px;border:1px solid #86efac;border-radius:6px;font-size:13px;outline:none;background:#fff"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();scanBarcodeInvoice(this.value.trim());this.value='';this.focus();}">
+        <span style="font-size:11px;color:#16a34a;white-space:nowrap">Enter setelah scan</span>
+      </div>
       <div class="table-wrap" style="margin-bottom:8px">
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
@@ -477,6 +484,7 @@
   let currentPriceMode = 'regular';
   let currentPayMethod = 'cash';
   let itemRowCount = 0;
+  let tomSelectInstances = {};
 
   const INV_PAGE_SIZE = 25;
   let invPage = 1;
@@ -778,7 +786,7 @@
     `;
     tbody.appendChild(tr);
     const sel = tr.querySelector('select');
-    new TomSelect(sel, {
+    tomSelectInstances[id] = new TomSelect(sel, {
       placeholder: '— Cari & pilih produk —',
       maxOptions: 200,
       dropdownParent: 'body',
@@ -991,7 +999,38 @@
     recalcTotal();
   }
 
+  function scanBarcodeInvoice(sku) {
+    if (!sku) return;
+    const product = products.find(p => p.sku && p.sku.trim() === sku);
+    if (!product) {
+      showToast(`Produk SKU "${sku}" tidak ditemukan`, 'error');
+      return;
+    }
+    // Cek apakah produk sudah ada di baris
+    const rows = document.querySelectorAll('#invoice-items-body tr[id]');
+    let existingRowId = null;
+    for (const tr of rows) {
+      const ts = tomSelectInstances[tr.id];
+      if (ts && ts.getValue() === product.id) { existingRowId = tr.id; break; }
+    }
+    if (existingRowId) {
+      const qtyInput = document.getElementById(`qty-${existingRowId}`);
+      const currentQty = parseFormattedNumber(qtyInput.value) || 0;
+      qtyInput.value = (currentQty + 1).toLocaleString('id-ID');
+      onQtyChange(existingRowId);
+      showToast(`+1 ${product.name} → total ${currentQty + 1}`, 'success');
+    } else {
+      addItemRow();
+      const allRows = document.querySelectorAll('#invoice-items-body tr[id]');
+      const lastRowId = allRows[allRows.length - 1].id;
+      tomSelectInstances[lastRowId]?.setValue(product.id);
+      showToast(`Ditambahkan: ${product.name}`, 'success');
+    }
+  }
+
   function removeItemRow(rowId) {
+    tomSelectInstances[rowId]?.destroy();
+    delete tomSelectInstances[rowId];
     document.getElementById(rowId)?.remove();
     recalcTotal();
   }
