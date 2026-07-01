@@ -430,6 +430,7 @@
 <script src="js/auth.js"></script>
 <script>
   let allProducts = [];
+  let currentFiltered = [];
   let categories = [];
   let currentPage = 1;
   let pageSize = 50;
@@ -546,6 +547,7 @@
       return 0;
     });
 
+    currentFiltered = filtered;
     document.getElementById('product-count').textContent = filtered.length;
     const tbody = document.getElementById('products-table');
 
@@ -877,9 +879,10 @@
 
   // ── EXPORT XLS ────────────────────────────────────────────
   function exportXls() {
-    if (!allProducts.length) { showToast('Tidak ada produk untuk diekspor', 'error'); return; }
+    const toExport = currentFiltered.length ? currentFiltered : allProducts;
+    if (!toExport.length) { showToast('Tidak ada produk untuk diekspor', 'error'); return; }
 
-    const rows = allProducts.map(p => ({
+    const rows = toExport.map(p => ({
       'SKU':           p.sku,
       'Nama':          p.name,
       'Kategori':      p.categories?.name || '',
@@ -901,7 +904,8 @@
     const now = new Date();
     const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
     XLSX.writeFile(wb, `produk_uddiana_${stamp}.xlsx`);
-    showToast(`✅ Exported ${rows.length} produk`);
+    const label = currentFiltered.length < allProducts.length ? ` (filter aktif)` : '';
+    showToast(`✅ Exported ${rows.length} produk${label}`);
   }
 
   // ── IMPORT CSV ─────────────────────────────────────────────
