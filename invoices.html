@@ -1644,7 +1644,12 @@
   // ── VIEW & PRINT ───────────────────────────────────────────
   async function viewInvoice(id) {
     const { data: inv }   = await supabase.from('invoices').select('*').eq('id', id).single();
-    const { data: items } = await supabase.from('invoice_items').select('*').eq('invoice_id', id);
+    const { data: rawItems } = await supabase.from('invoice_items').select('*').eq('invoice_id', id);
+    // Gunakan nama produk terkini dari products array (mengatasi nama lama yang tersimpan di invoice_items)
+    const items = (rawItems || []).map(item => {
+      const cur = products.find(p => p.id === item.product_id);
+      return cur ? { ...item, product_name: cur.name } : item;
+    });
     currentInvoice = { inv, items };
 
     document.getElementById('view-invoice-title').textContent = `Faktur ${inv.invoice_number}`;
