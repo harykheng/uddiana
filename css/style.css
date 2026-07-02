@@ -41,26 +41,6 @@ body {
 /* Menu super_admin: hidden by default, tampil jika body punya class is-super-admin */
 body:not(.is-super-admin) [data-super-admin] { display: none; }
 
-/* ---- SIDEBAR LOADING SKELETON ---- */
-@keyframes sidebar-skeleton-pulse {
-  0%   { opacity: .4; }
-  100% { opacity: .7; }
-}
-.sidebar-loading .nav-item {
-  color: transparent !important;
-  background: rgba(255,255,255,.08) !important;
-  border-radius: 8px;
-  pointer-events: none;
-  animation: sidebar-skeleton-pulse .7s ease-in-out infinite alternate;
-}
-.sidebar-loading .nav-label {
-  color: transparent !important;
-  background: rgba(255,255,255,.05);
-  border-radius: 4px;
-  pointer-events: none;
-}
-.sidebar-loading .sidebar-footer { opacity: 0; }
-
 /* ---- SIDEBAR ---- */
 .sidebar {
   width: 240px;

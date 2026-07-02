@@ -1,5 +1,4 @@
 async function requireAdmin() {
-  document.querySelector('.sidebar')?.classList.add('sidebar-loading');
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) { window.location.href = 'login.html'; return null; }
   const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).single();
@@ -10,7 +9,6 @@ async function requireAdmin() {
 }
 
 async function requireSuperAdmin() {
-  document.querySelector('.sidebar')?.classList.add('sidebar-loading');
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) { window.location.href = 'login.html'; return null; }
   const { data: profile } = await supabase.from('user_profiles').select('*').eq('id', session.user.id).single();
@@ -34,7 +32,6 @@ async function signOut() {
 }
 
 function updateSidebarUser(profile) {
-  document.querySelector('.sidebar')?.classList.remove('sidebar-loading');
   const footer = document.querySelector('.sidebar-footer');
   if (!footer) return;
   footer.innerHTML = `
