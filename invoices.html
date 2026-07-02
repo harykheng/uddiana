@@ -665,7 +665,7 @@
           <div class="table-actions">
             ${inv.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="openPayment('${inv.id}')">💳 ${paidAmt > 0 ? 'Bayar Lagi' : 'Lunasi'}</button>` : ''}
             ${inv.status === 'pending' ? `<button class="btn btn-ghost btn-sm" onclick="openEditInvoice('${inv.id}')">✏️</button>` : ''}
-            <button class="btn btn-ghost btn-sm" onclick="viewInvoice('${inv.id}')">👁</button>
+            <button class="btn btn-ghost btn-sm" onclick="viewInvoice('${inv.id}',this)">👁</button>
             <button class="btn btn-danger btn-sm" onclick="deleteInvoice('${inv.id}')" title="Hapus Faktur">🗑</button>
           </div>
         </td>
@@ -1642,7 +1642,11 @@
   }
 
   // ── VIEW & PRINT ───────────────────────────────────────────
-  async function viewInvoice(id) {
+  async function viewInvoice(id, triggerBtn) {
+    if (triggerBtn) { triggerBtn.disabled = true; triggerBtn.textContent = '⏳'; }
+    document.getElementById('view-invoice-title').textContent = 'Memuat…';
+    document.getElementById('view-invoice-body').innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-muted)">⏳ Memuat data faktur…</div>';
+    openModal('modal-view-invoice');
     const { data: inv }   = await supabase.from('invoices').select('*').eq('id', id).single();
     const { data: rawItems } = await supabase.from('invoice_items').select('*').eq('invoice_id', id);
     // Gunakan nama produk terkini dari products array (mengatasi nama lama yang tersimpan di invoice_items)
@@ -1736,7 +1740,7 @@
 
     const cancelBtn = document.getElementById('btn-cancel-invoice');
     cancelBtn.style.display = inv.status === 'cancelled' ? 'none' : 'inline-flex';
-    openModal('modal-view-invoice');
+    if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = '👁'; }
   }
 
   async function cancelCurrentInvoice() {
