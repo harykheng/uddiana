@@ -1697,15 +1697,15 @@
       </div>` : '';
 
     document.getElementById('view-invoice-body').innerHTML = `
-      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px">
-        <div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px">
+        <div style="flex:1;min-width:0">
           <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Pelanggan</div>
           <div style="font-weight:700;font-size:15px">${escapeHtml(inv.customer_name)}</div>
           ${inv.store_name ? `<div style="color:var(--primary);font-size:13px;font-weight:600">${escapeHtml(inv.store_name)}</div>` : ''}
           ${inv.customer_phone ? `<div style="color:var(--text-muted);font-size:13px">📞 ${escapeHtml(inv.customer_phone)}</div>` : ''}
-          ${inv.customer_address ? `<div style="color:var(--text-muted);font-size:13px">📍 ${escapeHtml(inv.customer_address)}</div>` : ''}
+          ${inv.customer_address ? `<div style="color:var(--text-muted);font-size:13px;word-break:break-word">📍 ${escapeHtml(inv.customer_address)}</div>` : ''}
         </div>
-        <div style="text-align:right">
+        <div style="text-align:right;flex-shrink:0">
           <span class="badge badge-${statusColor}" style="font-size:13px">${statusLabel}</span>
           <div style="color:var(--text-muted);font-size:12px;margin-top:4px">📅 ${formatDate(inv.invoice_date)}</div>
           <div style="margin-top:4px">
