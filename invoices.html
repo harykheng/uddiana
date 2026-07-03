@@ -1857,13 +1857,13 @@
 
         <!-- HEADER: kiri = nomor+company+tanggal+sales | kanan = info toko pembeli -->
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6pt;">
-          <div>
+          <div style="flex-shrink:0;max-width:48%">
             <div style="font-size:12pt;font-weight:bold;">FAKTUR NO: ${escapeHtml(inv.invoice_number)}</div>
             <div class="pi-company-name">DIANA KOSMETIK</div>
             <div style="font-size:9pt;margin-top:1pt;">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
             ${inv.sales_name ? `<div style="font-size:9pt;margin-top:1pt;margin-bottom:10pt;">Sales: <strong>${escapeHtml(inv.sales_name)}</strong></div>` : ''}
           </div>
-          <div style="text-align:right;font-size:9pt;">
+          <div style="text-align:right;font-size:9pt;max-width:50%;word-break:break-word">
             <div style="font-weight:bold;">${customerLine}</div>
             <div>Telp: ${escapeHtml(inv.customer_phone || '')}</div>
             <div>${escapeHtml(inv.customer_address || '')}</div>
