@@ -288,8 +288,6 @@
 <script>
   let currentAdmin = null;
   let allSales = [];
-  let resetTargetId = null;
-
   async function init() {
     const auth = await requireSuperAdmin();
     if (!auth) return;
@@ -440,7 +438,6 @@
   }
 
   function openResetPassword(id, name) {
-    resetTargetId = id;
     document.getElementById('reset-sales-name').textContent = name;
     document.getElementById('new-sales-password').value = '';
     openModal('modal-reset-pw');

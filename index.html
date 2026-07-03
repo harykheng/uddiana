@@ -192,12 +192,6 @@
       const stockValue = (products || []).reduce((s, p) => s + (p.price * p.stock_quantity), 0);
       document.getElementById('stat-stock-value').textContent = formatCurrency(stockValue);
 
-      // Low stock
-      const { data: lowStock } = await supabase
-        .from('products').select('id').eq('is_active', true)
-        .filter('stock_quantity', 'lte', supabase.raw ? undefined : 0);
-
-      // Better: use a comparison
       const { data: lowProds } = await supabase
         .from('products').select('id, stock_quantity, min_stock').eq('is_active', true);
       const lowCount = (lowProds || []).filter(p => p.stock_quantity <= p.min_stock).length;

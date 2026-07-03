@@ -172,17 +172,6 @@ body:not(.is-super-admin) [data-super-admin] { display: none; }
 /* ---- PAGE CONTENT ---- */
 .page { padding: 28px; flex: 1; }
 
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 24px;
-  gap: 16px;
-}
-
-.page-header h2 { font-size: 20px; font-weight: 700; }
-.page-header p { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
-
 /* ---- BUTTONS ---- */
 .btn {
   display: inline-flex;
@@ -407,12 +396,6 @@ input:focus, select:focus, textarea:focus {
 
 textarea { resize: vertical; min-height: 80px; }
 
-.search-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .search-input-wrap {
   position: relative;
   flex: 1;
@@ -493,32 +476,6 @@ textarea { resize: vertical; min-height: 80px; }
   gap: 10px;
   padding: 16px 24px;
   border-top: 1px solid var(--border);
-}
-
-/* ---- INVOICE ITEMS TABLE (in modal) ---- */
-.invoice-items-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-
-.invoice-items-table th {
-  background: #f8fafc;
-  padding: 8px 10px;
-  text-align: left;
-  font-size: 11px;
-}
-
-.invoice-items-table td {
-  padding: 6px 8px;
-  vertical-align: middle;
-}
-
-.invoice-items-table input,
-.invoice-items-table select {
-  padding: 6px 8px;
-  font-size: 12.5px;
 }
 
 .invoice-summary {
@@ -714,7 +671,6 @@ textarea { resize: vertical; min-height: 80px; }
 .font-bold { font-weight: 700; }
 .mb-0 { margin-bottom: 0; }
 .mt-12 { margin-top: 12px; }
-.gap-8 { gap: 8px; }
 
 .stock-number {
   font-weight: 700;

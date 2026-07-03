@@ -24,10 +24,6 @@ function formatDate(dateStr) {
   }).format(new Date(dateStr));
 }
 
-function formatDateInput(dateStr) {
-  if (!dateStr) return '';
-  return new Date(dateStr).toISOString().split('T')[0];
-}
 
 function todayISO() {
   return new Date().toISOString().split('T')[0];
