@@ -650,10 +650,11 @@
       return `<tr ${faded}>
         <td>
           <strong style="color:var(--primary)">${escapeHtml(inv.invoice_number)}</strong>
-          <div style="margin-top:3px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
-            ${inv.printed_at ? `<span title="Dicetak ${inv.print_count}x · terakhir ${formatDate(inv.printed_at)}" style="font-size:11px;color:#64748b">🖨️</span>` : ''}
+          ${inv.sales_name || inv.printed_at ? `
+          <div style="margin-top:3px;display:flex;align-items:center;gap:4px">
             ${inv.sales_name ? `<span class="badge-sales">👤 ${escapeHtml(inv.sales_name)}</span>` : ''}
-          </div>
+            ${inv.printed_at ? `<span style="font-size:11px;color:#94a3b8">🖨️ ${inv.print_count}x</span>` : ''}
+          </div>` : ''}
         </td>
         <td>${escapeHtml(inv.customer_name)}</td>
         <td>${inv.store_name ? `<span class="badge badge-info">${escapeHtml(inv.store_name)}</span>` : '—'}</td>
