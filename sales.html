@@ -435,6 +435,32 @@
   </div>
 </div>
 
+<!-- MODAL: LAPORKAN BAYAR -->
+<div class="modal-overlay" id="modal-claim">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">💳 Laporkan Pembayaran</div>
+    <div id="claim-invoice-info" style="font-size:13px;color:#64748b;margin-bottom:16px;padding:0 16px"></div>
+    <div style="padding:0 16px">
+      <div class="form-group">
+        <label>Jumlah Diterima</label>
+        <input type="text" inputmode="numeric" id="claim-amount" placeholder="0" style="font-size:16px" oninput="this.value=this.value.replace(/[^0-9]/g,'').replace(/\B(?=(\d{3})+(?!\d))/g,'.')">
+      </div>
+      <div class="form-group">
+        <label>Metode Pembayaran</label>
+        <div style="display:flex;gap:8px">
+          <button id="claim-btn-cash" onclick="setClaimMethod('cash')" style="flex:1;padding:10px;border:1.5px solid #2563eb;border-radius:8px;background:#eff6ff;color:#2563eb;font-size:13px;font-weight:600;cursor:pointer">💵 Cash</button>
+          <button id="claim-btn-transfer" onclick="setClaimMethod('transfer')" style="flex:1;padding:10px;border:1.5px solid #e2e8f0;border-radius:8px;background:#fff;color:#64748b;font-size:13px;font-weight:600;cursor:pointer">🏦 Transfer</button>
+        </div>
+      </div>
+    </div>
+    <div style="padding:0 16px 16px;display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-ghost btn-full" onclick="closeModal('modal-claim')">Batal</button>
+      <button class="btn btn-primary btn-full" id="btn-submit-claim" onclick="submitClaimPayment()">Kirim Laporan</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: EDIT FAKTUR -->
 <div class="modal-overlay" id="modal-edit" data-no-overlay-close>
   <div class="modal">
@@ -705,7 +731,7 @@
   async function loadHistory() {
     const { data } = await supabase
       .from('invoices')
-      .select('id,invoice_number,invoice_date,customer_id,store_name,total,status,verification_status,reject_reason,notes,payment_term,invoice_items(id,product_id,quantity,price,subtotal,products(name))')
+      .select('id,invoice_number,invoice_date,customer_id,store_name,total,status,verification_status,reject_reason,notes,payment_term,payment_claimed_at,payment_claimed_amount,payment_claimed_method,invoice_items(id,product_id,quantity,price,subtotal,products(name))')
       .eq('created_by_id', currentUser.session.user.id)
       .order('created_at', { ascending: false });
     allInvoices = data || [];
@@ -755,14 +781,62 @@
           <span class="badge ${inv.status === 'paid' ? 'badge-success' : 'badge-warning'}">${inv.status === 'paid' ? 'Lunas' : 'Belum Lunas'}</span>
         </div>
         ${inv.reject_reason ? `<div class="reject-reason-box">❌ Ditolak: ${escapeHtml(inv.reject_reason)}</div>` : ''}
-        ${canEdit ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
-          <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openEditInvoice('${inv.id}')" style="color:#2563eb;font-weight:600;">✏️ Edit Faktur</button>
+        ${canEdit || (inv.verification_status === 'approved' && inv.status === 'pending') ? `
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+          ${canEdit ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openEditInvoice('${inv.id}')" style="color:#2563eb;font-weight:600;">✏️ Edit Faktur</button>` : ''}
+          ${inv.verification_status === 'approved' && inv.status === 'pending' && !inv.payment_claimed_at
+            ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();openClaimPayment('${inv.id}')">💳 Laporkan Bayar</button>`
+            : inv.payment_claimed_at
+            ? `<span style="font-size:12px;color:#d97706;font-weight:600">⏳ Menunggu konfirmasi admin (${formatCurrency(inv.payment_claimed_amount)} · ${inv.payment_claimed_method === 'cash' ? 'Cash' : 'Transfer'})</span>`
+            : ''}
         </div>` : ''}
       </div>`;
     }).join('');
   }
 
   function filterHistory() { renderHistory(); }
+
+  // ── CLAIM PAYMENT ──────────────────────────────────────────
+  let claimInvoiceId = null;
+  let claimMethod = 'cash';
+
+  function openClaimPayment(id) {
+    const inv = allInvoices.find(x => x.id === id);
+    if (!inv) return;
+    claimInvoiceId = id;
+    claimMethod = 'cash';
+    document.getElementById('claim-invoice-info').innerHTML =
+      `<strong>${escapeHtml(inv.invoice_number)}</strong> · ${escapeHtml(inv.store_name || '—')} · <strong style="color:#2563eb">${formatCurrency(inv.total)}</strong>`;
+    document.getElementById('claim-amount').value = Number(inv.total).toLocaleString('id-ID');
+    setClaimMethod('cash');
+    openModal('modal-claim');
+  }
+
+  function setClaimMethod(method) {
+    claimMethod = method;
+    const isCash = method === 'cash';
+    document.getElementById('claim-btn-cash').style.cssText     = `flex:1;padding:10px;border:1.5px solid ${isCash?'#2563eb':'#e2e8f0'};border-radius:8px;background:${isCash?'#eff6ff':'#fff'};color:${isCash?'#2563eb':'#64748b'};font-size:13px;font-weight:600;cursor:pointer`;
+    document.getElementById('claim-btn-transfer').style.cssText = `flex:1;padding:10px;border:1.5px solid ${!isCash?'#2563eb':'#e2e8f0'};border-radius:8px;background:${!isCash?'#eff6ff':'#fff'};color:${!isCash?'#2563eb':'#64748b'};font-size:13px;font-weight:600;cursor:pointer`;
+  }
+
+  async function submitClaimPayment() {
+    const rawAmount = document.getElementById('claim-amount').value.replace(/\./g, '');
+    const amount = parseFloat(rawAmount) || 0;
+    if (!amount) { showToast('Isi jumlah pembayaran', 'error'); return; }
+    const btn = document.getElementById('btn-submit-claim');
+    btn.disabled = true; btn.textContent = 'Mengirim...';
+    const { error } = await supabase.from('invoices').update({
+      payment_claimed_at:     new Date().toISOString(),
+      payment_claimed_amount: amount,
+      payment_claimed_method: claimMethod,
+      payment_claimed_by_name: currentUser.profile.name,
+    }).eq('id', claimInvoiceId);
+    btn.disabled = false; btn.textContent = 'Kirim Laporan';
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('✅ Laporan bayar dikirim, menunggu konfirmasi admin');
+    closeModal('modal-claim');
+    await loadHistory();
+  }
 
   async function checkUnpaidInvoices(customerId) {
     const warn = document.getElementById('unpaid-warning');

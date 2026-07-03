@@ -21,6 +21,7 @@
     @media (max-width: 768px) {
       .table-wrap { display: none; }
       #verify-mobile { display: block !important; }
+      #payment-mobile { display: block !important; }
     }
     .vi-card {
       background: #fff;
@@ -108,43 +109,83 @@
     </header>
 
     <main class="page">
-      <div class="filter-bar">
-        <div class="search-input-wrap" style="flex:1;max-width:360px">
-          <span class="search-icon">🔍</span>
-          <input type="text" id="search-input" placeholder="Cari nomor / sales / customer..." oninput="handleSearch()">
-        </div>
-        <select id="filter-status" onchange="loadInvoices()" style="padding:8px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none">
-          <option value="pending">Menunggu Verifikasi</option>
-          <option value="approved">Disetujui</option>
-          <option value="rejected">Ditolak</option>
-          <option value="">Semua</option>
-        </select>
-        <button class="btn btn-ghost btn-sm" onclick="loadInvoices()">🔄 Refresh</button>
+      <!-- TAB BAR -->
+      <div style="display:flex;gap:4px;margin-bottom:20px;background:#f1f5f9;border-radius:10px;padding:4px">
+        <button id="tab-btn-verify" onclick="switchVerifyTab('verify')" style="flex:1;padding:8px 12px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(0,0,0,.1)">✅ Verifikasi Faktur <span id="count-verify" class="badge badge-warning" style="margin-left:4px">0</span></button>
+        <button id="tab-btn-payment" onclick="switchVerifyTab('payment')" style="flex:1;padding:8px 12px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;background:transparent;color:#64748b">💳 Konfirmasi Bayar <span id="count-payment" class="badge badge-info" style="margin-left:4px">0</span></button>
       </div>
 
-      <div class="card">
-        <div class="card-header">
-          <h3>Faktur <span id="inv-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+      <!-- TAB 1: VERIFIKASI FAKTUR -->
+      <div id="tab-verify">
+        <div class="filter-bar">
+          <div class="search-input-wrap" style="flex:1;max-width:360px">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-input" placeholder="Cari nomor / sales / customer..." oninput="handleSearch()">
+          </div>
+          <select id="filter-status" onchange="loadInvoices()" style="padding:8px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;outline:none">
+            <option value="pending">Menunggu Verifikasi</option>
+            <option value="approved">Disetujui</option>
+            <option value="rejected">Ditolak</option>
+            <option value="">Semua</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadInvoices()">🔄 Refresh</button>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>No. Faktur</th>
-                <th>Tanggal</th>
-                <th>Sales</th>
-                <th>Customer</th>
-                <th>Total</th>
-                <th>Status</th>
-                <th>Aksi</th>
-              </tr>
-            </thead>
-            <tbody id="inv-table">
-              <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
-            </tbody>
-          </table>
+        <div class="card">
+          <div class="card-header">
+            <h3>Faktur <span id="inv-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No. Faktur</th>
+                  <th>Tanggal</th>
+                  <th>Sales</th>
+                  <th>Customer</th>
+                  <th>Total</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="inv-table">
+                <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="verify-mobile" style="display:none;padding:10px 12px"></div>
         </div>
-        <div id="verify-mobile" style="display:none;padding:10px 12px"></div>
+      </div>
+
+      <!-- TAB 2: KONFIRMASI BAYAR -->
+      <div id="tab-payment" style="display:none">
+        <div class="filter-bar">
+          <button class="btn btn-ghost btn-sm" onclick="loadPaymentClaims()">🔄 Refresh</button>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Laporan Bayar dari Sales <span id="payment-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No. Faktur</th>
+                  <th>Customer</th>
+                  <th>Sales</th>
+                  <th>Total Faktur</th>
+                  <th>Dilaporkan</th>
+                  <th>Metode</th>
+                  <th>Waktu Lapor</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="payment-table">
+                <tr><td colspan="8" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="payment-mobile" style="display:none;padding:10px 12px"></div>
+        </div>
       </div>
     </main>
   </div>
@@ -198,13 +239,31 @@
   </div>
 </div>
 
+<!-- MODAL: KONFIRMASI BAYAR -->
+<div class="modal-overlay" id="modal-confirm-payment">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h3>Konfirmasi Pembayaran</h3>
+      <button class="modal-close" onclick="closeModal('modal-confirm-payment')">×</button>
+    </div>
+    <div class="modal-body" id="confirm-payment-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-confirm-payment')">Batal</button>
+      <button class="btn btn-danger btn-sm" onclick="rejectPaymentClaim()" style="margin-right:auto">❌ Tolak</button>
+      <button class="btn btn-success" id="btn-confirm-claim" onclick="confirmPaymentClaim()">✅ Konfirmasi Lunas</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
 <script>
   let allInvoices = [];
+  let allClaims   = [];
   let currentInvoiceId = null;
+  let currentClaimId   = null;
   let allProducts = [];
 
   const handleSearch = debounce(() => renderTable(), 300);
@@ -212,7 +271,145 @@
   async function init() {
     const auth = await requireAdmin();
     if (!auth) return;
-    await Promise.all([loadProducts(), loadInvoices()]);
+    await Promise.all([loadProducts(), loadInvoices(), loadPaymentClaims()]);
+  }
+
+  // ── TAB SWITCHING ────────────────────────────────────────────
+  function switchVerifyTab(tab) {
+    const isVerify = tab === 'verify';
+    document.getElementById('tab-verify').style.display  = isVerify ? '' : 'none';
+    document.getElementById('tab-payment').style.display = isVerify ? 'none' : '';
+    const btnV = document.getElementById('tab-btn-verify');
+    const btnP = document.getElementById('tab-btn-payment');
+    btnV.style.background   = isVerify ? '#fff' : 'transparent';
+    btnV.style.color        = isVerify ? '#0f172a' : '#64748b';
+    btnV.style.boxShadow    = isVerify ? '0 1px 3px rgba(0,0,0,.1)' : 'none';
+    btnP.style.background   = !isVerify ? '#fff' : 'transparent';
+    btnP.style.color        = !isVerify ? '#0f172a' : '#64748b';
+    btnP.style.boxShadow    = !isVerify ? '0 1px 3px rgba(0,0,0,.1)' : 'none';
+  }
+
+  // ── PAYMENT CLAIMS ───────────────────────────────────────────
+  async function loadPaymentClaims() {
+    const { data } = await supabase
+      .from('invoices')
+      .select('id,invoice_number,invoice_date,store_name,customer_name,sales_name,total,paid_amount,cash_paid,transfer_paid,payment_claimed_at,payment_claimed_amount,payment_claimed_method,payment_claimed_by_name')
+      .not('payment_claimed_at', 'is', null)
+      .eq('status', 'pending')
+      .order('payment_claimed_at', { ascending: false });
+    allClaims = data || [];
+    document.getElementById('count-payment').textContent = allClaims.length;
+    renderPaymentClaims();
+  }
+
+  function renderPaymentClaims() {
+    const tbody  = document.getElementById('payment-table');
+    const mobile = document.getElementById('payment-mobile');
+    document.getElementById('payment-count').textContent = allClaims.length;
+
+    if (!allClaims.length) {
+      const empty = `<div class="empty-state"><div class="empty-icon">💳</div><h4>Tidak ada laporan bayar</h4><p>Sales belum melaporkan pembayaran</p></div>`;
+      tbody.innerHTML  = `<tr><td colspan="8">${empty}</td></tr>`;
+      mobile.innerHTML = empty;
+      return;
+    }
+
+    tbody.innerHTML = allClaims.map(inv => `
+      <tr>
+        <td><strong>${escapeHtml(inv.invoice_number)}</strong></td>
+        <td>${escapeHtml(inv.store_name || inv.customer_name || '—')}</td>
+        <td><span style="background:#ede9fe;color:#6d28d9;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:700">👤 ${escapeHtml(inv.payment_claimed_by_name || inv.sales_name || '—')}</span></td>
+        <td><strong>${formatCurrency(inv.total)}</strong></td>
+        <td><strong style="color:#16a34a">${formatCurrency(inv.payment_claimed_amount)}</strong></td>
+        <td><span class="badge badge-gray">${inv.payment_claimed_method === 'cash' ? '💵 Cash' : '🏦 Transfer'}</span></td>
+        <td class="text-muted" style="font-size:12px">${formatDate(inv.payment_claimed_at)}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="openConfirmPayment('${inv.id}')">Review</button></td>
+      </tr>`).join('');
+
+    mobile.innerHTML = allClaims.map(inv => `
+      <div class="vi-card">
+        <div class="vi-card-top">
+          <span class="vi-card-num">${escapeHtml(inv.invoice_number)}</span>
+          <span class="badge badge-gray">${inv.payment_claimed_method === 'cash' ? '💵 Cash' : '🏦 Transfer'}</span>
+        </div>
+        <div class="vi-card-customer">${escapeHtml(inv.store_name || inv.customer_name || '—')}</div>
+        <div class="vi-card-meta">👤 ${escapeHtml(inv.payment_claimed_by_name || '—')} · Lapor ${formatDate(inv.payment_claimed_at)}</div>
+        <div class="vi-card-total">${formatCurrency(inv.payment_claimed_amount)} <span style="font-size:13px;color:#64748b;font-weight:400">dari ${formatCurrency(inv.total)}</span></div>
+        <div class="vi-card-actions">
+          <button class="btn btn-primary btn-sm" onclick="openConfirmPayment('${inv.id}')" style="flex:1">Review</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function openConfirmPayment(id) {
+    const inv = allClaims.find(x => x.id === id);
+    if (!inv) return;
+    currentClaimId = id;
+    const alreadyPaid = Number(inv.paid_amount || 0);
+    const newTotal    = alreadyPaid + Number(inv.payment_claimed_amount);
+    document.getElementById('confirm-payment-body').innerHTML = `
+      <div style="display:grid;gap:10px;font-size:13px">
+        <div style="display:flex;justify-content:space-between"><span class="text-muted">Faktur</span><strong>${escapeHtml(inv.invoice_number)}</strong></div>
+        <div style="display:flex;justify-content:space-between"><span class="text-muted">Customer</span><strong>${escapeHtml(inv.store_name || inv.customer_name || '—')}</strong></div>
+        <div style="display:flex;justify-content:space-between"><span class="text-muted">Sales</span><strong>${escapeHtml(inv.payment_claimed_by_name || inv.sales_name || '—')}</strong></div>
+        <div style="display:flex;justify-content:space-between"><span class="text-muted">Total Faktur</span><strong>${formatCurrency(inv.total)}</strong></div>
+        ${alreadyPaid > 0 ? `<div style="display:flex;justify-content:space-between"><span class="text-muted">Sudah Dibayar</span><span style="color:#16a34a">${formatCurrency(alreadyPaid)}</span></div>` : ''}
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:600">Dilaporkan (${inv.payment_claimed_method === 'cash' ? '💵 Cash' : '🏦 Transfer'})</span>
+          <strong style="color:#16a34a;font-size:16px">${formatCurrency(inv.payment_claimed_amount)}</strong>
+        </div>
+        ${newTotal >= Number(inv.total)
+          ? `<div style="background:#dcfce7;border-radius:8px;padding:10px;text-align:center;font-weight:700;color:#166534">✅ Akan lunas setelah dikonfirmasi</div>`
+          : `<div style="background:#fffbeb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#92400e">⚠️ Masih ada sisa ${formatCurrency(Number(inv.total) - newTotal)}</div>`}
+      </div>`;
+    openModal('modal-confirm-payment');
+  }
+
+  async function confirmPaymentClaim() {
+    const inv = allClaims.find(x => x.id === currentClaimId);
+    if (!inv) return;
+    const btn = document.getElementById('btn-confirm-claim');
+    setLoading(btn, true);
+
+    const alreadyPaid  = Number(inv.paid_amount || 0);
+    const claimAmount  = Number(inv.payment_claimed_amount);
+    const newTotalPaid = alreadyPaid + claimAmount;
+    const isFullyPaid  = newTotalPaid >= Number(inv.total);
+    const prevCash     = Number(inv.cash_paid || 0);
+    const prevTransfer = Number(inv.transfer_paid || 0);
+
+    const { error } = await supabase.from('invoices').update({
+      paid_amount:   newTotalPaid,
+      status:        isFullyPaid ? 'paid' : 'pending',
+      payment_date:  new Date().toISOString().split('T')[0],
+      payment_method: inv.payment_claimed_method,
+      cash_paid:     inv.payment_claimed_method === 'cash'     ? prevCash + claimAmount     : prevCash,
+      transfer_paid: inv.payment_claimed_method === 'transfer' ? prevTransfer + claimAmount : prevTransfer,
+      payment_claimed_at:     null,
+      payment_claimed_amount: null,
+      payment_claimed_method: null,
+      payment_claimed_by_name: null,
+    }).eq('id', currentClaimId);
+
+    setLoading(btn, false);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast(isFullyPaid ? '✅ Faktur dikonfirmasi lunas' : '✅ Pembayaran sebagian dikonfirmasi');
+    closeModal('modal-confirm-payment');
+    loadPaymentClaims();
+  }
+
+  async function rejectPaymentClaim() {
+    if (!showConfirm('Tolak laporan bayar ini? Klaim akan dihapus, faktur tetap pending.')) return;
+    const { error } = await supabase.from('invoices').update({
+      payment_claimed_at:     null,
+      payment_claimed_amount: null,
+      payment_claimed_method: null,
+      payment_claimed_by_name: null,
+    }).eq('id', currentClaimId);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast('Laporan bayar ditolak');
+    closeModal('modal-confirm-payment');
+    loadPaymentClaims();
   }
 
   async function loadProducts() {
