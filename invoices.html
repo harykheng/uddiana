@@ -1808,7 +1808,7 @@
     return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }).format(due);
   }
 
-  function printCurrentInvoice() {
+  async function printCurrentInvoice() {
     if (!currentInvoice) return;
     const { inv, items } = currentInvoice;
 
