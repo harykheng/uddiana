@@ -650,6 +650,7 @@
       return `<tr ${faded}>
         <td>
           <strong style="color:var(--primary)">${escapeHtml(inv.invoice_number)}</strong>
+          ${inv.printed_at ? `<span title="Dicetak ${inv.print_count}x · terakhir ${formatDate(inv.printed_at)}" style="font-size:11px;color:#64748b;margin-left:4px">🖨️</span>` : ''}
           ${inv.sales_name ? `<span class="badge-sales">👤 ${escapeHtml(inv.sales_name)}</span>` : ''}
         </td>
         <td>${escapeHtml(inv.customer_name)}</td>
@@ -1736,6 +1737,7 @@
       </div>
       ${paymentInfo}
       ${inv.notes ? `<div style="margin-top:10px;padding:10px 12px;background:#fffbeb;border-radius:7px;font-size:13px;color:var(--text-muted)">📝 ${escapeHtml(inv.notes)}</div>` : ''}
+      ${inv.printed_at ? `<div style="margin-top:8px;font-size:12px;color:#94a3b8">🖨️ Sudah dicetak ${inv.print_count}x · terakhir ${formatDate(inv.printed_at)}</div>` : ''}
     `;
 
     const cancelBtn = document.getElementById('btn-cancel-invoice');
@@ -1911,6 +1913,16 @@
       </div>`;
 
     window.print();
+
+    // Tandai faktur sudah dicetak
+    const newCount = (currentInvoice.inv.print_count || 0) + 1;
+    await supabase.from('invoices').update({
+      printed_at: new Date().toISOString(),
+      print_count: newCount,
+    }).eq('id', currentInvoice.inv.id);
+    currentInvoice.inv.printed_at = new Date().toISOString();
+    currentInvoice.inv.print_count = newCount;
+    loadInvoices();
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {
