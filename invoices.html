@@ -1708,9 +1708,9 @@
         <div style="text-align:right;flex-shrink:0">
           <span class="badge badge-${statusColor}" style="font-size:13px">${statusLabel}</span>
           <div style="color:var(--text-muted);font-size:12px;margin-top:4px">📅 ${formatDate(inv.invoice_date)}</div>
+          ${calcDueDate(inv.invoice_date, inv.payment_term) ? `<div style="margin-top:4px"><span class="badge badge-warning">📅 Jatuh Tempo: ${calcDueDate(inv.invoice_date, inv.payment_term)}</span></div>` : ''}
           <div style="margin-top:4px">
             <span class="badge badge-gray">${terminMap[inv.payment_term]||inv.payment_term}</span>
-            ${calcDueDate(inv.invoice_date, inv.payment_term) ? `<span class="badge badge-warning" style="margin-left:4px">📅 Jatuh Tempo: ${calcDueDate(inv.invoice_date, inv.payment_term)}</span>` : ''}
             <span class="badge badge-gray" style="margin-left:4px">${modeMap[inv.price_mode]||inv.price_mode}</span>
           </div>
         </div>
