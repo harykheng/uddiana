@@ -321,8 +321,9 @@ tr:hover td { background: #f8fafc; }
 .badge-success { background: var(--success-light); color: var(--success); }
 .badge-warning { background: var(--warning-light); color: var(--warning); }
 .badge-danger  { background: var(--danger-light);  color: var(--danger); }
-.badge-info    { background: var(--primary-light); color: var(--primary); }
-.badge-gray    { background: #f1f5f9; color: var(--text-muted); }
+.badge-info      { background: var(--primary-light); color: var(--primary); }
+.badge-gray      { background: #f1f5f9; color: var(--text-muted); }
+.badge-secondary { background: #f1f5f9; color: #475569; }
 
 /* ---- CUSTOM TOOLTIP ---- */
 .tippy {
