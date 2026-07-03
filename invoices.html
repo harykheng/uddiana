@@ -485,6 +485,7 @@
   let products       = [];
   let customers      = [];
   let currentInvoice = null;
+  let customerTS     = null;
   let discountRules        = [];  // aturan diskon produk
   let discountGroupMembers = [];  // { group_id, product_id }[]
 
@@ -524,13 +525,18 @@
   async function loadCustomers() {
     const { data } = await fetchAll(() => supabase.from('customers').select('*').order('name'));
     customers = data || [];
+    if (customerTS) { customerTS.destroy(); customerTS = null; }
     const opts = customers.map(c =>
-      `<option value="${c.id}" data-name="${escapeHtml(c.name)}" data-store="${escapeHtml(c.store_name||'')}" data-phone="${escapeHtml(c.phone||'')}" data-address="${escapeHtml(c.address||'')}">
-        ${escapeHtml(c.name)}${c.store_name ? ` — ${escapeHtml(c.store_name)}` : ''}
-      </option>`
+      `<option value="${c.id}">${escapeHtml(c.name)}${c.store_name ? ` — ${escapeHtml(c.store_name)}` : ''}</option>`
     ).join('');
     document.getElementById('inv-customer-select').innerHTML =
-      '<option value="">— Ketik manual / pilih customer —</option>' + opts;
+      '<option value="">— Ketik / pilih customer —</option>' + opts;
+    customerTS = new TomSelect('#inv-customer-select', {
+      allowEmptyOption: true,
+      maxOptions: 300,
+      placeholder: '— Ketik / pilih customer —',
+      onChange: onCustomerSelect,
+    });
   }
 
   async function loadSales() {
@@ -694,7 +700,7 @@
   // ── CREATE INVOICE ─────────────────────────────────────────
   function openCreateInvoice() {
     ['inv-customer-name','inv-customer-phone','inv-customer-address','inv-store-name','inv-notes'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('inv-customer-select').value = '';
+    customerTS?.clear();
     document.getElementById('inv-date').value = todayISO();
     document.getElementById('inv-payment-term').value = 'cod';
     document.getElementById('inv-sales').value = '';
@@ -746,14 +752,14 @@
     return charges;
   }
 
-  function onCustomerSelect() {
-    const sel = document.getElementById('inv-customer-select');
-    const opt = sel.options[sel.selectedIndex];
-    if (!opt.value) return;
-    document.getElementById('inv-customer-name').value    = opt.dataset.name    || '';
-    document.getElementById('inv-store-name').value       = opt.dataset.store   || '';
-    document.getElementById('inv-customer-phone').value   = opt.dataset.phone   || '';
-    document.getElementById('inv-customer-address').value = opt.dataset.address || '';
+  function onCustomerSelect(val) {
+    if (!val) return;
+    const c = customers.find(x => x.id === val);
+    if (!c) return;
+    document.getElementById('inv-customer-name').value    = c.name       || '';
+    document.getElementById('inv-store-name').value       = c.store_name || '';
+    document.getElementById('inv-customer-phone').value   = c.phone      || '';
+    document.getElementById('inv-customer-address').value = c.address    || '';
   }
 
   function setPriceMode(mode) {
