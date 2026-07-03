@@ -1551,11 +1551,19 @@
     });
   }
 
-  function openPayment(id) {
+  async function openPayment(id) {
     const inv = allInvoices.find(x => x.id === id);
     if (!inv) return;
 
-    const remaining = Number(inv.total) - Number(inv.paid_amount || 0);
+    // Fetch total retur untuk faktur ini
+    const { data: returs } = await supabase.from('returns')
+      .select('total_return_value')
+      .eq('invoice_id', id)
+      .neq('status', 'cancelled');
+    const returTotal = (returs || []).reduce((s, r) => s + Number(r.total_return_value || 0), 0);
+
+    const effectiveTotal = Number(inv.total) - returTotal;
+    const remaining      = effectiveTotal - Number(inv.paid_amount || 0);
 
     document.getElementById('pay-invoice-id').value    = id;
     document.getElementById('pay-invoice-total').value = remaining;
@@ -1569,11 +1577,15 @@
     const sisaLabel = Number(inv.paid_amount || 0) > 0
       ? `<span style="color:#d97706;font-size:11px;font-weight:700;">⚠️ Sudah dibayar ${formatCurrency(inv.paid_amount)} — sisa ${formatCurrency(remaining)}</span>`
       : '';
+    const returLabel = returTotal > 0
+      ? `<div style="font-size:12px;color:#16a34a;margin-top:2px">↩️ Retur: -${formatCurrency(returTotal)} → tagihan ${formatCurrency(effectiveTotal)}</div>`
+      : '';
     document.getElementById('pay-invoice-info').innerHTML = `
       <div style="font-weight:700;font-size:15px;margin-bottom:4px">${escapeHtml(inv.invoice_number)}</div>
       <div style="color:var(--text-muted)">${escapeHtml(inv.customer_name)}${inv.store_name ? ` &mdash; ${escapeHtml(inv.store_name)}` : ''}</div>
-      <div style="font-size:18px;font-weight:800;color:var(--primary);margin-top:6px">${formatCurrency(inv.total)}</div>
+      <div style="font-size:18px;font-weight:800;color:var(--primary);margin-top:6px">${formatCurrency(effectiveTotal)}</div>
       <div style="font-size:12px;color:var(--text-muted)">Termin: ${terminMap[inv.payment_term] || inv.payment_term}</div>
+      ${returLabel}
       ${sisaLabel}
     `;
     openModal('modal-payment');
@@ -1624,7 +1636,7 @@
     const inv = allInvoices.find(x => x.id === id);
     const alreadyPaid   = Number(inv?.paid_amount || 0);
     const newTotalPaid  = alreadyPaid + amount;
-    const isFullyPaid   = newTotalPaid >= Number(inv?.total || total);
+    const isFullyPaid   = newTotalPaid >= total;
 
     // Akumulasi per metode pembayaran (untuk laporan laba rugi)
     const prevCash     = Number(inv?.cash_paid     || 0);
@@ -1646,7 +1658,7 @@
 
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
 
-    showToast(isFullyPaid ? 'Faktur berhasil dilunasi ✓' : `Pembayaran ${formatCurrency(amount)} tercatat, sisa ${formatCurrency(Number(inv.total) - newTotalPaid)}`);
+    showToast(isFullyPaid ? 'Faktur berhasil dilunasi ✓' : `Pembayaran ${formatCurrency(amount)} tercatat, sisa ${formatCurrency(total - newTotalPaid)}`);
     closeModal('modal-payment');
     loadInvoices();
   }
