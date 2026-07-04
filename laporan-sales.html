@@ -87,10 +87,21 @@
     @media (max-width: 768px) {
       .charts-grid { grid-template-columns: 1fr; }
       .sp-subtitle { display: none; }
-      .sl-card .value { font-size: 16px; }
       .detail-header { flex-wrap: wrap; }
       .sales-cards { grid-template-columns: 1fr; }
       .topbar-right .btn-sm { display: none; }
+
+      /* Compact summary cards */
+      .sl-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+      .sl-card { padding: 12px 14px; }
+      .sl-card .value { font-size: 15px; }
+      .sl-card .label { font-size: 10px; }
+
+      /* Compact sales person cards */
+      .sales-person-card { padding: 12px 14px; }
+      .sp-bar-wrap { display: none; }
+      .sp-stat .st-val { font-size: 13px; }
+      .sp-header { margin-bottom: 10px; }
     }
 
     /* ── PRINT ── */
