@@ -366,6 +366,8 @@
           ? `<div style="background:#dcfce7;border-radius:8px;padding:10px;text-align:center;font-weight:700;color:#166534">✅ Akan lunas setelah dikonfirmasi</div>`
           : `<div style="background:#fffbeb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#92400e">⚠️ Masih ada sisa ${formatCurrency(Number(inv.total) - newTotal)}</div>`}
       </div>`;
+    document.getElementById('btn-confirm-claim').textContent =
+      newTotal >= Number(inv.total) ? '✅ Konfirmasi Lunas' : '✅ Konfirmasi Pembayaran';
     openModal('modal-confirm-payment');
   }
 
