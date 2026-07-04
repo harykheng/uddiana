@@ -293,7 +293,7 @@
   async function loadPaymentClaims() {
     const { data } = await supabase
       .from('invoices')
-      .select('id,invoice_number,invoice_date,store_name,customer_name,sales_name,total,paid_amount,cash_paid,transfer_paid,payment_claimed_at,payment_claimed_amount,payment_claimed_method,payment_claimed_by_name')
+      .select('id,invoice_number,invoice_date,store_name,customer_name,sales_name,total,paid_amount,cash_paid,transfer_paid,payment_claimed_at,payment_claimed_date,payment_claimed_amount,payment_claimed_method,payment_claimed_by_name')
       .not('payment_claimed_at', 'is', null)
       .eq('status', 'pending')
       .order('payment_claimed_at', { ascending: false });
@@ -322,7 +322,7 @@
         <td><strong>${formatCurrency(inv.total)}</strong></td>
         <td><strong style="color:#16a34a">${formatCurrency(inv.payment_claimed_amount)}</strong></td>
         <td><span class="badge badge-gray">${inv.payment_claimed_method === 'cash' ? '💵 Cash' : '🏦 Transfer'}</span></td>
-        <td class="text-muted" style="font-size:12px">${formatDate(inv.payment_claimed_at)}</td>
+        <td class="text-muted" style="font-size:12px">${inv.payment_claimed_date ? formatDate(inv.payment_claimed_date) : '—'}</td>
         <td><button class="btn btn-primary btn-sm" onclick="openConfirmPayment('${inv.id}')">Review</button></td>
       </tr>`).join('');
 
@@ -333,7 +333,7 @@
           <span class="badge badge-gray">${inv.payment_claimed_method === 'cash' ? '💵 Cash' : '🏦 Transfer'}</span>
         </div>
         <div class="vi-card-customer">${escapeHtml(inv.store_name || inv.customer_name || '—')}</div>
-        <div class="vi-card-meta">👤 ${escapeHtml(inv.payment_claimed_by_name || '—')} · Lapor ${formatDate(inv.payment_claimed_at)}</div>
+        <div class="vi-card-meta">👤 ${escapeHtml(inv.payment_claimed_by_name || '—')} · Lapor ${formatDate(inv.payment_claimed_at)}${inv.payment_claimed_date ? ` · Bayar ${formatDate(inv.payment_claimed_date)}` : ''}</div>
         <div class="vi-card-total">${formatCurrency(inv.payment_claimed_amount)} <span style="font-size:13px;color:#64748b;font-weight:400">dari ${formatCurrency(inv.total)}</span></div>
         <div class="vi-card-actions">
           <button class="btn btn-primary btn-sm" onclick="openConfirmPayment('${inv.id}')" style="flex:1">Review</button>
@@ -354,6 +354,7 @@
         <div style="display:flex;justify-content:space-between"><span class="text-muted">Sales</span><strong>${escapeHtml(inv.payment_claimed_by_name || inv.sales_name || '—')}</strong></div>
         <div style="display:flex;justify-content:space-between"><span class="text-muted">Total Faktur</span><strong>${formatCurrency(inv.total)}</strong></div>
         ${alreadyPaid > 0 ? `<div style="display:flex;justify-content:space-between"><span class="text-muted">Sudah Dibayar</span><span style="color:#16a34a">${formatCurrency(alreadyPaid)}</span></div>` : ''}
+        ${inv.payment_claimed_date ? `<div style="display:flex;justify-content:space-between"><span class="text-muted">Tanggal Bayar</span><strong>${formatDate(inv.payment_claimed_date)}</strong></div>` : ''}
         <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;display:flex;justify-content:space-between;align-items:center">
           <span style="font-weight:600">Dilaporkan (${inv.payment_claimed_method === 'cash' ? '💵 Cash' : '🏦 Transfer'})</span>
           <strong style="color:#16a34a;font-size:16px">${formatCurrency(inv.payment_claimed_amount)}</strong>
@@ -381,11 +382,12 @@
     const { error } = await supabase.from('invoices').update({
       paid_amount:   newTotalPaid,
       status:        isFullyPaid ? 'paid' : 'pending',
-      payment_date:  new Date().toISOString().split('T')[0],
+      payment_date:  inv.payment_claimed_date || new Date().toISOString().split('T')[0],
       payment_method: inv.payment_claimed_method,
       cash_paid:     inv.payment_claimed_method === 'cash'     ? prevCash + claimAmount     : prevCash,
       transfer_paid: inv.payment_claimed_method === 'transfer' ? prevTransfer + claimAmount : prevTransfer,
       payment_claimed_at:     null,
+      payment_claimed_date:   null,
       payment_claimed_amount: null,
       payment_claimed_method: null,
       payment_claimed_by_name: null,
@@ -402,6 +404,7 @@
     if (!showConfirm('Tolak laporan bayar ini? Klaim akan dihapus, faktur tetap pending.')) return;
     const { error } = await supabase.from('invoices').update({
       payment_claimed_at:     null,
+      payment_claimed_date:   null,
       payment_claimed_amount: null,
       payment_claimed_method: null,
       payment_claimed_by_name: null,

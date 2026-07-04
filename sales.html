@@ -447,6 +447,10 @@
         <input type="text" inputmode="numeric" id="claim-amount" placeholder="0" style="font-size:16px" oninput="this.value=this.value.replace(/[^0-9]/g,'').replace(/\B(?=(\d{3})+(?!\d))/g,'.')">
       </div>
       <div class="form-group">
+        <label>Tanggal Bayar</label>
+        <input type="date" id="claim-date" style="font-size:15px;width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;box-sizing:border-box">
+      </div>
+      <div class="form-group">
         <label>Metode Pembayaran</label>
         <div style="display:flex;gap:8px">
           <button id="claim-btn-cash" onclick="setClaimMethod('cash')" style="flex:1;padding:10px;border:1.5px solid #2563eb;border-radius:8px;background:#eff6ff;color:#2563eb;font-size:13px;font-weight:600;cursor:pointer">💵 Cash</button>
@@ -731,7 +735,7 @@
   async function loadHistory() {
     const { data } = await supabase
       .from('invoices')
-      .select('id,invoice_number,invoice_date,customer_id,store_name,total,status,verification_status,reject_reason,notes,payment_term,payment_claimed_at,payment_claimed_amount,payment_claimed_method,invoice_items(id,product_id,quantity,price,subtotal,products(name))')
+      .select('id,invoice_number,invoice_date,customer_id,store_name,total,status,verification_status,reject_reason,notes,payment_term,payment_claimed_at,payment_claimed_date,payment_claimed_amount,payment_claimed_method,invoice_items(id,product_id,quantity,price,subtotal,products(name))')
       .eq('created_by_id', currentUser.session.user.id)
       .order('created_at', { ascending: false });
     allInvoices = data || [];
@@ -787,7 +791,7 @@
           ${inv.verification_status === 'approved' && inv.status === 'pending' && !inv.payment_claimed_at
             ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();openClaimPayment('${inv.id}')">💳 Laporkan Bayar</button>`
             : inv.payment_claimed_at
-            ? `<span style="font-size:12px;color:#d97706;font-weight:600">⏳ Menunggu konfirmasi admin (${formatCurrency(inv.payment_claimed_amount)} · ${inv.payment_claimed_method === 'cash' ? 'Cash' : 'Transfer'})</span>`
+            ? `<span style="font-size:12px;color:#d97706;font-weight:600">⏳ Menunggu konfirmasi admin (${formatCurrency(inv.payment_claimed_amount)} · ${inv.payment_claimed_method === 'cash' ? 'Cash' : 'Transfer'} · ${formatDate(inv.payment_claimed_date)})</span>`
             : ''}
         </div>` : ''}
       </div>`;
@@ -808,6 +812,7 @@
     document.getElementById('claim-invoice-info').innerHTML =
       `<strong>${escapeHtml(inv.invoice_number)}</strong> · ${escapeHtml(inv.store_name || '—')} · <strong style="color:#2563eb">${formatCurrency(inv.total)}</strong>`;
     document.getElementById('claim-amount').value = Number(inv.total).toLocaleString('id-ID');
+    document.getElementById('claim-date').value = todayISO();
     setClaimMethod('cash');
     openModal('modal-claim');
   }
@@ -823,10 +828,13 @@
     const rawAmount = document.getElementById('claim-amount').value.replace(/\./g, '');
     const amount = parseFloat(rawAmount) || 0;
     if (!amount) { showToast('Isi jumlah pembayaran', 'error'); return; }
+    const claimDate = document.getElementById('claim-date').value;
+    if (!claimDate) { showToast('Pilih tanggal bayar', 'error'); return; }
     const btn = document.getElementById('btn-submit-claim');
     btn.disabled = true; btn.textContent = 'Mengirim...';
     const { error } = await supabase.from('invoices').update({
       payment_claimed_at:     new Date().toISOString(),
+      payment_claimed_date:   claimDate,
       payment_claimed_amount: amount,
       payment_claimed_method: claimMethod,
       payment_claimed_by_name: currentUser.profile.name,
