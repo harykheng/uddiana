@@ -635,7 +635,8 @@ textarea { resize: vertical; min-height: 80px; }
   }
   .sidebar.sidebar-open { transform: translateX(0); }
 
-  .main { margin-left: 0; }
+  .main { margin-left: 0; overflow-x: hidden; }
+  .page { overflow-x: hidden; }
   html, body { overflow-x: hidden; max-width: 100%; }
 
   .topbar { padding: 0 16px; gap: 10px; }
