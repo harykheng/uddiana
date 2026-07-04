@@ -354,7 +354,10 @@
         <div style="display:flex;justify-content:space-between"><span class="text-muted">Sales</span><strong>${escapeHtml(inv.payment_claimed_by_name || inv.sales_name || '—')}</strong></div>
         <div style="display:flex;justify-content:space-between"><span class="text-muted">Total Faktur</span><strong>${formatCurrency(inv.total)}</strong></div>
         ${alreadyPaid > 0 ? `<div style="display:flex;justify-content:space-between"><span class="text-muted">Sudah Dibayar</span><span style="color:#16a34a">${formatCurrency(alreadyPaid)}</span></div>` : ''}
-        ${inv.payment_claimed_date ? `<div style="display:flex;justify-content:space-between"><span class="text-muted">Tanggal Bayar</span><strong>${formatDate(inv.payment_claimed_date)}</strong></div>` : ''}
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Tanggal Bayar</div>
+          <input type="date" id="confirm-payment-date" value="${inv.payment_claimed_date || ''}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
+        </div>
         <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;display:flex;justify-content:space-between;align-items:center">
           <span style="font-weight:600">Dilaporkan (${inv.payment_claimed_method === 'cash' ? '💵 Cash' : '🏦 Transfer'})</span>
           <strong style="color:#16a34a;font-size:16px">${formatCurrency(inv.payment_claimed_amount)}</strong>
@@ -382,7 +385,7 @@
     const { error } = await supabase.from('invoices').update({
       paid_amount:   newTotalPaid,
       status:        isFullyPaid ? 'paid' : 'pending',
-      payment_date:  inv.payment_claimed_date || new Date().toISOString().split('T')[0],
+      payment_date:  document.getElementById('confirm-payment-date')?.value || inv.payment_claimed_date || new Date().toISOString().split('T')[0],
       payment_method: inv.payment_claimed_method,
       cash_paid:     inv.payment_claimed_method === 'cash'     ? prevCash + claimAmount     : prevCash,
       transfer_paid: inv.payment_claimed_method === 'transfer' ? prevTransfer + claimAmount : prevTransfer,
