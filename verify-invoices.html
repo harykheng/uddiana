@@ -293,7 +293,7 @@
   async function loadPaymentClaims() {
     const { data } = await supabase
       .from('invoices')
-      .select('id,invoice_number,invoice_date,store_name,customer_name,sales_name,total,paid_amount,cash_paid,transfer_paid,payment_claimed_at,payment_claimed_date,payment_claimed_amount,payment_claimed_method,payment_claimed_by_name')
+      .select('id,invoice_number,invoice_date,store_name,customer_name,sales_name,total,paid_amount,cash_paid,transfer_paid,payment_claimed_at,payment_claimed_date,payment_claimed_amount,payment_claimed_method,payment_claimed_by_name,payment_claimed_note')
       .not('payment_claimed_at', 'is', null)
       .eq('status', 'pending')
       .order('payment_claimed_at', { ascending: false });
@@ -358,6 +358,7 @@
           <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Tanggal Bayar</div>
           <input type="date" id="confirm-payment-date" value="${inv.payment_claimed_date || ''}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;box-sizing:border-box">
         </div>
+        ${inv.payment_claimed_note ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:13px"><span style="font-weight:700;color:#92400e">📝 Catatan sales:</span> ${escapeHtml(inv.payment_claimed_note)}</div>` : ''}
         <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;display:flex;justify-content:space-between;align-items:center">
           <span style="font-weight:600">Dilaporkan (${inv.payment_claimed_method === 'cash' ? '💵 Cash' : '🏦 Transfer'})</span>
           <strong style="color:#16a34a;font-size:16px">${formatCurrency(inv.payment_claimed_amount)}</strong>
@@ -396,6 +397,7 @@
       payment_claimed_amount: null,
       payment_claimed_method: null,
       payment_claimed_by_name: null,
+      payment_claimed_note:   null,
     }).eq('id', currentClaimId);
 
     setLoading(btn, false);
@@ -413,6 +415,7 @@
       payment_claimed_amount: null,
       payment_claimed_method: null,
       payment_claimed_by_name: null,
+      payment_claimed_note:   null,
     }).eq('id', currentClaimId);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('Laporan bayar ditolak');

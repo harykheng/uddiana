@@ -458,6 +458,11 @@
         </div>
       </div>
     </div>
+      <div class="form-group">
+        <label>Catatan <span style="font-weight:400;color:var(--text-muted)">(opsional)</span></label>
+        <textarea id="claim-note" rows="2" placeholder="Contoh: bayar sebagian dulu, sisanya minggu depan..." style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;resize:none;box-sizing:border-box;font-family:inherit"></textarea>
+      </div>
+    </div>
     <div style="padding:0 16px 16px;display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-ghost btn-full" onclick="closeModal('modal-claim')">Batal</button>
       <button class="btn btn-primary btn-full" id="btn-submit-claim" onclick="submitClaimPayment()">Kirim Laporan</button>
@@ -813,6 +818,7 @@
       `<strong>${escapeHtml(inv.invoice_number)}</strong> · ${escapeHtml(inv.store_name || '—')} · <strong style="color:#2563eb">${formatCurrency(inv.total)}</strong>`;
     document.getElementById('claim-amount').value = Number(inv.total).toLocaleString('id-ID');
     document.getElementById('claim-date').value = todayISO();
+    document.getElementById('claim-note').value = '';
     setClaimMethod('cash');
     openModal('modal-claim');
   }
@@ -838,6 +844,7 @@
       payment_claimed_amount: amount,
       payment_claimed_method: claimMethod,
       payment_claimed_by_name: currentUser.profile.name,
+      payment_claimed_note:   document.getElementById('claim-note').value.trim() || null,
     }).eq('id', claimInvoiceId);
     btn.disabled = false; btn.textContent = 'Kirim Laporan';
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
