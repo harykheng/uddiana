@@ -110,9 +110,9 @@
 
     <main class="page">
       <!-- TAB BAR -->
-      <div style="display:flex;gap:4px;margin-bottom:20px;background:#f1f5f9;border-radius:10px;padding:4px">
-        <button id="tab-btn-verify" onclick="switchVerifyTab('verify')" style="flex:1;padding:8px 12px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(0,0,0,.1)">✅ Verifikasi Faktur <span id="count-verify" class="badge badge-warning" style="margin-left:4px">0</span></button>
-        <button id="tab-btn-payment" onclick="switchVerifyTab('payment')" style="flex:1;padding:8px 12px;border:none;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;background:transparent;color:#64748b">💳 Konfirmasi Bayar <span id="count-payment" class="badge badge-info" style="margin-left:4px">0</span></button>
+      <div style="display:flex;border-bottom:2px solid #e2e8f0;margin-bottom:20px;gap:0">
+        <button id="tab-btn-verify" onclick="switchVerifyTab('verify')" style="padding:10px 20px;border:none;border-bottom:3px solid #2563eb;margin-bottom:-2px;background:transparent;color:#2563eb;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px">✅ Verifikasi Faktur <span id="count-verify" class="badge badge-warning">0</span></button>
+        <button id="tab-btn-payment" onclick="switchVerifyTab('payment')" style="padding:10px 20px;border:none;border-bottom:3px solid transparent;margin-bottom:-2px;background:transparent;color:#64748b;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px">💳 Konfirmasi Bayar <span id="count-payment" class="badge badge-info">0</span></button>
       </div>
 
       <!-- TAB 1: VERIFIKASI FAKTUR -->
@@ -281,12 +281,12 @@
     document.getElementById('tab-payment').style.display = isVerify ? 'none' : '';
     const btnV = document.getElementById('tab-btn-verify');
     const btnP = document.getElementById('tab-btn-payment');
-    btnV.style.background   = isVerify ? '#fff' : 'transparent';
-    btnV.style.color        = isVerify ? '#0f172a' : '#64748b';
-    btnV.style.boxShadow    = isVerify ? '0 1px 3px rgba(0,0,0,.1)' : 'none';
-    btnP.style.background   = !isVerify ? '#fff' : 'transparent';
-    btnP.style.color        = !isVerify ? '#0f172a' : '#64748b';
-    btnP.style.boxShadow    = !isVerify ? '0 1px 3px rgba(0,0,0,.1)' : 'none';
+    btnV.style.borderBottomColor = isVerify  ? '#2563eb' : 'transparent';
+    btnV.style.color             = isVerify  ? '#2563eb' : '#64748b';
+    btnV.style.fontWeight        = isVerify  ? '700' : '600';
+    btnP.style.borderBottomColor = !isVerify ? '#2563eb' : 'transparent';
+    btnP.style.color             = !isVerify ? '#2563eb' : '#64748b';
+    btnP.style.fontWeight        = !isVerify ? '700' : '600';
   }
 
   // ── PAYMENT CLAIMS ───────────────────────────────────────────
