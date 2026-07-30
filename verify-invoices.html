@@ -776,15 +776,19 @@
 
       // adjust stock: kalau produk diganti, kembalikan penuh stok produk lama & kurangi penuh stok produk baru
       if (productId !== originalProductId) {
+        // Validasi dulu stok produk pengganti cukup, SEBELUM nulis apapun ke DB —
+        // supaya kalau tidak cukup, batal bersih tanpa stok produk lama sudah kadung dikembalikan.
+        const { data: newProd } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
+        if (newProd && newProd.stock_quantity < qty) {
+          showToast('Stok tidak cukup untuk produk pengganti', 'error'); setLoading(btn, false); return;
+        }
+
         const { data: oldProd } = await supabase.from('products').select('stock_quantity').eq('id', originalProductId).single();
         if (oldProd) {
           await supabase.from('products').update({ stock_quantity: oldProd.stock_quantity + originalQty }).eq('id', originalProductId);
         }
-        const { data: newProd } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
         if (newProd) {
-          const newStock = newProd.stock_quantity - qty;
-          if (newStock < 0) { showToast('Stok tidak cukup untuk produk pengganti', 'error'); setLoading(btn, false); return; }
-          await supabase.from('products').update({ stock_quantity: newStock }).eq('id', productId);
+          await supabase.from('products').update({ stock_quantity: newProd.stock_quantity - qty }).eq('id', productId);
         }
       } else {
         const qtyDiff = qty - originalQty;
