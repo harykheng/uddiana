@@ -1082,6 +1082,13 @@
 
   async function saveInvoice() {
     const btn = document.getElementById('btn-save-invoice');
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa buat faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const customerName = document.getElementById('inv-customer-name').value.trim();
     if (!customerName) { showToast('Nama pelanggan wajib diisi', 'error'); return; }
 
@@ -1421,6 +1428,13 @@
 
   async function saveEditInvoice() {
     const btn = document.getElementById('btn-save-edit-invoice');
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa edit faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const inv = allInvoices.find(x => x.id === editInvoiceId);
     if (!inv) return;
 
@@ -1511,13 +1525,25 @@
 
       if (item.itemId && item.isSameProduct) {
         // Update item lama — adjust stok jika qty berubah
-        await supabase.from('invoice_items').update(payload).eq('id', item.itemId);
         if (qtyDiff !== 0) {
           const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', item.product_id).single();
-          if (prod) await supabase.from('products').update({ stock_quantity: prod.stock_quantity - qtyDiff }).eq('id', item.product_id);
+          const newStock = prod ? prod.stock_quantity - qtyDiff : null;
+          if (newStock !== null && newStock < 0) {
+            showToast(`Stok "${item.product_name}" tidak cukup (sisa saat ini: ${prod.stock_quantity})`, 'error');
+            setLoading(btn, false); return;
+          }
+          if (prod) await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.product_id);
         }
+        await supabase.from('invoice_items').update(payload).eq('id', item.itemId);
       } else {
-        // Item baru atau ganti produk — jika ganti produk restore stok lama dulu
+        // Item baru atau ganti produk — validasi stok produk baru cukup DULU sebelum restore stok produk lama
+        const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', item.product_id).single();
+        const newStock = prod ? prod.stock_quantity - item.quantity : null;
+        if (newStock !== null && newStock < 0) {
+          showToast(`Stok "${item.product_name}" tidak cukup (sisa saat ini: ${prod.stock_quantity})`, 'error');
+          setLoading(btn, false); return;
+        }
+
         if (item.itemId && !item.isSameProduct) {
           const oldItem = editInvoiceItems.find(x => x.id === item.itemId);
           if (oldItem) {
@@ -1527,8 +1553,7 @@
           }
         }
         await supabase.from('invoice_items').insert(payload);
-        const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', item.product_id).single();
-        if (prod) await supabase.from('products').update({ stock_quantity: prod.stock_quantity - item.quantity }).eq('id', item.product_id);
+        if (prod) await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.product_id);
       }
     }
 
@@ -1769,6 +1794,13 @@
   async function cancelCurrentInvoice() {
     if (!currentInvoice) return;
     if (!showConfirm(`Batalkan faktur ${currentInvoice.inv.invoice_number}?\nStok akan dikembalikan.`)) return;
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa batalkan faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', currentInvoice.inv.id);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('Faktur dibatalkan, stok dikembalikan');
@@ -1790,6 +1822,12 @@
       : `Hapus faktur ${inv.invoice_number}?\n\nStok akan dikembalikan dan faktur dihapus permanen.\nTindakan ini tidak bisa dibatalkan.`;
 
     if (!confirm(confirmMsg)) return;
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa hapus faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
 
     // 1. Ambil item faktur
     const { data: items } = await supabase

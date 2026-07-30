@@ -452,6 +452,13 @@
 
   async function savePurchase() {
     const btn = document.getElementById('btn-save-po');
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa simpan pembelian — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const items = [];
     let totalCost = 0;
     let valid = true;
@@ -709,6 +716,12 @@
   async function saveEditPurchase() {
     const btn = document.getElementById('btn-save-edit-po');
 
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa edit pembelian — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const newItems = [];
     let totalCost  = 0;
     let valid      = true;
@@ -738,10 +751,15 @@
 
     for (const old of (oldItems || [])) {
       const { data: prod } = await supabase.from('products')
-        .select('stock_quantity').eq('id', old.product_id).single();
+        .select('stock_quantity, name').eq('id', old.product_id).single();
       if (prod) {
+        const newStock = prod.stock_quantity - old.quantity;
+        if (newStock < 0) {
+          showToast(`Tidak bisa edit — stok "${prod.name}" sudah terpakai (sisa: ${prod.stock_quantity}, PO ini: ${old.quantity}). Sesuaikan manual dulu lewat halaman Produk.`, 'error');
+          setLoading(btn, false); return;
+        }
         await supabase.from('products')
-          .update({ stock_quantity: prod.stock_quantity - old.quantity })
+          .update({ stock_quantity: newStock })
           .eq('id', old.product_id);
       }
     }

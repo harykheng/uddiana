@@ -898,8 +898,26 @@ create table if not exists return_items (
   async function approveRetur(returId) {
     if (!confirm('Setujui retur ini? Stok produk akan dikembalikan.')) return;
 
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa approve retur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const ret = allReturns.find(r => r.id === returId);
     if (!ret) return;
+
+    // Klaim status 'approved' secara atomik — hanya berhasil kalau statusnya masih 'pending'.
+    // Ini mencegah double-approve (misal double-click atau 2 tab admin terbuka bersamaan)
+    // dari mengembalikan stok dua kali untuk retur yang sama.
+    const { data: claimed, error: claimErr } = await supabase.from('returns')
+      .update({ status: 'approved', handled_by: currentUser?.profile?.name || 'Admin' })
+      .eq('id', returId)
+      .eq('status', 'pending')
+      .select('id');
+
+    if (claimErr) { showToast('Gagal update status retur: ' + claimErr.message, 'error'); return; }
+    if (!claimed?.length) { showToast('Retur ini sudah diproses sebelumnya', 'error'); await loadReturns(); return; }
 
     // Restore stock for each item
     const items = ret.return_items || [];
@@ -907,23 +925,25 @@ create table if not exists return_items (
       if (!it.product_id) continue;
       const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', it.product_id).single();
       if (prod) {
+        const newStock = prod.stock_quantity + it.quantity;
         const { error } = await supabase.from('products')
-          .update({ stock_quantity: prod.stock_quantity + it.quantity })
+          .update({ stock_quantity: newStock })
           .eq('id', it.product_id);
         if (error) {
           showToast('Gagal mengembalikan stok untuk: ' + it.product_name, 'error');
-          return;
+          continue;
         }
+        await supabase.from('stock_movements').insert({
+          product_id:      it.product_id,
+          product_name:    it.product_name,
+          type:            'return_in',
+          quantity:        it.quantity,
+          quantity_before: prod.stock_quantity,
+          quantity_after:  newStock,
+          notes:           `Retur disetujui: ${ret.return_number || returId}`,
+        });
       }
     }
-
-    // Update return status
-    const { error } = await supabase.from('returns').update({
-      status:     'approved',
-      handled_by: currentUser?.profile?.name || 'Admin'
-    }).eq('id', returId);
-
-    if (error) { showToast('Gagal update status retur: ' + error.message, 'error'); return; }
 
     showToast('Retur disetujui! Stok telah dikembalikan ✅', 'success');
     await loadReturns();
@@ -1101,6 +1121,12 @@ create table if not exists return_items (
     const ret = allReturns.find(r => r.id === editReturId);
     if (!ret) return;
 
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa edit retur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     setLoading(btn, true);
     let totalValue = 0;
 
@@ -1111,22 +1137,41 @@ create table if not exists return_items (
       const newSub = newQty * (it.unit_price || 0);
       totalValue  += newSub;
 
+      // Jika sudah approved & qty berubah, cek dulu stok cukup SEBELUM update apapun
+      let stockUpdate = null; // { newStock, prodStock } kalau perlu adjust stok
+      if (ret.status === 'approved' && newQty !== oldQty) {
+        const delta = newQty - oldQty; // + = lebih banyak diretur (tambah stok), - = kurang (kurangi stok)
+        const { data: prod } = await supabase.from('products')
+          .select('stock_quantity').eq('id', it.product_id).single();
+        if (prod) {
+          const newStock = prod.stock_quantity + delta;
+          if (newStock < 0) {
+            showToast(`Tidak bisa kurangi qty retur "${it.product_name}" — stok sudah terpakai (sisa: ${prod.stock_quantity})`, 'error');
+            setLoading(btn, false); return;
+          }
+          stockUpdate = { delta, newStock, prodStock: prod.stock_quantity };
+        }
+      }
+
       // Update return_item
       const { error } = await supabase.from('return_items')
         .update({ quantity: newQty, subtotal: newSub })
         .eq('id', it.id);
       if (error) { showToast('Gagal update item: ' + error.message, 'error'); setLoading(btn, false); return; }
 
-      // Jika sudah approved, sesuaikan stok (delta qty)
-      if (ret.status === 'approved' && newQty !== oldQty) {
-        const delta = newQty - oldQty; // + = lebih banyak diretur (tambah stok), - = kurang (kurangi stok)
-        const { data: prod } = await supabase.from('products')
-          .select('stock_quantity').eq('id', it.product_id).single();
-        if (prod) {
-          await supabase.from('products')
-            .update({ stock_quantity: prod.stock_quantity + delta })
-            .eq('id', it.product_id);
-        }
+      if (stockUpdate) {
+        await supabase.from('products')
+          .update({ stock_quantity: stockUpdate.newStock })
+          .eq('id', it.product_id);
+        await supabase.from('stock_movements').insert({
+          product_id:      it.product_id,
+          product_name:    it.product_name,
+          type:            'adjustment',
+          quantity:        Math.abs(stockUpdate.delta),
+          quantity_before: stockUpdate.prodStock,
+          quantity_after:  stockUpdate.newStock,
+          notes:           `Edit retur ${ret.return_number || editReturId}: qty ${oldQty} → ${newQty}`,
+        });
       }
     }
 

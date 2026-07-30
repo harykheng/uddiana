@@ -616,6 +616,13 @@
     const btn = document.getElementById('btn-confirm-reject');
     setLoading(btn, true);
 
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa tolak faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
+      return;
+    }
+
     const inv = allInvoices.find(x => x.id === currentInvoiceId);
     if (!inv) { showToast('Faktur tidak ditemukan', 'error'); setLoading(btn, false); return; }
 
@@ -659,7 +666,7 @@
       </div>
       <div id="edit-items-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
         ${items.map((it, idx) => `
-          <div class="edit-item-row" data-item-id="${it.id}" data-original-qty="${it.quantity}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:4px">
+          <div class="edit-item-row" data-item-id="${it.id}" data-original-qty="${it.quantity}" data-original-product-id="${it.product_id}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:4px">
             <div class="edit-item-grid">
               <div>
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Produk</label>
@@ -742,6 +749,13 @@
     const btn = document.getElementById('btn-save-edit');
     setLoading(btn, true);
 
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa edit faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
+      return;
+    }
+
     const inv = allInvoices.find(x => x.id === currentInvoiceId);
     const rows = document.querySelectorAll('.edit-item-row');
     let total = 0;
@@ -749,6 +763,7 @@
     for (const row of rows) {
       const itemId = row.dataset.itemId;
       const originalQty = parseFloat(row.dataset.originalQty) || 0;
+      const originalProductId = row.dataset.originalProductId;
       const productId = row.querySelector('.edit-product-sel').value;
       const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
       const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
@@ -759,14 +774,31 @@
 
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); setLoading(btn, false); return; }
 
-      // adjust stock difference
-      const qtyDiff = qty - originalQty;
-      if (qtyDiff !== 0) {
-        const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
-        if (prod) {
-          const newStock = prod.stock_quantity - qtyDiff;
-          if (newStock < 0) { showToast('Stok tidak cukup untuk qty yang diubah', 'error'); setLoading(btn, false); return; }
-          await supabase.from('products').update({ stock_quantity: newStock }).eq('id', productId);
+      // adjust stock: kalau produk diganti, kembalikan penuh stok produk lama & kurangi penuh stok produk baru
+      if (productId !== originalProductId) {
+        // Validasi dulu stok produk pengganti cukup, SEBELUM nulis apapun ke DB —
+        // supaya kalau tidak cukup, batal bersih tanpa stok produk lama sudah kadung dikembalikan.
+        const { data: newProd } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
+        if (newProd && newProd.stock_quantity < qty) {
+          showToast('Stok tidak cukup untuk produk pengganti', 'error'); setLoading(btn, false); return;
+        }
+
+        const { data: oldProd } = await supabase.from('products').select('stock_quantity').eq('id', originalProductId).single();
+        if (oldProd) {
+          await supabase.from('products').update({ stock_quantity: oldProd.stock_quantity + originalQty }).eq('id', originalProductId);
+        }
+        if (newProd) {
+          await supabase.from('products').update({ stock_quantity: newProd.stock_quantity - qty }).eq('id', productId);
+        }
+      } else {
+        const qtyDiff = qty - originalQty;
+        if (qtyDiff !== 0) {
+          const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
+          if (prod) {
+            const newStock = prod.stock_quantity - qtyDiff;
+            if (newStock < 0) { showToast('Stok tidak cukup untuk qty yang diubah', 'error'); setLoading(btn, false); return; }
+            await supabase.from('products').update({ stock_quantity: newStock }).eq('id', productId);
+          }
         }
       }
 
