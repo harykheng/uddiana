@@ -1494,6 +1494,8 @@
     if (!newItems.length) { showToast('Tambahkan minimal 1 produk', 'error'); return; }
 
     setLoading(btn, true);
+    showFullLoading('Menyimpan perubahan faktur...');
+    try {
 
     // Kumpulkan item ID lama untuk mendeteksi item yang dihapus
     const oldItemIds = new Set((editInvoiceItems || []).map(it => it.id));
@@ -1562,10 +1564,13 @@
     const editNotes = document.getElementById('edit-inv-notes').value.trim() || null;
     await supabase.from('invoices').update({ total, subtotal: total, payment_term: editPaymentTerm, notes: editNotes }).eq('id', editInvoiceId);
 
-    setLoading(btn, false);
     showToast('Faktur berhasil diperbarui!', 'success');
     closeModal('modal-edit-invoice');
     loadInvoices();
+    } finally {
+      setLoading(btn, false);
+      hideFullLoading();
+    }
   }
 
   // ── PAYMENT ────────────────────────────────────────────────

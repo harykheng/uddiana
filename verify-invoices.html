@@ -756,6 +756,9 @@
       return;
     }
 
+    showFullLoading('Menyimpan perubahan faktur...');
+    try {
+
     const inv = allInvoices.find(x => x.id === currentInvoiceId);
     const rows = document.querySelectorAll('.edit-item-row');
     let total = 0;
@@ -819,11 +822,14 @@
       verified_at: new Date().toISOString()
     }).eq('id', currentInvoiceId);
 
-    setLoading(btn, false);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('Faktur diedit dan disetujui');
     closeModal('modal-edit');
     loadInvoices();
+    } finally {
+      setLoading(btn, false);
+      hideFullLoading();
+    }
   }
 
   document.querySelectorAll('.modal-overlay').forEach(el => {

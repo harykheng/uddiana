@@ -50,6 +50,24 @@ function showConfirm(message) {
   return confirm(message);
 }
 
+function showFullLoading(message) {
+  let el = document.getElementById('full-loading-overlay');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'full-loading-overlay';
+    el.className = 'full-loading-overlay';
+    el.innerHTML = '<div class="full-loading-box"><span class="spinner spinner-lg"></span><span class="full-loading-text"></span></div>';
+    document.body.appendChild(el);
+  }
+  el.querySelector('.full-loading-text').textContent = message || 'Memproses...';
+  el.classList.add('show');
+}
+
+function hideFullLoading() {
+  const el = document.getElementById('full-loading-overlay');
+  if (el) el.classList.remove('show');
+}
+
 function setLoading(btn, loading) {
   if (!btn) return;
   if (loading) {
