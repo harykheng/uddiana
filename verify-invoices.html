@@ -265,12 +265,14 @@
   let currentInvoiceId = null;
   let currentClaimId   = null;
   let allProducts = [];
+  let isSuperAdmin = false;
 
   const handleSearch = debounce(() => renderTable(), 300);
 
   async function init() {
     const auth = await requireAdmin();
     if (!auth) return;
+    isSuperAdmin = auth.profile.role === 'super_admin';
     await Promise.all([loadProducts(), loadInvoices(), loadPaymentClaims()]);
   }
 
@@ -689,11 +691,11 @@
                     : `<span style="font-size:10px;color:#94a3b8;display:block;margin-top:3px">belum diverifikasi</span>`;
                 })()}
               </div>
-              <div>
+              ${isSuperAdmin ? `<div>
                 <label style="font-size:11px;font-weight:600;color:#f59e0b;display:block;margin-bottom:4px">Harga Modal</label>
                 <input type="text" inputmode="numeric" data-number class="edit-cost" value="${(() => { const pr = allProducts.find(x => x.id === it.product_id); return Number(it.cost_price || pr?.cost || 0).toLocaleString('id-ID'); })()}" placeholder="0" style="width:100%;padding:8px;border:1.5px solid ${(it.cost_price || allProducts.find(x=>x.id===it.product_id)?.cost) ? '#e2e8f0' : '#f59e0b'};border-radius:6px;font-size:13px;outline:none;background:${(it.cost_price || allProducts.find(x=>x.id===it.product_id)?.cost) ? '#fff' : '#fffbeb'}">
                 ${!(it.cost_price || allProducts.find(x=>x.id===it.product_id)?.cost) ? '<span style="font-size:10px;color:#f59e0b;margin-top:3px;display:block">⚠ Belum ada, isi untuk update</span>' : ''}
-              </div>
+              </div>` : ''}
               <div>
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Subtotal</label>
                 <input type="text" class="edit-sub" readonly value="${Number(it.subtotal||0).toLocaleString('id-ID')}" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;font-weight:700;color:#2563eb;background:#eff6ff;outline:none">
@@ -772,7 +774,8 @@
       const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
       const sub = Math.ceil((qty * price) / 100) * 100;
       const opt = row.querySelector('.edit-product-sel').options[row.querySelector('.edit-product-sel').selectedIndex];
-      const cost = parseFormattedNumber(row.querySelector('.edit-cost').value || '0');
+      const costEl = row.querySelector('.edit-cost');
+      const cost = costEl ? parseFormattedNumber(costEl.value || '0') : null; // null = field disembunyikan (bukan super_admin), jangan sentuh cost_price
       const productName = opt.text || '';
 
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); setLoading(btn, false); return; }
@@ -805,12 +808,14 @@
         }
       }
 
-      await supabase.from('invoice_items').update({ product_id: productId, product_name: productName, quantity: qty, price: price, subtotal: sub, cost_price: cost }).eq('id', itemId);
+      const itemPayload = { product_id: productId, product_name: productName, quantity: qty, price: price, subtotal: sub };
+      if (cost !== null) itemPayload.cost_price = cost;
+      await supabase.from('invoice_items').update(itemPayload).eq('id', itemId);
       total += sub;
 
       // Selalu update harga jual produk sesuai harga di faktur
       const productUpdate = { price, price_verified_at: new Date().toISOString() };
-      if (cost > 0) productUpdate.cost = cost;
+      if (cost !== null && cost > 0) productUpdate.cost = cost;
       await supabase.from('products').update(productUpdate).eq('id', productId);
     }
 
