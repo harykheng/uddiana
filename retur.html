@@ -898,6 +898,12 @@ create table if not exists return_items (
   async function approveRetur(returId) {
     if (!confirm('Setujui retur ini? Stok produk akan dikembalikan.')) return;
 
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa approve retur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const ret = allReturns.find(r => r.id === returId);
     if (!ret) return;
 

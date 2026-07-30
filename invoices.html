@@ -1082,6 +1082,13 @@
 
   async function saveInvoice() {
     const btn = document.getElementById('btn-save-invoice');
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa buat faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const customerName = document.getElementById('inv-customer-name').value.trim();
     if (!customerName) { showToast('Nama pelanggan wajib diisi', 'error'); return; }
 
@@ -1769,6 +1776,13 @@
   async function cancelCurrentInvoice() {
     if (!currentInvoice) return;
     if (!showConfirm(`Batalkan faktur ${currentInvoice.inv.invoice_number}?\nStok akan dikembalikan.`)) return;
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa batalkan faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', currentInvoice.inv.id);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('Faktur dibatalkan, stok dikembalikan');
@@ -1790,6 +1804,12 @@
       : `Hapus faktur ${inv.invoice_number}?\n\nStok akan dikembalikan dan faktur dihapus permanen.\nTindakan ini tidak bisa dibatalkan.`;
 
     if (!confirm(confirmMsg)) return;
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa hapus faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
 
     // 1. Ambil item faktur
     const { data: items } = await supabase

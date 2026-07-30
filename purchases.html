@@ -452,6 +452,13 @@
 
   async function savePurchase() {
     const btn = document.getElementById('btn-save-po');
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa simpan pembelian — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const items = [];
     let totalCost = 0;
     let valid = true;

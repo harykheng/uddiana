@@ -767,11 +767,19 @@
       description: document.getElementById('product-desc').value.trim() || null,
     };
 
+    const old = id ? allProducts.find(x => x.id === id) : null;
+    const diff = payload.stock_quantity - (old?.stock_quantity || 0);
+    if (id && diff !== 0) {
+      const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+      if (opnameSesi?.length) {
+        showToast(`Tidak bisa ubah stok — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+        return;
+      }
+    }
+
     setLoading(btn, true);
     let error;
     if (id) {
-      const old = allProducts.find(x => x.id === id);
-      const diff = payload.stock_quantity - (old?.stock_quantity || 0);
       ({ error } = await supabase.from('products').update(payload).eq('id', id));
       if (!error && diff !== 0) {
         await supabase.from('stock_movements').insert({
@@ -852,6 +860,13 @@
     const productName = document.getElementById('adjust-product-name').value;
 
     if (!qty || qty <= 0) { showToast('Jumlah harus lebih dari 0', 'error'); return; }
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa adjust stok — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     let newStock;
     if (type === 'in') newStock = currentStock + qty;
     else if (type === 'out') {
