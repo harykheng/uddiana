@@ -273,7 +273,7 @@
   async function loadData() {
     const { data, error } = await supabase
       .from('invoices')
-      .select('id,invoice_number,invoice_date,customer_id,customer_name,store_name,total,status,payment_term,verification_status,sales_name,notes,payment_date,payment_method')
+      .select('id,invoice_number,invoice_date,customer_id,customer_name,store_name,total,paid_amount,cash_paid,transfer_paid,status,payment_term,verification_status,sales_name,notes,payment_date,payment_method')
       .eq('status', 'pending')
       .or('verification_status.is.null,verification_status.eq.approved')
       .order('invoice_date', { ascending: true });
@@ -283,6 +283,7 @@
       ...inv,
       _daysOverdue: daysOverdue(inv),
       _dueDate: dueDate(inv).toISOString().split('T')[0],
+      _sisa: Math.max(0, Number(inv.total || 0) - Number(inv.paid_amount || 0)),
     }));
 
     // Populate customer filter
@@ -300,12 +301,12 @@
 
   // ── RENDER CARDS ──────────────────────────────────────────
   function renderCards() {
-    const total   = allInvoices.reduce((s,i) => s + Number(i.total), 0);
+    const total   = allInvoices.reduce((s,i) => s + i._sisa, 0);
     const current = allInvoices.filter(i => i._daysOverdue <= 0);
     const b30     = allInvoices.filter(i => i._daysOverdue > 0 && i._daysOverdue <= 30);
     const b60     = allInvoices.filter(i => i._daysOverdue > 30 && i._daysOverdue <= 60);
     const b90p    = allInvoices.filter(i => i._daysOverdue > 60);
-    const sum = arr => arr.reduce((s,i) => s + Number(i.total), 0);
+    const sum = arr => arr.reduce((s,i) => s + i._sisa, 0);
 
     document.getElementById('c-total').textContent      = formatCurrency(total);
     document.getElementById('c-total-sub').textContent  = `${allInvoices.length} faktur`;
@@ -341,7 +342,7 @@
     filtered.sort((a,b) => b._daysOverdue - a._daysOverdue);
 
     document.getElementById('inv-count').textContent = filtered.length;
-    const tot = filtered.reduce((s,i) => s + Number(i.total), 0);
+    const tot = filtered.reduce((s,i) => s + i._sisa, 0);
     document.getElementById('filtered-total').textContent = filtered.length < allInvoices.length
       ? `Total filter: ${formatCurrency(tot)}` : `Total: ${formatCurrency(tot)}`;
 
@@ -363,7 +364,7 @@
         <td class="text-muted">${formatDate(inv.invoice_date)}</td>
         <td class="${inv._daysOverdue > 0 ? 'font-bold' : 'text-muted'}" style="${inv._daysOverdue > 30 ? 'color:var(--danger)' : ''}">${formatDate(inv._dueDate)}</td>
         <td>${terminMap[inv.payment_term]||inv.payment_term||'—'}</td>
-        <td class="text-right font-bold">${formatCurrency(inv.total)}</td>
+        <td class="text-right font-bold">${formatCurrency(inv._sisa)}${Number(inv.paid_amount||0) > 0 ? `<br><small class="text-muted" style="font-weight:400">dari ${formatCurrency(inv.total)}</small>` : ''}</td>
         <td>${agingBadge(inv._daysOverdue)}</td>
         <td>
           <button class="btn btn-success btn-sm" onclick="openPay('${inv.id}')">💳 Lunasi</button>
@@ -378,7 +379,7 @@
       const key = inv.customer_id || inv.customer_name;
       if (!map[key]) map[key] = { name: inv.store_name||inv.customer_name||'—', count:0, total:0, maxDays:0 };
       map[key].count++;
-      map[key].total += Number(inv.total);
+      map[key].total += inv._sisa;
       map[key].maxDays = Math.max(map[key].maxDays, inv._daysOverdue);
     });
 
@@ -420,8 +421,11 @@
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
         <span class="text-muted">Customer</span><strong>${escapeHtml(inv.store_name||inv.customer_name||'—')}</strong>
       </div>
+      ${Number(inv.paid_amount||0) > 0 ? `<div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span class="text-muted">Total Faktur / Sudah Dibayar</span><span>${formatCurrency(inv.total)} / ${formatCurrency(inv.paid_amount)}</span>
+      </div>` : ''}
       <div style="display:flex;justify-content:space-between;font-size:16px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-        <span class="text-muted">Total</span><strong style="color:var(--primary)">${formatCurrency(inv.total)}</strong>
+        <span class="text-muted">Sisa Piutang</span><strong style="color:var(--primary)">${formatCurrency(inv._sisa)}</strong>
       </div>`;
     openModal('modal-pay');
   }
@@ -430,11 +434,20 @@
     const btn = document.getElementById('btn-confirm-pay');
     setLoading(btn, true);
     const notes = document.getElementById('pay-notes').value.trim();
+
+    const inv = allInvoices.find(x => x.id === currentPayId);
+    const sisa        = inv?._sisa || 0;
+    const prevCash     = Number(inv?.cash_paid     || 0);
+    const prevTransfer = Number(inv?.transfer_paid || 0);
+
     const { error } = await supabase.from('invoices').update({
       status: 'paid',
+      paid_amount: Number(inv?.total || 0),
       payment_method: currentPayMethod,
       payment_date: new Date().toISOString().split('T')[0],
       payment_notes: notes || null,
+      cash_paid:     currentPayMethod === 'cash'     ? prevCash + sisa     : prevCash,
+      transfer_paid: currentPayMethod === 'transfer' ? prevTransfer + sisa : prevTransfer,
     }).eq('id', currentPayId);
     setLoading(btn, false);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
@@ -455,12 +468,14 @@
       'Tgl Faktur':    inv.invoice_date,
       'Jatuh Tempo':   inv._dueDate,
       'Termin':        terminMap[inv.payment_term] || inv.payment_term,
-      'Total':         Number(inv.total),
+      'Total Faktur':  Number(inv.total),
+      'Sudah Dibayar': Number(inv.paid_amount || 0),
+      'Sisa Piutang':  inv._sisa,
       'Hari Lewat':    inv._daysOverdue > 0 ? inv._daysOverdue : 0,
       'Aging':         bucketLabel[agingBucket(inv._daysOverdue)],
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [14,25,15,12,12,8,14,10,18].map(w => ({ wch: w }));
+    ws['!cols'] = [14,25,15,12,12,8,14,14,14,10,18].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Piutang');
     const stamp = new Date().toISOString().split('T')[0].replace(/-/g,'');
@@ -471,12 +486,12 @@
   function exportPdf() {
     if (!allInvoices.length) { showToast('Tidak ada data piutang', 'error'); return; }
     const terminMap = { cod:'COD', '7':'7 Hari', '14':'14 Hari', '15':'15 Hari', '30':'30 Hari', '45':'45 Hari', '60':'60 Hari' };
-    const total   = allInvoices.reduce((s,i) => s + Number(i.total), 0);
+    const total   = allInvoices.reduce((s,i) => s + i._sisa, 0);
     const current = allInvoices.filter(i => i._daysOverdue <= 0);
     const b30     = allInvoices.filter(i => i._daysOverdue > 0 && i._daysOverdue <= 30);
     const b60     = allInvoices.filter(i => i._daysOverdue > 30 && i._daysOverdue <= 60);
     const b90p    = allInvoices.filter(i => i._daysOverdue > 60);
-    const sum = arr => arr.reduce((s,i) => s + Number(i.total), 0);
+    const sum = arr => arr.reduce((s,i) => s + i._sisa, 0);
     const today = new Date().toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' });
 
     const sorted = [...allInvoices].sort((a,b) => b._daysOverdue - a._daysOverdue);
@@ -530,7 +545,7 @@
                 <td>${formatDate(inv.invoice_date)}</td>
                 <td style="${inv._daysOverdue > 0 ? 'font-weight:700' : ''}">${formatDate(inv._dueDate)}</td>
                 <td>${escapeHtml(terminMap[inv.payment_term]||inv.payment_term||'—')}</td>
-                <td class="num" style="font-weight:700">${formatCurrency(inv.total)}</td>
+                <td class="num" style="font-weight:700">${formatCurrency(inv._sisa)}</td>
                 <td>${agingLabel[agingBucket(inv._daysOverdue)]}</td>
               </tr>`).join('')}
           </tbody>
