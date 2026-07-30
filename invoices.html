@@ -783,7 +783,7 @@
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
           <option value="">-- Pilih Produk --</option>
-          ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}" data-unit="${p.unit}">${escapeHtml(p.name)}</option>`).join('')}
+          ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-stock="${p.stock_quantity}" data-unit="${p.unit}">${escapeHtml(p.name)}</option>`).join('')}
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
@@ -1117,7 +1117,7 @@
         ? qty * price * (1 - disc / 100)
         : Math.max(0, Math.ceil((qty * price) / 100) * 100 - disc);
       subtotal += sub;
-      const costPrice = parseFloat(sel.options[sel.selectedIndex].dataset.cost) || 0;
+      const costPrice = prod?.cost || 0;
       items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, price, item_discount: disc, discount_type: discType, subtotal: sub, cost_price: costPrice });
     });
 
@@ -1329,7 +1329,7 @@
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
           <option value="">-- Pilih Produk --</option>
-          ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}"${existingItem && p.id===existingItem.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+          ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-stock="${p.stock_quantity}"${existingItem && p.id===existingItem.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingItem ? (products.find(p=>p.id===existingItem.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
@@ -1458,7 +1458,7 @@
         sub = Math.max(0, base - disc);
       }
       const prod  = products.find(p => p.id === sel.value);
-      const cost  = parseFloat(sel.options[sel.selectedIndex].dataset.cost) || 0;
+      const cost  = prod?.cost || 0;
       const stockEl = tr.querySelector('[id^="estock-"]');
       const stockAvail = parseInt(stockEl?.value || '0');
       const originalQty = parseInt(tr.dataset.originalQty || '0');

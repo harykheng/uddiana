@@ -671,7 +671,7 @@
               <div>
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Produk</label>
                 <select class="edit-product-sel" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
-                  ${allProducts.map(p => `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}"${p.id===it.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+                  ${allProducts.map(p => `<option value="${p.id}" data-price="${p.price}" data-stock="${p.stock_quantity}"${p.id===it.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
                 </select>
               </div>
               <div>
