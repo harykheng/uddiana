@@ -1428,6 +1428,13 @@
 
   async function saveEditInvoice() {
     const btn = document.getElementById('btn-save-edit-invoice');
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa edit faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const inv = allInvoices.find(x => x.id === editInvoiceId);
     if (!inv) return;
 
