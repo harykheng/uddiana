@@ -1137,32 +1137,41 @@ create table if not exists return_items (
       const newSub = newQty * (it.unit_price || 0);
       totalValue  += newSub;
 
-      // Update return_item
-      const { error } = await supabase.from('return_items')
-        .update({ quantity: newQty, subtotal: newSub })
-        .eq('id', it.id);
-      if (error) { showToast('Gagal update item: ' + error.message, 'error'); setLoading(btn, false); return; }
-
-      // Jika sudah approved, sesuaikan stok (delta qty)
+      // Jika sudah approved & qty berubah, cek dulu stok cukup SEBELUM update apapun
+      let stockUpdate = null; // { newStock, prodStock } kalau perlu adjust stok
       if (ret.status === 'approved' && newQty !== oldQty) {
         const delta = newQty - oldQty; // + = lebih banyak diretur (tambah stok), - = kurang (kurangi stok)
         const { data: prod } = await supabase.from('products')
           .select('stock_quantity').eq('id', it.product_id).single();
         if (prod) {
           const newStock = prod.stock_quantity + delta;
-          await supabase.from('products')
-            .update({ stock_quantity: newStock })
-            .eq('id', it.product_id);
-          await supabase.from('stock_movements').insert({
-            product_id:      it.product_id,
-            product_name:    it.product_name,
-            type:            'adjustment',
-            quantity:        Math.abs(delta),
-            quantity_before: prod.stock_quantity,
-            quantity_after:  newStock,
-            notes:           `Edit retur ${ret.return_number || editReturId}: qty ${oldQty} → ${newQty}`,
-          });
+          if (newStock < 0) {
+            showToast(`Tidak bisa kurangi qty retur "${it.product_name}" — stok sudah terpakai (sisa: ${prod.stock_quantity})`, 'error');
+            setLoading(btn, false); return;
+          }
+          stockUpdate = { delta, newStock, prodStock: prod.stock_quantity };
         }
+      }
+
+      // Update return_item
+      const { error } = await supabase.from('return_items')
+        .update({ quantity: newQty, subtotal: newSub })
+        .eq('id', it.id);
+      if (error) { showToast('Gagal update item: ' + error.message, 'error'); setLoading(btn, false); return; }
+
+      if (stockUpdate) {
+        await supabase.from('products')
+          .update({ stock_quantity: stockUpdate.newStock })
+          .eq('id', it.product_id);
+        await supabase.from('stock_movements').insert({
+          product_id:      it.product_id,
+          product_name:    it.product_name,
+          type:            'adjustment',
+          quantity:        Math.abs(stockUpdate.delta),
+          quantity_before: stockUpdate.prodStock,
+          quantity_after:  stockUpdate.newStock,
+          notes:           `Edit retur ${ret.return_number || editReturId}: qty ${oldQty} → ${newQty}`,
+        });
       }
     }
 
