@@ -983,8 +983,9 @@
   function recalcRow(rowId) {
     const qty      = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value);
     const price    = parseFormattedNumber(document.getElementById(`price-${rowId}`)?.value);
-    const disc     = parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0;
     const discType = document.getElementById(`disctype-${rowId}`)?.value || 'percent';
+    let disc       = Math.max(0, parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0);
+    if (discType === 'percent') disc = Math.min(disc, 100);
     const sub      = document.getElementById(`sub-${rowId}`);
     let total;
     if (discType === 'percent') {
@@ -1000,8 +1001,9 @@
 
   function recalcRowFromSubtotal(rowId) {
     const qty      = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value) || 1;
-    const disc     = parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0;
     const discType = document.getElementById(`disctype-${rowId}`)?.value || 'percent';
+    let disc       = Math.max(0, parseFormattedNumber(document.getElementById(`disc-${rowId}`)?.value) || 0);
+    if (discType === 'percent') disc = Math.min(disc, 100);
     const sub      = parseFormattedNumber(document.getElementById(`sub-${rowId}`)?.value) || 0;
     let price;
     if (discType === 'percent') {
@@ -1105,8 +1107,9 @@
 
       const qty      = Math.round(parseFormattedNumber(qtyEl?.value));
       const price    = parseFormattedNumber(priceEl?.value);
-      const disc     = parseFormattedNumber(tr.querySelector('[id^="disc-"]')?.value) || 0;
       const discType = tr.querySelector('[id^="disctype-"]')?.value || 'percent';
+      let disc       = Math.max(0, parseFormattedNumber(tr.querySelector('[id^="disc-"]')?.value) || 0);
+      if (discType === 'percent') disc = Math.min(disc, 100);
       const stock    = parseInt(stockEl?.value) || 0;
       const prod     = products.find(p => p.id === sel.value);
 
@@ -1403,8 +1406,9 @@
   function recalcEditInvoiceRow(rowId) {
     const qty      = parseFormattedNumber(document.getElementById(`eqty-${rowId}`)?.value || '0');
     const price    = parseFormattedNumber(document.getElementById(`eprice-${rowId}`)?.value || '0');
-    const disc     = parseFormattedNumber(document.getElementById(`edisc-${rowId}`)?.value || '0');
     const discType = document.getElementById(`edisctype-${rowId}`)?.value || 'percent';
+    let disc       = Math.max(0, parseFormattedNumber(document.getElementById(`edisc-${rowId}`)?.value) || 0);
+    if (discType === 'percent') disc = Math.min(disc, 100);
     let sub;
     if (discType === 'percent') {
       sub = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100;
@@ -1448,8 +1452,9 @@
       if (!sel?.value) continue;
       const qty      = Math.round(parseFormattedNumber(tr.querySelector('[id^="eqty-"]')?.value || '0'));
       const price    = parseFormattedNumber(tr.querySelector('[id^="eprice-"]')?.value || '0');
-      const disc     = parseFormattedNumber(tr.querySelector('[id^="edisc-"]')?.value || '0');
       const discType = tr.querySelector('[id^="edisctype-"]')?.value || 'percent';
+      let disc       = Math.max(0, parseFormattedNumber(tr.querySelector('[id^="edisc-"]')?.value) || 0);
+      if (discType === 'percent') disc = Math.min(disc, 100);
       let sub;
       if (discType === 'percent') {
         sub = Math.ceil((qty * price * (1 - disc / 100)) / 100) * 100;
