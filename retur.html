@@ -907,29 +907,43 @@ create table if not exists return_items (
     const ret = allReturns.find(r => r.id === returId);
     if (!ret) return;
 
+    // Klaim status 'approved' secara atomik — hanya berhasil kalau statusnya masih 'pending'.
+    // Ini mencegah double-approve (misal double-click atau 2 tab admin terbuka bersamaan)
+    // dari mengembalikan stok dua kali untuk retur yang sama.
+    const { data: claimed, error: claimErr } = await supabase.from('returns')
+      .update({ status: 'approved', handled_by: currentUser?.profile?.name || 'Admin' })
+      .eq('id', returId)
+      .eq('status', 'pending')
+      .select('id');
+
+    if (claimErr) { showToast('Gagal update status retur: ' + claimErr.message, 'error'); return; }
+    if (!claimed?.length) { showToast('Retur ini sudah diproses sebelumnya', 'error'); await loadReturns(); return; }
+
     // Restore stock for each item
     const items = ret.return_items || [];
     for (const it of items) {
       if (!it.product_id) continue;
       const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', it.product_id).single();
       if (prod) {
+        const newStock = prod.stock_quantity + it.quantity;
         const { error } = await supabase.from('products')
-          .update({ stock_quantity: prod.stock_quantity + it.quantity })
+          .update({ stock_quantity: newStock })
           .eq('id', it.product_id);
         if (error) {
           showToast('Gagal mengembalikan stok untuk: ' + it.product_name, 'error');
-          return;
+          continue;
         }
+        await supabase.from('stock_movements').insert({
+          product_id:      it.product_id,
+          product_name:    it.product_name,
+          type:            'return_in',
+          quantity:        it.quantity,
+          quantity_before: prod.stock_quantity,
+          quantity_after:  newStock,
+          notes:           `Retur disetujui: ${ret.return_number || returId}`,
+        });
       }
     }
-
-    // Update return status
-    const { error } = await supabase.from('returns').update({
-      status:     'approved',
-      handled_by: currentUser?.profile?.name || 'Admin'
-    }).eq('id', returId);
-
-    if (error) { showToast('Gagal update status retur: ' + error.message, 'error'); return; }
 
     showToast('Retur disetujui! Stok telah dikembalikan ✅', 'success');
     await loadReturns();
