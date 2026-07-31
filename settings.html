@@ -396,6 +396,10 @@
 
     setLoading(btn, true);
 
+    // signUp() dari client yang sedang login akan MENGGANTI sesi aktif jadi sesi user baru.
+    // Simpan token sesi admin sekarang, supaya bisa dipulihkan langsung tanpa minta password lagi.
+    const { data: { session: adminSession } } = await supabase.auth.getSession();
+
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) { showToast('Gagal: ' + error.message, 'error'); setLoading(btn, false); return; }
 
@@ -403,22 +407,22 @@
     if (!userId) { showToast('Gagal mendapatkan user ID. Pastikan "Confirm email" dimatikan di Supabase.', 'error'); setLoading(btn, false); return; }
 
     const { error: profileErr } = await supabase.from('user_profiles').insert({ id: userId, name, email, role: 'sales', is_active: true });
+
+    // Pulihkan sesi admin SEGERA, sebelum apapun ditampilkan ke user —
+    // supaya tidak ada jendela waktu di mana browser diam-diam berjalan sebagai sesi sales baru.
+    if (adminSession) {
+      await supabase.auth.setSession({
+        access_token: adminSession.access_token,
+        refresh_token: adminSession.refresh_token,
+      });
+    }
+
     if (profileErr) { showToast('Akun dibuat tapi gagal simpan profil: ' + profileErr.message, 'error'); setLoading(btn, false); return; }
 
     setLoading(btn, false);
-    showToast(`Akun sales "${name}" berhasil dibuat. Silakan login ulang.`);
+    showToast(`Akun sales "${name}" berhasil dibuat`);
     closeModal('modal-add-sales');
-
-    // re-sign in as admin to restore session
-    const adminEmail = currentAdmin.profile.email;
-    setTimeout(async () => {
-      const pwInput = prompt('Masukkan password admin Anda untuk login ulang (diperlukan setelah membuat akun baru):');
-      if (pwInput) {
-        const { error: reLoginErr } = await supabase.auth.signInWithPassword({ email: adminEmail, password: pwInput });
-        if (reLoginErr) { showToast('Login ulang gagal: ' + reLoginErr.message, 'error'); }
-        else { showToast('Login ulang berhasil'); loadSalesAccounts(); }
-      }
-    }, 500);
+    loadSalesAccounts();
   }
 
   async function toggleActive(id, currentStatus) {
