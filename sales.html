@@ -1039,7 +1039,7 @@
       </div>
       <select class="item-product-sel">
         <option value="">— Pilih Produk —</option>
-        ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost || 0}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`).join('')}
+        ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`).join('')}
       </select>
       <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:start;">
         <div class="item-field">
@@ -1176,7 +1176,7 @@ function recalcTotal() {
         quantity: qty,
         price: price,
         subtotal: subtotal,
-        cost_price: parseFloat(opt.dataset.cost) || 0
+        cost_price: products.find(p => p.id === sel.value)?.cost || 0
       });
     }
 
@@ -1308,7 +1308,7 @@ function recalcTotal() {
   function addEditItem(productId = null, qty = 1) {
     const id = ++editItemCount;
     const optionsHtml = editProducts.map(p =>
-      `<option value="${p.id}" data-price="${p.price}" data-cost="${p.cost || 0}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`
+      `<option value="${p.id}" data-price="${p.price}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`
     ).join('');
 
     const div = document.createElement('div');
@@ -1420,6 +1420,12 @@ function recalcTotal() {
   async function saveEditInvoice() {
     if (!editingInvoiceId) return;
 
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa edit faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
     const customerId = editCustomerTS ? editCustomerTS.getValue() : '';
     const date  = document.getElementById('edit-date').value;
     const term  = document.getElementById('edit-term').value;
@@ -1445,7 +1451,7 @@ function recalcTotal() {
         quantity:     qty,
         price:        price,
         subtotal:     subtotal,
-        cost_price:   parseFloat(opt.dataset.cost) || 0
+        cost_price:   editProducts.find(p => p.id === sel.value)?.cost || 0
       });
     }
     if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); return; }
@@ -1453,6 +1459,37 @@ function recalcTotal() {
     const total = items.reduce((s, i) => s + i.subtotal, 0);
     const btn = document.getElementById('btn-save-edit');
     btn.disabled = true; btn.textContent = 'Menyimpan...';
+
+    // Validasi stok LIVE dulu sebelum ada langkah destruktif apapun (cancel/hapus item lama).
+    // Kalau ini dilewat dan validasi cuma nunggu trigger DB gagal di step insert terakhir,
+    // faktur bisa kadung ke-cancel & item lama kadung terhapus sebelum ketahuan gagal —
+    // hasilnya faktur kosong tanpa item tapi status sudah balik 'pending'.
+    const inv = allInvoices.find(x => x.id === editingInvoiceId);
+    const releasedByProduct = {};
+    (inv?.invoice_items || []).forEach(it => {
+      releasedByProduct[it.product_id] = (releasedByProduct[it.product_id] || 0) + Number(it.quantity);
+    });
+    const neededByProduct = {};
+    items.forEach(it => {
+      neededByProduct[it.product_id] = (neededByProduct[it.product_id] || 0) + it.quantity;
+    });
+    const productIds = Object.keys(neededByProduct);
+    const { data: liveProducts, error: liveErr } = await supabase
+      .from('products').select('id,name,stock_quantity').in('id', productIds);
+    if (liveErr) {
+      showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error');
+      btn.disabled = false; btn.textContent = '💾 Simpan Perubahan';
+      return;
+    }
+    for (const p of (liveProducts || [])) {
+      const needed   = neededByProduct[p.id] || 0;
+      const released = releasedByProduct[p.id] || 0;
+      if (needed > p.stock_quantity + released) {
+        showToast(`Stok "${p.name}" tidak cukup (tersedia: ${p.stock_quantity + released})`, 'error');
+        btn.disabled = false; btn.textContent = '💾 Simpan Perubahan';
+        return;
+      }
+    }
 
     try {
       // 1. Cancel invoice → trigger DB kembalikan stok otomatis
