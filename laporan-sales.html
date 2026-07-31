@@ -270,6 +270,7 @@
                 <th class="text-right">Jml Faktur</th>
                 <th class="text-right">Lunas</th>
                 <th class="text-right">Belum Lunas</th>
+                <th class="text-right">Total Nilai Faktur</th>
                 <th class="text-right">Omzet</th>
                 <th class="text-right">Retur</th>
                 <th class="text-right">Net Pendapatan</th>
@@ -339,7 +340,7 @@
     const [invRes, retRes] = await Promise.all([
       supabase
         .from('invoices')
-        .select('id,invoice_number,invoice_date,sales_name,customer_name,store_name,total,status,verification_status,payment_method,payment_date')
+        .select('id,invoice_number,invoice_date,sales_name,customer_name,store_name,total,paid_amount,status,verification_status,payment_method,payment_date')
         .or('verification_status.is.null,verification_status.eq.approved')
         .neq('status', 'cancelled')
         .gte('invoice_date', from)
@@ -368,11 +369,17 @@
     const map = {};
     allRawInvoices.forEach(inv => {
       const key = inv.sales_name || '(Admin / Langsung)';
-      if (!map[key]) map[key] = { name: key, invoices: [], totalRevenue: 0, totalPiutang: 0, totalRetur: 0, paidCount: 0, pendingCount: 0 };
+      if (!map[key]) map[key] = { name: key, invoices: [], totalRevenue: 0, totalPiutang: 0, totalRetur: 0, totalFaktur: 0, paidCount: 0, pendingCount: 0 };
       map[key].invoices.push(inv);
       const amt = Number(inv.total);
-      if (inv.status === 'paid') { map[key].totalRevenue += amt; map[key].paidCount++; }
-      else                       { map[key].totalPiutang += amt; map[key].pendingCount++; }
+      map[key].totalFaktur += amt; // total nilai semua faktur, apapun statusnya
+      if (inv.status === 'paid') {
+        map[key].totalRevenue += amt; map[key].paidCount++;
+      } else {
+        // Sisa piutang = total - paid_amount (faktur yang sudah dicicil sebagian tidak overstated)
+        map[key].totalPiutang += Math.max(0, amt - Number(inv.paid_amount || 0));
+        map[key].pendingCount++;
+      }
     });
 
     // Add retur per sales (returns within period, linked to their invoices)
@@ -410,8 +417,9 @@
     document.getElementById('c-revenue-sub').textContent = totalRetur > 0
       ? `omzet ${formatCurrency(totalRevenue)} · retur -${formatCurrency(totalRetur)}`
       : 'dari faktur lunas';
+    const totalFakturAll = reportData.reduce((s, r) => s + r.totalFaktur, 0);
     document.getElementById('c-invoices').textContent    = totalInvoices;
-    document.getElementById('c-invoices-sub').textContent= `${paidCount} lunas · ${totalInvoices - paidCount} belum`;
+    document.getElementById('c-invoices-sub').textContent= `${paidCount} lunas · ${totalInvoices - paidCount} belum · nilai ${formatCurrency(totalFakturAll)}`;
     document.getElementById('c-piutang').textContent     = formatCurrency(totalPiutang);
     document.getElementById('c-piutang-sub').textContent = `${allRawInvoices.filter(i=>i.status==='pending').length} faktur belum lunas`;
 
@@ -454,6 +462,10 @@
             </div>
           </div>
           <div class="sp-stats">
+            <div class="sp-stat" style="grid-column:1/-1">
+              <div class="st-label">Total Nilai Faktur (semua status)</div>
+              <div class="st-val">${formatCurrency(s.totalFaktur)}</div>
+            </div>
             <div class="sp-stat">
               <div class="st-label">Net Pendapatan</div>
               <div class="st-val" style="color:${color}">${formatCurrency(s.netRevenue)}</div>
@@ -584,7 +596,7 @@
     const totalNet = reportData.reduce((s, r) => s + r.netRevenue, 0) || 1;
     const tbody = document.getElementById('summary-table');
     if (!reportData.length) {
-      tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted" style="padding:30px">Tidak ada data</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="11" class="text-center text-muted" style="padding:30px">Tidak ada data</td></tr>`;
       return;
     }
     tbody.innerHTML = reportData.map((s, i) => {
@@ -604,6 +616,7 @@
         <td class="text-right">${totalInv}</td>
         <td class="text-right" style="color:var(--success)">${s.paidCount}</td>
         <td class="text-right" style="color:${s.pendingCount>0?'var(--warning)':'var(--text-muted)'}">${s.pendingCount}</td>
+        <td class="text-right font-bold">${formatCurrency(s.totalFaktur)}</td>
         <td class="text-right">${formatCurrency(s.totalRevenue)}</td>
         <td class="text-right" style="color:${s.totalRetur>0?'#dc2626':'var(--text-muted)'}">${s.totalRetur>0?'-'+formatCurrency(s.totalRetur):'—'}</td>
         <td class="text-right font-bold" style="color:${COLORS[i%COLORS.length]}">${formatCurrency(s.netRevenue)}</td>
@@ -685,15 +698,16 @@
     const summaryRows = reportData.map((s, i) => ({
       'Rank': i + 1,
       'Nama Sales': s.name,
-      'Total Faktur': s.paidCount + s.pendingCount,
+      'Jumlah Faktur': s.paidCount + s.pendingCount,
       'Faktur Lunas': s.paidCount,
       'Faktur Belum Lunas': s.pendingCount,
+      'Total Nilai Faktur': s.totalFaktur,
       'Pendapatan': s.totalRevenue,
       'Piutang': s.totalPiutang,
       'Rata-rata/Faktur': s.paidCount > 0 ? Math.round(s.totalRevenue / s.paidCount) : 0,
     }));
     const ws1 = XLSX.utils.json_to_sheet(summaryRows);
-    ws1['!cols'] = [6,22,12,12,16,16,16,16].map(w => ({ wch: w }));
+    ws1['!cols'] = [6,22,14,12,16,16,16,16,16].map(w => ({ wch: w }));
     XLSX.utils.book_append_sheet(wb, ws1, 'Ringkasan');
 
     // Sheet 2: Detail semua faktur
@@ -731,7 +745,8 @@
         <td class="num">${totalInv}</td>
         <td class="num">${s.paidCount}</td>
         <td class="num" style="color:#d97706">${s.pendingCount}</td>
-        <td class="num" style="font-weight:700">${formatCurrency(s.totalRevenue)}</td>
+        <td class="num" style="font-weight:700">${formatCurrency(s.totalFaktur)}</td>
+        <td class="num">${formatCurrency(s.totalRevenue)}</td>
         <td class="num" style="color:#d97706">${s.totalPiutang > 0 ? formatCurrency(s.totalPiutang) : '—'}</td>
         <td class="num">${formatCurrency(avg)}</td>
         <td class="num">${contrib}%</td>
@@ -752,7 +767,7 @@
           <thead><tr>
             <th>#</th><th>Sales</th>
             <th class="num">Total Faktur</th><th class="num">Lunas</th><th class="num">Belum</th>
-            <th class="num">Pendapatan</th><th class="num">Piutang</th>
+            <th class="num">Nilai Total Faktur</th><th class="num">Pendapatan</th><th class="num">Piutang</th>
             <th class="num">Rata-rata</th><th class="num">%</th>
           </tr></thead>
           <tbody>${rows}</tbody>
@@ -761,6 +776,7 @@
             <td class="num">${allRawInvoices.length}</td>
             <td class="num">${allRawInvoices.filter(i=>i.status==='paid').length}</td>
             <td class="num">${allRawInvoices.filter(i=>i.status==='pending').length}</td>
+            <td class="num">${formatCurrency(reportData.reduce((s,r)=>s+r.totalFaktur,0))}</td>
             <td class="num">${formatCurrency(totalRevenue)}</td>
             <td class="num">${formatCurrency(reportData.reduce((s,r)=>s+r.totalPiutang,0))}</td>
             <td class="num">—</td><td class="num">100%</td>
