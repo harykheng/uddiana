@@ -437,8 +437,6 @@
         name, description: document.getElementById('group-description').value.trim() || null
       }).eq('id', id);
       if (error) { showToast('Gagal update grup: ' + error.message, 'error'); setLoading(btn, false); return; }
-      // Hapus anggota lama, ganti dengan yang baru
-      await supabase.from('discount_group_members').delete().eq('group_id', id);
     } else {
       const { data, error } = await supabase.from('discount_groups').insert({
         name, description: document.getElementById('group-description').value.trim() || null
@@ -447,9 +445,19 @@
       groupId = data.id;
     }
 
+    // Upsert anggota baru DULU (aman untuk yang belum berubah, tidak akan bentrok
+    // UNIQUE(group_id,product_id)), baru hapus yang sudah tidak dipilih lagi.
+    // Urutan ini mencegah grup sempat kosong tanpa anggota kalau salah satu langkah gagal.
     const members = prodIds.map(pid => ({ group_id: groupId, product_id: pid }));
-    const { error: memberErr } = await supabase.from('discount_group_members').insert(members);
+    const { error: memberErr } = await supabase.from('discount_group_members')
+      .upsert(members, { onConflict: 'group_id,product_id' });
     if (memberErr) { showToast('Gagal simpan anggota: ' + memberErr.message, 'error'); setLoading(btn, false); return; }
+
+    if (id) {
+      const { error: cleanupErr } = await supabase.from('discount_group_members')
+        .delete().eq('group_id', groupId).not('product_id', 'in', `(${prodIds.join(',')})`);
+      if (cleanupErr) { showToast('Anggota tersimpan, tapi gagal bersihkan yang lama: ' + cleanupErr.message, 'error'); setLoading(btn, false); return; }
+    }
 
     setLoading(btn, false);
     showToast(id ? 'Grup diperbarui!' : 'Grup ditambahkan!', 'success');
