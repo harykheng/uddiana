@@ -763,8 +763,11 @@
 
     const inv = allInvoices.find(x => x.id === currentInvoiceId);
     const rows = document.querySelectorAll('.edit-item-row');
-    let total = 0;
 
+    // ── PASS 1: kumpulkan & validasi semua baris DULU, belum ada tulis apapun ke DB.
+    // Kalau ada satu baris gagal, batal bersih — tidak ada baris lain yang kadung ke-update
+    // sebagian sementara invoices.total/verification_status belum sempat di-set.
+    const parsedRows = [];
     for (const row of rows) {
       const itemId = row.dataset.itemId;
       const originalQty = parseFloat(row.dataset.originalQty) || 0;
@@ -780,43 +783,53 @@
 
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); setLoading(btn, false); return; }
 
-      // adjust stock: kalau produk diganti, kembalikan penuh stok produk lama & kurangi penuh stok produk baru
-      if (productId !== originalProductId) {
-        // Validasi dulu stok produk pengganti cukup, SEBELUM nulis apapun ke DB —
-        // supaya kalau tidak cukup, batal bersih tanpa stok produk lama sudah kadung dikembalikan.
-        const { data: newProd } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
-        if (newProd && newProd.stock_quantity < qty) {
-          showToast('Stok tidak cukup untuk produk pengganti', 'error'); setLoading(btn, false); return;
-        }
+      parsedRows.push({ itemId, originalQty, originalProductId, productId, qty, price, sub, cost, productName });
+    }
 
-        const { data: oldProd } = await supabase.from('products').select('stock_quantity').eq('id', originalProductId).single();
-        if (oldProd) {
-          await supabase.from('products').update({ stock_quantity: oldProd.stock_quantity + originalQty }).eq('id', originalProductId);
-        }
-        if (newProd) {
-          await supabase.from('products').update({ stock_quantity: newProd.stock_quantity - qty }).eq('id', productId);
-        }
+    // Hitung delta stok BERSIH per produk (gabungan semua baris — kalau produk yang sama
+    // muncul lewat "dilepas dari baris A" dan "dibutuhkan baris B", dua-duanya diakumulasi dulu).
+    const delta = {};
+    for (const r of parsedRows) {
+      if (r.productId !== r.originalProductId) {
+        delta[r.originalProductId] = (delta[r.originalProductId] || 0) + r.originalQty; // dilepas
+        delta[r.productId] = (delta[r.productId] || 0) - r.qty; // dibutuhkan
       } else {
-        const qtyDiff = qty - originalQty;
-        if (qtyDiff !== 0) {
-          const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
-          if (prod) {
-            const newStock = prod.stock_quantity - qtyDiff;
-            if (newStock < 0) { showToast('Stok tidak cukup untuk qty yang diubah', 'error'); setLoading(btn, false); return; }
-            await supabase.from('products').update({ stock_quantity: newStock }).eq('id', productId);
-          }
-        }
+        delta[r.productId] = (delta[r.productId] || 0) - (r.qty - r.originalQty);
       }
+    }
 
-      const itemPayload = { product_id: productId, product_name: productName, quantity: qty, price: price, subtotal: sub };
-      if (cost !== null) itemPayload.cost_price = cost;
-      await supabase.from('invoice_items').update(itemPayload).eq('id', itemId);
-      total += sub;
+    const productIds = Object.keys(delta);
+    const { data: liveProducts, error: liveErr } = await supabase
+      .from('products').select('id,name,stock_quantity').in('id', productIds);
+    if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); setLoading(btn, false); return; }
+
+    const finalStock = {};
+    for (const p of (liveProducts || [])) {
+      const newStock = p.stock_quantity + (delta[p.id] || 0);
+      if (newStock < 0) {
+        showToast(`Stok "${p.name}" tidak cukup (tersedia: ${p.stock_quantity})`, 'error');
+        setLoading(btn, false); return;
+      }
+      finalStock[p.id] = newStock;
+    }
+
+    // ── PASS 2: semua baris sudah tervalidasi aman, sekarang baru mulai tulis ke DB.
+    let total = 0;
+    for (const productId of Object.keys(finalStock)) {
+      if (delta[productId]) {
+        await supabase.from('products').update({ stock_quantity: finalStock[productId] }).eq('id', productId);
+      }
+    }
+    for (const r of parsedRows) {
+      const itemPayload = { product_id: r.productId, product_name: r.productName, quantity: r.qty, price: r.price, subtotal: r.sub };
+      if (r.cost !== null) itemPayload.cost_price = r.cost;
+      await supabase.from('invoice_items').update(itemPayload).eq('id', r.itemId);
+      total += r.sub;
 
       // Selalu update harga jual produk sesuai harga di faktur
-      const productUpdate = { price, price_verified_at: new Date().toISOString() };
-      if (cost !== null && cost > 0) productUpdate.cost = cost;
-      await supabase.from('products').update(productUpdate).eq('id', productId);
+      const productUpdate = { price: r.price, price_verified_at: new Date().toISOString() };
+      if (r.cost !== null && r.cost > 0) productUpdate.cost = r.cost;
+      await supabase.from('products').update(productUpdate).eq('id', r.productId);
     }
 
     const { data: { session } } = await supabase.auth.getSession();
