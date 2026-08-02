@@ -1843,8 +1843,12 @@
     const { data: items } = await supabase
       .from('invoice_items').select('product_id, quantity').eq('invoice_id', id);
 
+    // Cek status TERBARU langsung dari DB (bukan cache di memori) — supaya kalau invoice ini
+    // baru saja dibatalkan oleh admin lain (stok sudah kembali via trigger), tidak dikembalikan dua kali.
+    const { data: liveInv } = await supabase.from('invoices').select('status').eq('id', id).single();
+
     // 2. Kembalikan stok jika belum dibatalkan (cancelled sudah dikembalikan via trigger)
-    if (inv.status !== 'cancelled') {
+    if (liveInv && liveInv.status !== 'cancelled') {
       for (const item of (items || [])) {
         const { data: prod } = await supabase
           .from('products').select('stock_quantity').eq('id', item.product_id).single();

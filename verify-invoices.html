@@ -628,7 +628,21 @@
     const inv = allInvoices.find(x => x.id === currentInvoiceId);
     if (!inv) { showToast('Faktur tidak ditemukan', 'error'); setLoading(btn, false); return; }
 
-    // Kembalikan stok tiap item langsung (tanpa RPC)
+    // Klaim penolakan secara atomik dulu — hanya berhasil kalau verification_status masih 'pending'.
+    // Mencegah dobel-restore stok kalau 2 admin nolak faktur yang sama nyaris bersamaan.
+    const { data: claimed, error: claimErr } = await supabase.from('invoices')
+      .update({ verification_status: 'rejected', reject_reason: reason, status: 'cancelled' })
+      .eq('id', currentInvoiceId)
+      .eq('verification_status', 'pending')
+      .select('id');
+
+    if (claimErr) { showToast('Gagal: ' + claimErr.message, 'error'); setLoading(btn, false); return; }
+    if (!claimed?.length) {
+      showToast('Faktur ini sudah diproses sebelumnya', 'error');
+      setLoading(btn, false); closeModal('modal-reject'); loadInvoices(); return;
+    }
+
+    // Kembalikan stok tiap item (tanpa RPC) — aman dilakukan sesudah klaim berhasil
     for (const item of (inv.invoice_items || [])) {
       const { data: prod } = await supabase
         .from('products')
@@ -642,14 +656,7 @@
       }
     }
 
-    const { error } = await supabase.from('invoices').update({
-      verification_status: 'rejected',
-      reject_reason: reason,
-      status: 'cancelled'
-    }).eq('id', currentInvoiceId);
-
     setLoading(btn, false);
-    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('Faktur ditolak dan stok dikembalikan');
     closeModal('modal-reject');
     loadInvoices();
