@@ -370,7 +370,7 @@
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
           <option value="">-- Pilih Produk --</option>
-          ${products.map(p => `<option value="${p.id}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}">${escapeHtml(p.name)} (${p.stock_quantity} ${p.unit})</option>`).join('')}
+          ${products.map(p => `<option value="${p.id}" data-stock="${p.stock_quantity}">${escapeHtml(p.name)} (${p.stock_quantity} ${p.unit})</option>`).join('')}
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="postock-${id}" readonly value="0" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
@@ -428,8 +428,9 @@
 
   function onPoProductSelect(sel, rowId) {
     const opt = sel.options[sel.selectedIndex];
+    const prod = products.find(p => p.id === sel.value);
     document.getElementById(`postock-${rowId}`).value = opt.dataset.stock || 0;
-    document.getElementById(`pocost-${rowId}`).value  = Number(opt.dataset.cost || 0).toLocaleString('id-ID');
+    document.getElementById(`pocost-${rowId}`).value  = Number(prod?.cost || 0).toLocaleString('id-ID');
     recalcPoRow(rowId);
   }
 
@@ -671,7 +672,7 @@
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
           <option value="">-- Pilih Produk --</option>
-          ${products.map(p => `<option value="${p.id}" data-cost="${p.cost||0}" data-stock="${p.stock_quantity}"${existing && p.id === existing.product_id ? ' selected' : ''}>${escapeHtml(p.name)} (${p.stock_quantity} ${p.unit})</option>`).join('')}
+          ${products.map(p => `<option value="${p.id}" data-stock="${p.stock_quantity}"${existing && p.id === existing.product_id ? ' selected' : ''}>${escapeHtml(p.name)} (${p.stock_quantity} ${p.unit})</option>`).join('')}
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="epostock-${id}" readonly value="${existing ? (products.find(p=>p.id===existing.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
@@ -692,8 +693,9 @@
 
   function onEditPoProductSelect(sel, rowId) {
     const opt = sel.options[sel.selectedIndex];
+    const prod = products.find(p => p.id === sel.value);
     document.getElementById(`epostock-${rowId}`).value = opt.dataset.stock || 0;
-    document.getElementById(`epocost-${rowId}`).value  = Number(opt.dataset.cost || 0).toLocaleString('id-ID');
+    document.getElementById(`epocost-${rowId}`).value  = Number(prod?.cost || 0).toLocaleString('id-ID');
     recalcEditPoRow(rowId);
   }
 
@@ -745,29 +747,46 @@
 
     setLoading(btn, true);
 
-    // 1. Ambil item lama → balik stok (kurangi dari produk)
+    // 1. Ambil item lama, hitung total qty per produk yang akan "dilepas" (digabung
+    //    dulu kalau ada produk yang sama di beberapa baris), lalu VALIDASI SEMUA dulu
+    //    pakai stok live SEBELUM ada tulisan apapun ke DB. Kalau divalidasi sambil jalan
+    //    di dalam loop yang sama dengan penulisan (seperti sebelumnya), produk yang lolos
+    //    duluan sudah kadung dikurangi permanen walau produk belakangan gagal — dan kalau
+    //    PO ini diedit ulang, stok yang sama bisa ke-potong dua kali dari histori yang sama.
     const { data: oldItems } = await supabase
       .from('purchase_items').select('product_id, quantity').eq('purchase_id', currentEditPoId);
 
-    for (const old of (oldItems || [])) {
-      const { data: prod } = await supabase.from('products')
-        .select('stock_quantity, name').eq('id', old.product_id).single();
-      if (prod) {
-        const newStock = prod.stock_quantity - old.quantity;
+    const releaseByProduct = {};
+    (oldItems || []).forEach(old => {
+      releaseByProduct[old.product_id] = (releaseByProduct[old.product_id] || 0) + Number(old.quantity);
+    });
+    const oldProductIds = Object.keys(releaseByProduct);
+
+    const finalStock = {};
+    if (oldProductIds.length) {
+      const { data: liveProducts, error: liveErr } = await supabase
+        .from('products').select('id,name,stock_quantity').in('id', oldProductIds);
+      if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); setLoading(btn, false); return; }
+
+      for (const p of (liveProducts || [])) {
+        const newStock = p.stock_quantity - releaseByProduct[p.id];
         if (newStock < 0) {
-          showToast(`Tidak bisa edit — stok "${prod.name}" sudah terpakai (sisa: ${prod.stock_quantity}, PO ini: ${old.quantity}). Sesuaikan manual dulu lewat halaman Produk.`, 'error');
+          showToast(`Tidak bisa edit — stok "${p.name}" sudah terpakai (sisa: ${p.stock_quantity}, PO ini: ${releaseByProduct[p.id]}). Sesuaikan manual dulu lewat halaman Produk.`, 'error');
           setLoading(btn, false); return;
         }
-        await supabase.from('products')
-          .update({ stock_quantity: newStock })
-          .eq('id', old.product_id);
+        finalStock[p.id] = newStock;
       }
     }
 
-    // 2. Hapus item lama
+    // 2. Semua tervalidasi aman — baru mulai tulis: kurangi stok per produk (satu kali per produk)
+    for (const productId of Object.keys(finalStock)) {
+      await supabase.from('products').update({ stock_quantity: finalStock[productId] }).eq('id', productId);
+    }
+
+    // 3. Hapus item lama
     await supabase.from('purchase_items').delete().eq('purchase_id', currentEditPoId);
 
-    // 3. Insert item baru — trigger otomatis tambah stok + update cost
+    // 4. Insert item baru — trigger otomatis tambah stok + update cost
     const { error: itemsErr } = await supabase.from('purchase_items').insert(
       newItems.map(i => ({ ...i, purchase_id: currentEditPoId }))
     );
