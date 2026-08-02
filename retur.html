@@ -835,15 +835,11 @@ create table if not exists return_items (
 
     const totalValue = selectedItems.reduce((s, it) => s + it.subtotal, 0);
 
-    // Generate return number
-    const returnNumber = await generateReturnNumber();
-
     const btn = document.getElementById('btn-submit-retur');
     setLoading(btn, true);
 
-    // Insert return header
+    // return_number di-generate otomatis oleh trigger DB (atomik, anti collision) — tidak dikirim dari sini
     const { data: retData, error: retErr } = await supabase.from('returns').insert({
-      return_number:       returnNumber,
       invoice_id:          selectedInvoice.id,
       invoice_number:      selectedInvoice.invoice_number,
       customer_id:         selectedInvoice.customer_id,
@@ -866,32 +862,16 @@ create table if not exists return_items (
     const itemsPayload = selectedItems.map(it => ({ ...it, return_id: retData.id }));
     const { error: itemsErr } = await supabase.from('return_items').insert(itemsPayload);
     if (itemsErr) {
+      await supabase.from('returns').delete().eq('id', retData.id);
       showToast('Gagal menyimpan item retur: ' + itemsErr.message, 'error');
       setLoading(btn, false);
       return;
     }
 
     setLoading(btn, false);
-    showToast(`Retur ${returnNumber} berhasil diajukan!`, 'success');
+    showToast(`Retur ${retData.return_number} berhasil diajukan!`, 'success');
     closeCreateModal();
     await loadReturns();
-  }
-
-  async function generateReturnNumber() {
-    const d = new Date();
-    const prefix = `RTR-${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-    const { data } = await supabase.from('returns')
-      .select('return_number')
-      .ilike('return_number', prefix + '%')
-      .order('return_number', { ascending: false })
-      .limit(1);
-    const last = data?.[0]?.return_number;
-    let seq = 1;
-    if (last) {
-      const parts = last.split('-');
-      seq = (parseInt(parts[parts.length - 1]) || 0) + 1;
-    }
-    return `${prefix}-${String(seq).padStart(3,'0')}`;
   }
 
   // ── Approve ────────────────────────────────────────────────────────────
