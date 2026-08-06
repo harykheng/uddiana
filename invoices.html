@@ -1543,7 +1543,16 @@
     for (const it of deletedItems) {
       if (!it.product_id) continue;
       const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', it.product_id).single();
-      if (prod) await supabase.from('products').update({ stock_quantity: prod.stock_quantity + it.quantity }).eq('id', it.product_id);
+      if (prod) {
+        const newStock = prod.stock_quantity + it.quantity;
+        await supabase.from('products').update({ stock_quantity: newStock }).eq('id', it.product_id);
+        const { error: movErr1 } = await supabase.from('stock_movements').insert({
+          product_id: it.product_id, product_name: it.product_name, type: 'adjustment',
+          quantity: it.quantity, quantity_before: prod.stock_quantity, quantity_after: newStock,
+          notes: `Edit faktur: item dihapus`,
+        });
+        if (movErr1) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr1.message, 'error');
+      }
       await supabase.from('invoice_items').delete().eq('id', it.id);
     }
 
@@ -1571,7 +1580,15 @@
             showToast(`Stok "${item.product_name}" tidak cukup (sisa saat ini: ${prod.stock_quantity})`, 'error');
             setLoading(btn, false); return;
           }
-          if (prod) await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.product_id);
+          if (prod) {
+            await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.product_id);
+            const { error: movErr2 } = await supabase.from('stock_movements').insert({
+              product_id: item.product_id, product_name: item.product_name, type: 'adjustment',
+              quantity: Math.abs(qtyDiff), quantity_before: prod.stock_quantity, quantity_after: newStock,
+              notes: `Edit faktur: qty item berubah`,
+            });
+            if (movErr2) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr2.message, 'error');
+          }
         }
         await supabase.from('invoice_items').update(payload).eq('id', item.itemId);
       } else {
@@ -1587,12 +1604,29 @@
           const oldItem = editInvoiceItems.find(x => x.id === item.itemId);
           if (oldItem) {
             const { data: oldProd } = await supabase.from('products').select('stock_quantity').eq('id', oldItem.product_id).single();
-            if (oldProd) await supabase.from('products').update({ stock_quantity: oldProd.stock_quantity + oldItem.quantity }).eq('id', oldItem.product_id);
+            if (oldProd) {
+              const oldNewStock = oldProd.stock_quantity + oldItem.quantity;
+              await supabase.from('products').update({ stock_quantity: oldNewStock }).eq('id', oldItem.product_id);
+              const { error: movErr3 } = await supabase.from('stock_movements').insert({
+                product_id: oldItem.product_id, product_name: oldItem.product_name, type: 'adjustment',
+                quantity: oldItem.quantity, quantity_before: oldProd.stock_quantity, quantity_after: oldNewStock,
+                notes: `Edit faktur: ganti produk`,
+              });
+              if (movErr3) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr3.message, 'error');
+            }
             await supabase.from('invoice_items').delete().eq('id', item.itemId);
           }
         }
         await supabase.from('invoice_items').insert(payload);
-        if (prod) await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.product_id);
+        if (prod) {
+          await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.product_id);
+          const { error: movErr4 } = await supabase.from('stock_movements').insert({
+            product_id: item.product_id, product_name: item.product_name, type: 'adjustment',
+            quantity: item.quantity, quantity_before: prod.stock_quantity, quantity_after: newStock,
+            notes: `Edit faktur: item baru/ganti produk`,
+          });
+          if (movErr4) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr4.message, 'error');
+        }
       }
     }
 
@@ -1887,11 +1921,18 @@
     if (liveInv && liveInv.status !== 'cancelled') {
       for (const item of (items || [])) {
         const { data: prod } = await supabase
-          .from('products').select('stock_quantity').eq('id', item.product_id).single();
+          .from('products').select('name,stock_quantity').eq('id', item.product_id).single();
         if (prod) {
+          const newStock = prod.stock_quantity + item.quantity;
           await supabase.from('products')
-            .update({ stock_quantity: prod.stock_quantity + item.quantity })
+            .update({ stock_quantity: newStock })
             .eq('id', item.product_id);
+          const { error: movErr } = await supabase.from('stock_movements').insert({
+            product_id: item.product_id, product_name: prod.name, type: 'adjustment',
+            quantity: item.quantity, quantity_before: prod.stock_quantity, quantity_after: newStock,
+            notes: `Hapus faktur ${inv.invoice_number || id}`,
+          });
+          if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
         }
       }
     }
