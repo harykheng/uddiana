@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <link rel="icon" href="favicon.ico" type="image/x-icon">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pembelian Barang - StokManager</title>
+  <title>Pembelian/Masuk Barang - StokManager</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
   <style>
@@ -48,7 +48,7 @@
       <div class="nav-label">Transaksi</div>
       <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
       <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
-      <a href="purchases.html" class="nav-item active"><span class="nav-icon">🛒</span> Pembelian Barang</a>
+      <a href="purchases.html" class="nav-item active"><span class="nav-icon">🛒</span> Pembelian/Masuk Barang</a>
       <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
       <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
       <a href="stock-opname.html" class="nav-item" data-super-admin><span class="nav-icon">📋</span> Stock Opname</a>
@@ -69,7 +69,7 @@
   <div class="main">
     <header class="topbar">
       <div class="topbar-title">
-        <h1>Pembelian Barang</h1>
+        <h1>Pembelian/Masuk Barang</h1>
         <p>Input stok masuk dari pembelian / supplier</p>
       </div>
       <div class="topbar-right">
@@ -121,7 +121,7 @@
 <div class="modal-overlay" id="modal-create-po" data-no-overlay-close>
   <div class="modal modal-xl">
     <div class="modal-header">
-      <h3>Buat Pembelian Barang</h3>
+      <h3>Buat Pembelian/Masuk Barang</h3>
       <button class="modal-close" onclick="closeModal('modal-create-po')">×</button>
     </div>
     <div class="modal-body">
