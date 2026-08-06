@@ -914,7 +914,7 @@ create table if not exists return_items (
           showToast('Gagal mengembalikan stok untuk: ' + it.product_name, 'error');
           continue;
         }
-        await supabase.from('stock_movements').insert({
+        const { error: movErr } = await supabase.from('stock_movements').insert({
           product_id:      it.product_id,
           product_name:    it.product_name,
           type:            'return_in',
@@ -923,6 +923,7 @@ create table if not exists return_items (
           quantity_after:  newStock,
           notes:           `Retur disetujui: ${ret.return_number || returId}`,
         });
+        if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat untuk: ' + it.product_name, 'error');
       }
     }
 
@@ -1163,7 +1164,7 @@ create table if not exists return_items (
         await supabase.from('products')
           .update({ stock_quantity: after })
           .eq('id', it.product_id);
-        await supabase.from('stock_movements').insert({
+        const { error: movErr } = await supabase.from('stock_movements').insert({
           product_id:      it.product_id,
           product_name:    it.product_name,
           type:            'adjustment',
@@ -1172,6 +1173,7 @@ create table if not exists return_items (
           quantity_after:  after,
           notes:           `Edit retur ${ret.return_number || editReturId}: qty ${oldQty} → ${newQty}`,
         });
+        if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat untuk: ' + it.product_name, 'error');
       }
     }
 

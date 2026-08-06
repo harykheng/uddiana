@@ -455,7 +455,7 @@
 
       if (errProd) { setLoading(btn, false); showToast('Gagal update stok: ' + errProd.message, 'error'); return; }
 
-      await supabase.from('stock_movements').insert({
+      const { error: movErr } = await supabase.from('stock_movements').insert({
         product_id:      currentProduct.id,
         product_name:    currentProduct.name,
         type:            'adjustment',
@@ -464,11 +464,19 @@
         quantity_after:  newStock,
         notes:           `Koreksi Opname: ${activeSession.name} (${diff >= 0 ? '+' : ''}${diff})`,
       });
+      if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
 
-      await supabase.from('opname_items')
+      // .select('id') supaya bisa tahu kalau update ini nggak match baris manapun (misal
+      // session_id yang dipakai activeSession ternyata bukan session yang punya baris
+      // opname_items produk ini) — tanpa ini, update 0 baris gagal SENYAP tanpa error,
+      // dan riwayat "siapa yang scan produk ini di sesi mana" jadi nggak akurat.
+      const { data: updatedRows, error: itemErr } = await supabase.from('opname_items')
         .update({ physical_stock: fisik, diff, scanned_by_id: currentUser?.session?.user?.id, scanned_by_name: userName })
         .eq('session_id', activeSession.id)
-        .eq('product_id', currentProduct.id);
+        .eq('product_id', currentProduct.id)
+        .select('id');
+      if (itemErr) showToast('Stok tersimpan, tapi catatan koreksi gagal diperbarui: ' + itemErr.message, 'error');
+      else if (!updatedRows?.length) showToast('⚠️ Stok tersimpan, tapi produk ini tidak ketemu di daftar scan sesi ini (cek Stock Opname untuk detail)', 'error');
 
       isCorrection = false;
       currentProduct.stock_quantity = newStock;
@@ -521,7 +529,7 @@
 
       if (errProd) { setLoading(btn, false); showToast('Gagal update stok: ' + errProd.message, 'error'); return; }
 
-      await supabase.from('stock_movements').insert({
+      const { error: movErr } = await supabase.from('stock_movements').insert({
         product_id:      currentProduct.id,
         product_name:    currentProduct.name,
         type:            'adjustment',
@@ -530,6 +538,7 @@
         quantity_after:  newStock,
         notes:           `Stock Opname: ${activeSession.name} (${diff >= 0 ? '+' : ''}${diff})`,
       });
+      if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
 
       currentProduct.stock_quantity = newStock;
     }
