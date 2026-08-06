@@ -149,5 +149,10 @@
   function onDragOver(e) { e.preventDefault(); document.getElementById('drop-zone').classList.add('over'); }
   function onDragLeave()  { document.getElementById('drop-zone').classList.remove('over'); }
 </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  }
+</script>
 </body>
 </html>

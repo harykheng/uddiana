@@ -605,5 +605,10 @@ alter table sales_targets disable row level security;`;
     navigator.clipboard.writeText(TARGET_SQL).then(() => showToast('SQL disalin!', 'success'));
   }
 </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  }
+</script>
 </body>
 </html>
