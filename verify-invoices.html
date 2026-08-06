@@ -647,13 +647,21 @@
     for (const item of (inv.invoice_items || [])) {
       const { data: prod } = await supabase
         .from('products')
-        .select('stock_quantity')
+        .select('name,stock_quantity')
         .eq('id', item.product_id)
         .single();
       if (prod) {
+        const newStock = prod.stock_quantity + item.quantity;
         await supabase.from('products')
-          .update({ stock_quantity: prod.stock_quantity + item.quantity })
+          .update({ stock_quantity: newStock })
           .eq('id', item.product_id);
+        const { error: movErr } = await supabase.from('stock_movements').insert({
+          product_id: item.product_id, product_name: prod.name || item.product_name, type: 'in',
+          quantity: item.quantity, quantity_before: prod.stock_quantity, quantity_after: newStock,
+          reference_type: 'invoice_reject', reference_id: currentInvoiceId,
+          notes: `Faktur ditolak: ${reason}`,
+        });
+        if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
       }
     }
     hideFullLoading();
@@ -813,6 +821,8 @@
     if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); setLoading(btn, false); return; }
 
     const finalStock = {};
+    const liveStockById = {};
+    const productNameById = {};
     for (const p of (liveProducts || [])) {
       const newStock = p.stock_quantity + (delta[p.id] || 0);
       if (newStock < 0) {
@@ -820,6 +830,8 @@
         setLoading(btn, false); return;
       }
       finalStock[p.id] = newStock;
+      liveStockById[p.id] = p.stock_quantity;
+      productNameById[p.id] = p.name;
     }
 
     // ── PASS 2: semua baris sudah tervalidasi aman, sekarang baru mulai tulis ke DB.
@@ -827,6 +839,12 @@
     for (const productId of Object.keys(finalStock)) {
       if (delta[productId]) {
         await supabase.from('products').update({ stock_quantity: finalStock[productId] }).eq('id', productId);
+        const { error: movErr } = await supabase.from('stock_movements').insert({
+          product_id: productId, product_name: productNameById[productId], type: 'adjustment',
+          quantity: Math.abs(delta[productId]), quantity_before: liveStockById[productId], quantity_after: finalStock[productId],
+          notes: `Edit & verifikasi faktur`,
+        });
+        if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
       }
     }
     for (const r of parsedRows) {
