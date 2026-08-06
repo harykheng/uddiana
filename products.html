@@ -777,6 +777,21 @@
       }
     }
 
+    // Stok ditulis sebagai selisih (delta) terhadap stok LIVE di database, bukan menimpa
+    // dengan angka absolut dari form yang bisa sudah basi kalau ada transaksi lain
+    // (jual/beli/opname) yang mengubah stok sejak modal ini dibuka — delta tetap
+    // diterapkan di atas nilai stok terbaru, bukan menimpanya.
+    let liveStockAfter = null;
+    if (id) {
+      if (diff !== 0) {
+        const { data: liveProd } = await supabase.from('products').select('stock_quantity').eq('id', id).single();
+        liveStockAfter = (liveProd?.stock_quantity ?? old?.stock_quantity ?? 0) + diff;
+        payload.stock_quantity = liveStockAfter;
+      } else {
+        delete payload.stock_quantity;
+      }
+    }
+
     setLoading(btn, true);
     let error;
     if (id) {
@@ -785,8 +800,8 @@
         await supabase.from('stock_movements').insert({
           product_id: id, product_name: name, type: 'adjustment',
           quantity: Math.abs(diff),
-          quantity_before: old?.stock_quantity || 0,
-          quantity_after: payload.stock_quantity, notes: 'Edit produk',
+          quantity_before: liveStockAfter - diff,
+          quantity_after: liveStockAfter, notes: 'Edit produk',
         });
       }
     } else {

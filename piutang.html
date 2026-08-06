@@ -435,14 +435,32 @@
     setLoading(btn, true);
     const notes = document.getElementById('pay-notes').value.trim();
 
-    const inv = allInvoices.find(x => x.id === currentPayId);
-    const sisa        = inv?._sisa || 0;
-    const prevCash     = Number(inv?.cash_paid     || 0);
-    const prevTransfer = Number(inv?.transfer_paid || 0);
+    // Ambil data faktur LIVE dari DB, bukan dari cache di browser — kalau faktur ini
+    // sudah dibayar/diubah di tempat lain sejak halaman dimuat, angka cash_paid/
+    // transfer_paid/paid_amount yang ditulis bisa salah kalau pakai data basi.
+    const { data: liveInv, error: fetchErr } = await supabase.from('invoices')
+      .select('total,paid_amount,cash_paid,transfer_paid,status')
+      .eq('id', currentPayId).single();
+    if (fetchErr || !liveInv) {
+      setLoading(btn, false);
+      showToast('Gagal ambil data faktur terbaru: ' + (fetchErr?.message || 'tidak ditemukan'), 'error');
+      return;
+    }
+    if (liveInv.status === 'paid' || liveInv.status === 'cancelled') {
+      setLoading(btn, false);
+      showToast('Faktur ini sudah lunas/dibatalkan di tempat lain', 'error');
+      closeModal('modal-pay');
+      loadData();
+      return;
+    }
+
+    const sisa         = Math.max(0, Number(liveInv.total || 0) - Number(liveInv.paid_amount || 0));
+    const prevCash      = Number(liveInv.cash_paid     || 0);
+    const prevTransfer  = Number(liveInv.transfer_paid || 0);
 
     const { error } = await supabase.from('invoices').update({
       status: 'paid',
-      paid_amount: Number(inv?.total || 0),
+      paid_amount: Number(liveInv.total || 0),
       payment_method: currentPayMethod,
       payment_date: new Date().toISOString().split('T')[0],
       payment_notes: notes || null,
