@@ -1186,6 +1186,7 @@ function recalcTotal() {
 
     btn.disabled = true;
     btn.textContent = 'Menyimpan...';
+    showFullLoading('Menyimpan faktur & memperbarui stok...');
 
     // Fetch customer langsung dari DB agar alamat & telepon selalu akurat
     const { data: customer } = await supabase
@@ -1209,18 +1210,20 @@ function recalcTotal() {
       verification_status: 'pending'
     }).select().single();
 
-    if (invErr) { showToast('Gagal: ' + invErr.message, 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
+    if (invErr) { hideFullLoading(); showToast('Gagal: ' + invErr.message, 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
 
     const itemsPayload = items.map(it => ({ ...it, invoice_id: inv.id }));
     const { error: itemsErr } = await supabase.from('invoice_items').insert(itemsPayload);
 
     if (itemsErr) {
       await supabase.from('invoices').delete().eq('id', inv.id);
+      hideFullLoading();
       showToast('Gagal simpan items: ' + itemsErr.message, 'error');
       btn.disabled = false; btn.textContent = 'Kirim Faktur';
       return;
     }
 
+    hideFullLoading();
     showToast('Faktur berhasil dikirim! Menunggu verifikasi admin.');
     btn.disabled = false;
     btn.textContent = 'Kirim Faktur';
@@ -1491,6 +1494,7 @@ function recalcTotal() {
       }
     }
 
+    showFullLoading('Menyimpan perubahan faktur & memperbarui stok...');
     try {
       // 1. Cancel invoice → trigger DB kembalikan stok otomatis
       const { error: e1 } = await supabase.from('invoices')
@@ -1534,6 +1538,7 @@ function recalcTotal() {
       showToast(err.message, 'error');
     } finally {
       btn.disabled = false; btn.textContent = '💾 Simpan Perubahan';
+      hideFullLoading();
     }
   }
 

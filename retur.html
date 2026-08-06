@@ -900,6 +900,7 @@ create table if not exists return_items (
     if (!claimed?.length) { showToast('Retur ini sudah diproses sebelumnya', 'error'); await loadReturns(); return; }
 
     // Restore stock for each item
+    showFullLoading('Mengembalikan stok...');
     const items = ret.return_items || [];
     for (const it of items) {
       if (!it.product_id) continue;
@@ -925,6 +926,7 @@ create table if not exists return_items (
       }
     }
 
+    hideFullLoading();
     showToast('Retur disetujui! Stok telah dikembalikan ✅', 'success');
     await loadReturns();
   }
@@ -1108,48 +1110,66 @@ create table if not exists return_items (
     }
 
     setLoading(btn, true);
+    showFullLoading('Menyimpan perubahan retur & menyesuaikan stok...');
     let totalValue = 0;
 
+    // Pass 1: kumpulkan qty baru & net delta stok per produk, validasi SEMUA dulu
+    // sebelum ada satupun tulisan ke database. Sebelumnya validasi & tulis jalan
+    // bergantian per baris — kalau baris ke-2 gagal validasi, baris ke-1 sudah kadung
+    // ke-update duluan (return_items & stok-nya), retur jadi setengah-ter-update dan
+    // total_return_value di header nggak pernah ke-recalculate.
+    const rowsData = [];
+    const deltaByProduct = {};
     for (let i = 0; i < editReturItems.length; i++) {
       const it     = editReturItems[i];
       const newQty = Math.max(1, parseInt(document.getElementById(`edit-qty-${i}`).value) || 1);
       const oldQty = it.quantity;
       const newSub = newQty * (it.unit_price || 0);
       totalValue  += newSub;
-
-      // Jika sudah approved & qty berubah, cek dulu stok cukup SEBELUM update apapun
-      let stockUpdate = null; // { newStock, prodStock } kalau perlu adjust stok
+      rowsData.push({ it, newQty, oldQty, newSub });
       if (ret.status === 'approved' && newQty !== oldQty) {
-        const delta = newQty - oldQty; // + = lebih banyak diretur (tambah stok), - = kurang (kurangi stok)
-        const { data: prod } = await supabase.from('products')
-          .select('stock_quantity').eq('id', it.product_id).single();
-        if (prod) {
-          const newStock = prod.stock_quantity + delta;
-          if (newStock < 0) {
-            showToast(`Tidak bisa kurangi qty retur "${it.product_name}" — stok sudah terpakai (sisa: ${prod.stock_quantity})`, 'error');
-            setLoading(btn, false); return;
-          }
-          stockUpdate = { delta, newStock, prodStock: prod.stock_quantity };
+        // + = lebih banyak diretur (tambah stok), - = kurang (kurangi stok)
+        deltaByProduct[it.product_id] = (deltaByProduct[it.product_id] || 0) + (newQty - oldQty);
+      }
+    }
+
+    const affectedIds = Object.keys(deltaByProduct);
+    const liveStockById = {};
+    if (affectedIds.length) {
+      const { data: liveProducts } = await supabase.from('products').select('id,stock_quantity').in('id', affectedIds);
+      (liveProducts || []).forEach(p => { liveStockById[p.id] = p.stock_quantity; });
+      for (const pid of affectedIds) {
+        const current = liveStockById[pid] ?? 0;
+        if (current + deltaByProduct[pid] < 0) {
+          const name = rowsData.find(r => r.it.product_id === pid)?.it.product_name || pid;
+          showToast(`Tidak bisa kurangi qty retur "${name}" — stok sudah terpakai (sisa: ${current})`, 'error');
+          setLoading(btn, false); hideFullLoading(); return;
         }
       }
+    }
 
-      // Update return_item
+    // Pass 2: sudah lolos semua validasi, baru mulai tulis
+    for (const { it, newQty, oldQty, newSub } of rowsData) {
       const { error } = await supabase.from('return_items')
         .update({ quantity: newQty, subtotal: newSub })
         .eq('id', it.id);
-      if (error) { showToast('Gagal update item: ' + error.message, 'error'); setLoading(btn, false); return; }
+      if (error) { showToast('Gagal update item: ' + error.message, 'error'); setLoading(btn, false); hideFullLoading(); return; }
 
-      if (stockUpdate) {
+      if (ret.status === 'approved' && newQty !== oldQty) {
+        const delta  = newQty - oldQty;
+        const before = liveStockById[it.product_id] ?? 0;
+        const after  = before + delta;
+        liveStockById[it.product_id] = after; // produk sama di >1 baris: akumulasi bertahap
         await supabase.from('products')
-          .update({ stock_quantity: stockUpdate.newStock })
+          .update({ stock_quantity: after })
           .eq('id', it.product_id);
         await supabase.from('stock_movements').insert({
           product_id:      it.product_id,
           product_name:    it.product_name,
           type:            'adjustment',
-          quantity:        Math.abs(stockUpdate.delta),
-          quantity_before: stockUpdate.prodStock,
-          quantity_after:  stockUpdate.newStock,
+          quantity:        Math.abs(delta),
+          quantity_before: before,
+          quantity_after:  after,
           notes:           `Edit retur ${ret.return_number || editReturId}: qty ${oldQty} → ${newQty}`,
         });
       }
@@ -1159,6 +1179,7 @@ create table if not exists return_items (
     await supabase.from('returns').update({ total_return_value: totalValue }).eq('id', editReturId);
 
     setLoading(btn, false);
+    hideFullLoading();
     showToast('Retur berhasil diperbarui');
     closeModal('modal-edit-retur');
     await loadAllReturns();

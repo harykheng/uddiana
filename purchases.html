@@ -486,6 +486,7 @@
     if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); return; }
 
     setLoading(btn, true);
+    showFullLoading('Menyimpan pembelian & memperbarui stok...');
     const { data: poData, error: poErr } = await supabase.from('purchases').insert({
       supplier_name: document.getElementById('po-supplier').value.trim() || null,
       purchase_date: document.getElementById('po-date').value,
@@ -493,13 +494,14 @@
       total_cost: totalCost,
     }).select().single();
 
-    if (poErr) { setLoading(btn, false); showToast('Gagal: ' + poErr.message, 'error'); return; }
+    if (poErr) { setLoading(btn, false); hideFullLoading(); showToast('Gagal: ' + poErr.message, 'error'); return; }
 
     const { error: itemsErr } = await supabase.from('purchase_items').insert(
       items.map(i => ({ ...i, purchase_id: poData.id }))
     );
 
     setLoading(btn, false);
+    hideFullLoading();
     if (itemsErr) {
       await supabase.from('purchases').delete().eq('id', poData.id);
       showToast('Gagal simpan item: ' + itemsErr.message, 'error');
@@ -580,7 +582,9 @@
   async function cancelCurrentPo() {
     if (!currentPo) return;
     if (!showConfirm(`Batalkan PO ${currentPo.po.purchase_number}?\nStok yang sudah ditambahkan akan dikurangi kembali.`)) return;
+    showFullLoading('Membatalkan PO & menyesuaikan stok...');
     const { error } = await supabase.from('purchases').update({ status: 'cancelled' }).eq('id', currentPo.po.id);
+    hideFullLoading();
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('PO dibatalkan, stok dikembalikan');
     closeModal('modal-view-po');
@@ -746,6 +750,7 @@
     if (!newItems.length) { showToast('Tambahkan minimal 1 barang', 'error'); return; }
 
     setLoading(btn, true);
+    showFullLoading('Menyimpan perubahan pembelian & menyesuaikan stok...');
 
     // 1. Ambil item lama, hitung total qty per produk yang akan "dilepas" (digabung
     //    dulu kalau ada produk yang sama di beberapa baris), lalu VALIDASI SEMUA dulu
@@ -766,13 +771,13 @@
     if (oldProductIds.length) {
       const { data: liveProducts, error: liveErr } = await supabase
         .from('products').select('id,name,stock_quantity').in('id', oldProductIds);
-      if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); setLoading(btn, false); return; }
+      if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); setLoading(btn, false); hideFullLoading(); return; }
 
       for (const p of (liveProducts || [])) {
         const newStock = p.stock_quantity - releaseByProduct[p.id];
         if (newStock < 0) {
           showToast(`Tidak bisa edit — stok "${p.name}" sudah terpakai (sisa: ${p.stock_quantity}, PO ini: ${releaseByProduct[p.id]}). Sesuaikan manual dulu lewat halaman Produk.`, 'error');
-          setLoading(btn, false); return;
+          setLoading(btn, false); hideFullLoading(); return;
         }
         finalStock[p.id] = newStock;
       }
@@ -793,6 +798,7 @@
     if (itemsErr) {
       showToast('Gagal simpan item: ' + itemsErr.message, 'error');
       setLoading(btn, false);
+      hideFullLoading();
       return;
     }
 
@@ -805,6 +811,7 @@
     }).eq('id', currentEditPoId);
 
     setLoading(btn, false);
+    hideFullLoading();
     if (error) { showToast('Gagal update PO: ' + error.message, 'error'); return; }
 
     showToast('Pembelian berhasil diperbarui, stok disesuaikan');
