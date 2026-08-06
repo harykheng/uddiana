@@ -1338,7 +1338,7 @@
     let all = [], from = 0, CHUNK = 1000;
     while (true) {
       const { data } = await supabase.from('stock_movements')
-        .select('id,type,quantity,notes,reference_type,reference_id,created_at')
+        .select('id,type,quantity,quantity_after,notes,reference_type,reference_id,created_at')
         .eq('product_id', id)
         .order('created_at', { ascending: true })
         .range(from, from + CHUNK - 1);
@@ -1361,15 +1361,13 @@
       (invs||[]).forEach(inv => { refMap[inv.id] = inv.invoice_number; });
     }
 
-    // Hitung running balance mundur dari stok sekarang
-    const sumIn  = all.filter(m => m.type === 'in').reduce((s,m) => s + m.quantity, 0);
-    const sumOut = all.filter(m => m.type === 'out').reduce((s,m) => s + m.quantity, 0);
-    let balance = _piCurrentStock - sumIn + sumOut; // initial stock
-    all.forEach(m => {
-      if (m.type === 'in')  balance += m.quantity;
-      else                  balance -= m.quantity;
-      m._saldo = balance;
-    });
+    // Saldo per baris = quantity_after yang tersimpan langsung di stock_movements, bukan
+    // dihitung ulang di sini. Cara lama menghitung running balance mundur dari stok sekarang
+    // dengan asumsi tiap baris non-'in' selalu MENGURANGI — salah untuk tipe 'adjustment'
+    // (koreksi/opname/set stok manual), yang quantity-nya selalu disimpan sebagai angka
+    // absolut dan bisa saja itu kenaikan, bukan pengurangan. Akibatnya Saldo yang ditampilkan
+    // bisa meleset jauh dari stok sebenarnya walau data quantity_after-nya sendiri benar.
+    all.forEach(m => { m._saldo = m.quantity_after; });
 
     _piAllMovements = all;
     _piRefMap = refMap;
