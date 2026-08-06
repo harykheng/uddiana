@@ -1498,6 +1498,36 @@
     if (!valid) return;
     if (!newItems.length) { showToast('Tambahkan minimal 1 produk', 'error'); return; }
 
+    // Validasi stok LIVE untuk semua produk terdampak dulu, sebelum ada langkah destruktif apapun.
+    // Sebelumnya validasi jalan sambil loop tulis satu-satu — kalau item ke-2 dari 3 gagal,
+    // item ke-1 & item yang dihapus/direstore sudah kadung ditulis duluan, faktur jadi
+    // setengah-ter-update (item mismatch dengan total).
+    const oldByProduct = {};
+    (editInvoiceItems || []).forEach(it => {
+      oldByProduct[it.product_id] = (oldByProduct[it.product_id] || 0) + Number(it.quantity);
+    });
+    const newByProduct = {};
+    newItems.forEach(it => {
+      newByProduct[it.product_id] = (newByProduct[it.product_id] || 0) + it.quantity;
+    });
+    const affectedIds = [...new Set([...Object.keys(oldByProduct), ...Object.keys(newByProduct)])];
+    const { data: liveProducts, error: liveErr } = await supabase
+      .from('products').select('id,name,stock_quantity').in('id', affectedIds);
+    if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); return; }
+    const liveStockById = {};
+    (liveProducts || []).forEach(p => { liveStockById[p.id] = p; });
+    for (const pid of affectedIds) {
+      const delta = (newByProduct[pid] || 0) - (oldByProduct[pid] || 0);
+      if (delta > 0) {
+        const p = liveStockById[pid];
+        const avail = p ? p.stock_quantity : 0;
+        if (delta > avail) {
+          showToast(`Stok "${p?.name || pid}" tidak cukup (tersedia: ${avail})`, 'error');
+          return;
+        }
+      }
+    }
+
     setLoading(btn, true);
     showFullLoading('Menyimpan perubahan faktur...');
     try {
