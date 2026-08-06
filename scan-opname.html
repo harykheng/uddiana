@@ -437,10 +437,16 @@
     const userName = currentUser?.profile?.name || currentUser?.session?.user?.email || 'Unknown';
 
     if (isCorrection) {
-      // Mode koreksi: ambil stok sistem TERBARU (bukan cache), lalu terapkan diff di atasnya
+      // Mode koreksi: stok fisik yang diinput di sini adalah hasil hitung ulang —
+      // jadikan itu langsung angka stok yang benar (bukan "stok terbaru + selisih lama").
+      // Kalau tetap pakai freshStock+diff, dan ada 2 admin yang koreksi produk yang sama
+      // nyaris bersamaan, selisih dari koreksi pertama bisa ketiban-terapkan dobel di atas
+      // hasil koreksi kedua — angka stok akhir jadi salah walau kedua admin menghitung fisik
+      // dengan benar. Set langsung ke `fisik` membuat hasil akhirnya selalu sama dengan
+      // hitungan fisik yang terakhir disimpan, berapa kali pun koreksi ditumpuk.
       const { data: freshProd } = await supabase.from('products').select('stock_quantity').eq('id', currentProduct.id).single();
       const freshStock = freshProd ? freshProd.stock_quantity : correctionSystemStock;
-      const newStock   = freshStock + diff;
+      const newStock   = fisik;
 
       const { error: errProd } = await supabase
         .from('products')
@@ -453,7 +459,7 @@
         product_id:      currentProduct.id,
         product_name:    currentProduct.name,
         type:            'adjustment',
-        quantity:        Math.abs(diff),
+        quantity:        Math.abs(newStock - freshStock),
         quantity_before: freshStock,
         quantity_after:  newStock,
         notes:           `Koreksi Opname: ${activeSession.name} (${diff >= 0 ? '+' : ''}${diff})`,
