@@ -788,5 +788,10 @@
 
   (async () => { const auth = await requireSuperAdmin(); if (!auth) return; await loadReport(); })();
 </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
+  }
+</script>
 </body>
 </html>
