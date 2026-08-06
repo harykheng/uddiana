@@ -874,7 +874,6 @@
     const type = document.getElementById('adjust-type').value;
     const qty = Math.round(parseFormattedNumber(document.getElementById('adjust-qty').value));
     const notes = document.getElementById('adjust-notes').value.trim();
-    const currentStock = parseInt(document.getElementById('adjust-current-stock').value);
     const productName = document.getElementById('adjust-product-name').value;
 
     if (!qty || qty <= 0) { showToast('Jumlah harus lebih dari 0', 'error'); return; }
@@ -885,14 +884,24 @@
       return;
     }
 
+    setLoading(btn, true);
+
+    // Ambil stok LIVE sekarang (bukan angka di form yang ke-load pas modal dibuka —
+    // bisa sudah basi kalau halaman sudah lama dibuka dan ada transaksi lain di jeda itu).
+    // Untuk mode "Tambah"/"Kurang" ini krusial karena hasil akhirnya dihitung dari stok
+    // lama; kalau stok lama basi, hasilnya bisa menimpa balik perubahan stok transaksi lain.
+    const { data: liveProd, error: liveErr } = await supabase
+      .from('products').select('stock_quantity').eq('id', id).single();
+    if (liveErr) { setLoading(btn, false); showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); return; }
+    const currentStock = liveProd.stock_quantity;
+
     let newStock;
     if (type === 'in') newStock = currentStock + qty;
     else if (type === 'out') {
-      if (qty > currentStock) { showToast('Stok tidak cukup', 'error'); return; }
+      if (qty > currentStock) { setLoading(btn, false); showToast(`Stok tidak cukup (tersedia: ${currentStock})`, 'error'); return; }
       newStock = currentStock - qty;
     } else { newStock = qty; }
 
-    setLoading(btn, true);
     const { error } = await supabase.from('products').update({ stock_quantity: newStock }).eq('id', id);
     if (!error) {
       const { error: movErr } = await supabase.from('stock_movements').insert({
