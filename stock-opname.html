@@ -316,10 +316,10 @@
 
     const btn = document.getElementById('btn-create-session');
     setLoading(btn, true);
-    const userName = currentUser?.user_metadata?.name || currentUser?.email || 'Super Admin';
+    const userName = currentUser?.profile?.name || currentUser?.session?.user?.email || 'Super Admin';
     const { error } = await supabase.from('opname_sessions').insert({
       name,
-      created_by_id:   currentUser.id,
+      created_by_id:   currentUser?.session?.user?.id || null,
       created_by_name: userName,
       status:          'active',
     });
