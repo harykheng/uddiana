@@ -335,19 +335,21 @@
     if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); return; }
 
     setLoading(btn, true);
+    showFullLoading('Menyimpan keluar barang & mengurangi stok...');
     const { data: trData, error: trErr } = await supabase.from('stock_transfers').insert({
       transfer_date: document.getElementById('tr-date').value,
       reason: document.getElementById('tr-reason').value,
       notes: document.getElementById('tr-notes').value.trim() || null,
     }).select().single();
 
-    if (trErr) { setLoading(btn, false); showToast('Gagal: ' + trErr.message, 'error'); return; }
+    if (trErr) { setLoading(btn, false); hideFullLoading(); showToast('Gagal: ' + trErr.message, 'error'); return; }
 
     const { error: itemsErr } = await supabase.from('stock_transfer_items').insert(
       items.map(i => ({ ...i, transfer_id: trData.id }))
     );
 
     setLoading(btn, false);
+    hideFullLoading();
     if (itemsErr) {
       await supabase.from('stock_transfers').delete().eq('id', trData.id);
       showToast('Gagal: ' + itemsErr.message, 'error');
@@ -412,7 +414,9 @@
       return;
     }
 
+    showFullLoading('Membatalkan & mengembalikan stok...');
     const { error } = await supabase.from('stock_transfers').update({ status: 'cancelled' }).eq('id', currentTransfer.tr.id);
+    hideFullLoading();
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('Dibatalkan, stok dikembalikan');
     closeModal('modal-view-transfer');

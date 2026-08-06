@@ -793,6 +793,7 @@
     }
 
     setLoading(btn, true);
+    if (id && diff !== 0) showFullLoading('Menyimpan produk & menyesuaikan stok...');
     let error;
     if (id) {
       ({ error } = await supabase.from('products').update(payload).eq('id', id));
@@ -809,6 +810,7 @@
     }
 
     setLoading(btn, false);
+    hideFullLoading();
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast(id ? 'Produk diperbarui' : 'Produk ditambahkan');
     closeModal('modal-product');

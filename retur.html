@@ -900,6 +900,7 @@ create table if not exists return_items (
     if (!claimed?.length) { showToast('Retur ini sudah diproses sebelumnya', 'error'); await loadReturns(); return; }
 
     // Restore stock for each item
+    showFullLoading('Mengembalikan stok...');
     const items = ret.return_items || [];
     for (const it of items) {
       if (!it.product_id) continue;
@@ -925,6 +926,7 @@ create table if not exists return_items (
       }
     }
 
+    hideFullLoading();
     showToast('Retur disetujui! Stok telah dikembalikan ✅', 'success');
     await loadReturns();
   }
@@ -1108,6 +1110,7 @@ create table if not exists return_items (
     }
 
     setLoading(btn, true);
+    showFullLoading('Menyimpan perubahan retur & menyesuaikan stok...');
     let totalValue = 0;
 
     // Pass 1: kumpulkan qty baru & net delta stok per produk, validasi SEMUA dulu
@@ -1140,7 +1143,7 @@ create table if not exists return_items (
         if (current + deltaByProduct[pid] < 0) {
           const name = rowsData.find(r => r.it.product_id === pid)?.it.product_name || pid;
           showToast(`Tidak bisa kurangi qty retur "${name}" — stok sudah terpakai (sisa: ${current})`, 'error');
-          setLoading(btn, false); return;
+          setLoading(btn, false); hideFullLoading(); return;
         }
       }
     }
@@ -1150,7 +1153,7 @@ create table if not exists return_items (
       const { error } = await supabase.from('return_items')
         .update({ quantity: newQty, subtotal: newSub })
         .eq('id', it.id);
-      if (error) { showToast('Gagal update item: ' + error.message, 'error'); setLoading(btn, false); return; }
+      if (error) { showToast('Gagal update item: ' + error.message, 'error'); setLoading(btn, false); hideFullLoading(); return; }
 
       if (ret.status === 'approved' && newQty !== oldQty) {
         const delta  = newQty - oldQty;
@@ -1176,6 +1179,7 @@ create table if not exists return_items (
     await supabase.from('returns').update({ total_return_value: totalValue }).eq('id', editReturId);
 
     setLoading(btn, false);
+    hideFullLoading();
     showToast('Retur berhasil diperbarui');
     closeModal('modal-edit-retur');
     await loadAllReturns();

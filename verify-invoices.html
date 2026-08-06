@@ -643,6 +643,7 @@
     }
 
     // Kembalikan stok tiap item (tanpa RPC) — aman dilakukan sesudah klaim berhasil
+    showFullLoading('Mengembalikan stok...');
     for (const item of (inv.invoice_items || [])) {
       const { data: prod } = await supabase
         .from('products')
@@ -655,6 +656,7 @@
           .eq('id', item.product_id);
       }
     }
+    hideFullLoading();
 
     setLoading(btn, false);
     showToast('Faktur ditolak dan stok dikembalikan');

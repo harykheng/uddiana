@@ -1140,6 +1140,7 @@
     const salesId   = salesSel.value || null;
 
     setLoading(btn, true);
+    showFullLoading('Menyimpan faktur & memperbarui stok...');
     const { data: invData, error: invErr } = await supabase.from('invoices').insert({
       customer_id:    customerId,
       customer_name:  customerName,
@@ -1157,13 +1158,14 @@
       created_by_id:  salesId,
     }).select().single();
 
-    if (invErr) { setLoading(btn, false); showToast('Gagal buat faktur: ' + invErr.message, 'error'); return; }
+    if (invErr) { setLoading(btn, false); hideFullLoading(); showToast('Gagal buat faktur: ' + invErr.message, 'error'); return; }
 
     const { error: itemsErr } = await supabase.from('invoice_items').insert(
       items.map(item => ({ ...item, invoice_id: invData.id }))
     );
 
     setLoading(btn, false);
+    hideFullLoading();
     if (itemsErr) {
       await supabase.from('invoices').delete().eq('id', invData.id);
       showToast('Gagal simpan item: ' + itemsErr.message, 'error');
@@ -1841,7 +1843,9 @@
       return;
     }
 
+    showFullLoading('Membatalkan faktur & mengembalikan stok...');
     const { error } = await supabase.from('invoices').update({ status: 'cancelled' }).eq('id', currentInvoice.inv.id);
+    hideFullLoading();
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('Faktur dibatalkan, stok dikembalikan');
     closeModal('modal-view-invoice');
@@ -1869,6 +1873,8 @@
       return;
     }
 
+    showFullLoading('Menghapus faktur & mengembalikan stok...');
+
     // 1. Ambil item faktur
     const { data: items } = await supabase
       .from('invoice_items').select('product_id, quantity').eq('invoice_id', id);
@@ -1894,6 +1900,7 @@
     await supabase.from('invoice_items').delete().eq('invoice_id', id);
     const { error } = await supabase.from('invoices').delete().eq('id', id);
 
+    hideFullLoading();
     if (error) { showToast('Gagal hapus: ' + error.message, 'error'); return; }
 
     showToast('Faktur dihapus dan stok dikembalikan');
