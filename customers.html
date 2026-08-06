@@ -306,6 +306,16 @@
   }
 
   async function deleteCustomer(id, name) {
+    // Cek dulu masih ada piutang belum lunas — customers.id di invoices pakai ON DELETE SET
+    // NULL, jadi kalau langsung dihapus, faktur yang masih pending kehilangan link ke
+    // customer-nya (piutang jadi susah dilacak balik ke pelanggan mana).
+    const { data: unpaid } = await supabase
+      .from('invoices').select('id').eq('customer_id', id).eq('status', 'pending').limit(1);
+    if (unpaid?.length) {
+      showToast(`Tidak bisa hapus "${name}" — masih ada faktur belum lunas. Lunasi/batalkan dulu.`, 'error');
+      return;
+    }
+
     if (!showConfirm(`Hapus customer "${name}"?`)) return;
     const { error } = await supabase.from('customers').delete().eq('id', id);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
