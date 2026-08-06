@@ -798,12 +798,13 @@
     if (id) {
       ({ error } = await supabase.from('products').update(payload).eq('id', id));
       if (!error && diff !== 0) {
-        await supabase.from('stock_movements').insert({
+        const { error: movErr } = await supabase.from('stock_movements').insert({
           product_id: id, product_name: name, type: 'adjustment',
           quantity: Math.abs(diff),
           quantity_before: liveStockAfter - diff,
           quantity_after: liveStockAfter, notes: 'Edit produk',
         });
+        if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
       }
     } else {
       ({ error } = await supabase.from('products').insert(payload));
@@ -894,13 +895,14 @@
     setLoading(btn, true);
     const { error } = await supabase.from('products').update({ stock_quantity: newStock }).eq('id', id);
     if (!error) {
-      await supabase.from('stock_movements').insert({
+      const { error: movErr } = await supabase.from('stock_movements').insert({
         product_id: id, product_name: productName,
         type: type === 'set' ? 'adjustment' : type,
         quantity: type === 'set' ? Math.abs(newStock - currentStock) : qty,
         quantity_before: currentStock, quantity_after: newStock,
         notes: notes || 'Penyesuaian manual',
       });
+      if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
     }
     setLoading(btn, false);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
