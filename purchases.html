@@ -768,6 +768,8 @@
     const oldProductIds = Object.keys(releaseByProduct);
 
     const finalStock = {};
+    const liveStockById = {};
+    const productNameById = {};
     if (oldProductIds.length) {
       const { data: liveProducts, error: liveErr } = await supabase
         .from('products').select('id,name,stock_quantity').in('id', oldProductIds);
@@ -780,12 +782,20 @@
           setLoading(btn, false); hideFullLoading(); return;
         }
         finalStock[p.id] = newStock;
+        liveStockById[p.id] = p.stock_quantity;
+        productNameById[p.id] = p.name;
       }
     }
 
     // 2. Semua tervalidasi aman — baru mulai tulis: kurangi stok per produk (satu kali per produk)
     for (const productId of Object.keys(finalStock)) {
       await supabase.from('products').update({ stock_quantity: finalStock[productId] }).eq('id', productId);
+      const { error: movErr } = await supabase.from('stock_movements').insert({
+        product_id: productId, product_name: productNameById[productId], type: 'adjustment',
+        quantity: Math.abs(finalStock[productId] - liveStockById[productId]), quantity_before: liveStockById[productId], quantity_after: finalStock[productId],
+        notes: `Edit pembelian: lepas stok item lama`,
+      });
+      if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
     }
 
     // 3. Hapus item lama
