@@ -327,5 +327,7 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration7.sql` | role super_admin — jalankan jika belum dijalankan sebelumnya |
 | `supabase_migration8.sql` | discount_type di invoice_items + tabel product_discount_rules |
 | `supabase_migration23.sql` | Bikin trigger `decrease_stock_on_invoice_item` atomik (cek+kurangi stok 1 statement) — cegah oversell kalau 2 faktur untuk produk sama di-insert nyaris bersamaan |
+| `supabase_migration24.sql` | Sama seperti migration23 tapi untuk `decrease_stock_on_transfer` (Keluar Barang) |
+| `supabase_migration25.sql` | Perbaiki akurasi quantity_before/after di `increase_stock_on_purchase` (bukan bug oversell, cuma akurasi catatan) |
 
 
