@@ -580,28 +580,37 @@
     openModal('modal-detail');
   }
 
+  let approvingInvoiceId = null;
   async function approveInvoice(id) {
+    // Tombol "Setuju" digenerate dinamis (nggak ada ID tetap buat di-disable), jadi
+    // pakai flag kunci ini supaya tap berkali-kali nggak jalanin approval dobel.
+    if (approvingInvoiceId) return;
     if (!showConfirm('Setujui faktur ini? Stok sudah terpotong saat faktur dibuat.')) return;
-    const { data: { session } } = await supabase.auth.getSession();
-    const { error } = await supabase.from('invoices').update({
-      verification_status: 'approved',
-      verified_by_id: session.user.id,
-      verified_at: new Date().toISOString()
-    }).eq('id', id);
-    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    approvingInvoiceId = id;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error } = await supabase.from('invoices').update({
+        verification_status: 'approved',
+        verified_by_id: session.user.id,
+        verified_at: new Date().toISOString()
+      }).eq('id', id);
+      if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
 
-    // Tandai price_verified_at untuk semua produk di faktur ini
-    const inv = allInvoices.find(x => x.id === id);
-    const now = new Date().toISOString();
-    for (const item of (inv?.invoice_items || [])) {
-      if (item.product_id) {
-        await supabase.from('products').update({ price_verified_at: now }).eq('id', item.product_id);
+      // Tandai price_verified_at untuk semua produk di faktur ini
+      const inv = allInvoices.find(x => x.id === id);
+      const now = new Date().toISOString();
+      for (const item of (inv?.invoice_items || [])) {
+        if (item.product_id) {
+          await supabase.from('products').update({ price_verified_at: now }).eq('id', item.product_id);
+        }
       }
-    }
 
-    showToast('Faktur disetujui');
-    closeModal('modal-detail');
-    loadInvoices();
+      showToast('Faktur disetujui');
+      closeModal('modal-detail');
+      loadInvoices();
+    } finally {
+      approvingInvoiceId = null;
+    }
   }
 
   function openReject(id) {

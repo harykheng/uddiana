@@ -748,12 +748,14 @@
 
   async function saveProduct() {
     const btn = document.getElementById('btn-save-product');
+    if (btn.disabled) return;
     const id = document.getElementById('product-id').value;
     const name = document.getElementById('product-name').value.trim();
     const sku  = document.getElementById('product-sku').value.trim() || generateSKU();
     const price = parseFormattedNumber(document.getElementById('product-price').value);
     if (!name) { showToast('Nama produk wajib diisi', 'error'); return; }
     if (price <= 0) { showToast('Harga jual harus lebih dari 0', 'error'); return; }
+    setLoading(btn, true);
 
     const payload = {
       name, sku,
@@ -773,6 +775,7 @@
       const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
       if (opnameSesi?.length) {
         showToast(`Tidak bisa ubah stok — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+        setLoading(btn, false);
         return;
       }
     }
@@ -792,7 +795,6 @@
       }
     }
 
-    setLoading(btn, true);
     if (id && diff !== 0) showFullLoading('Menyimpan produk & menyesuaikan stok...');
     let error;
     if (id) {
@@ -870,6 +872,7 @@
 
   async function saveAdjustment() {
     const btn = document.getElementById('btn-save-adjust');
+    if (btn.disabled) return;
     const id = document.getElementById('adjust-product-id').value;
     const type = document.getElementById('adjust-type').value;
     const qty = Math.round(parseFormattedNumber(document.getElementById('adjust-qty').value));
@@ -877,14 +880,14 @@
     const productName = document.getElementById('adjust-product-name').value;
 
     if (!qty || qty <= 0) { showToast('Jumlah harus lebih dari 0', 'error'); return; }
+    setLoading(btn, true);
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa adjust stok — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
       return;
     }
-
-    setLoading(btn, true);
 
     // Ambil stok LIVE sekarang (bukan angka di form yang ke-load pas modal dibuka —
     // bisa sudah basi kalau halaman sudah lama dibuka dan ada transaksi lain di jeda itu).
