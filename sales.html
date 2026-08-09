@@ -1427,10 +1427,16 @@ function recalcTotal() {
 
   async function saveEditInvoice() {
     if (!editingInvoiceId) return;
+    const btn = document.getElementById('btn-save-edit');
+    // Kunci tombol SEBELUM ada await apapun — cegah double-submit kalau user tap
+    // berkali-kali dengan cepat (lihat catatan sama di purchases.html savePurchase()).
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = 'Menyimpan...';
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa edit faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      btn.disabled = false; btn.textContent = '💾 Simpan Perubahan';
       return;
     }
 
@@ -1439,8 +1445,8 @@ function recalcTotal() {
     const term  = document.getElementById('edit-term').value;
     const notes = document.getElementById('edit-notes').value.trim();
 
-    if (!customerId) { showToast('Pilih customer terlebih dahulu', 'error'); return; }
-    if (!date)       { showToast('Isi tanggal faktur', 'error'); return; }
+    if (!customerId) { showToast('Pilih customer terlebih dahulu', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
+    if (!date)       { showToast('Isi tanggal faktur', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
 
     // Kumpulkan item
     const rows = document.querySelectorAll('#edit-items-list .item-row');
@@ -1451,7 +1457,7 @@ function recalcTotal() {
       const price    = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
       const subtotal = parseFormattedNumber(row.querySelector('.item-subtotal-input')?.value) || 0;
       if (!sel.value) continue;
-      if (qty <= 0)   { showToast('Qty harus lebih dari 0', 'error'); return; }
+      if (qty <= 0)   { showToast('Qty harus lebih dari 0', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
       const opt = sel.options[sel.selectedIndex];
       items.push({
         product_id:   sel.value,
@@ -1462,11 +1468,9 @@ function recalcTotal() {
         cost_price:   editProducts.find(p => p.id === sel.value)?.cost || 0
       });
     }
-    if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); return; }
+    if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
 
     const total = items.reduce((s, i) => s + i.subtotal, 0);
-    const btn = document.getElementById('btn-save-edit');
-    btn.disabled = true; btn.textContent = 'Menyimpan...';
 
     // Validasi stok LIVE dulu sebelum ada langkah destruktif apapun (cancel/hapus item lama).
     // Kalau ini dilewat dan validasi cuma nunggu trigger DB gagal di step insert terakhir,
