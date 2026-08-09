@@ -1084,15 +1084,20 @@
 
   async function saveInvoice() {
     const btn = document.getElementById('btn-save-invoice');
+    // Kunci tombol SEBELUM ada await apapun — cegah double-submit kalau user tap
+    // berkali-kali dengan cepat (lihat catatan sama di purchases.html savePurchase()).
+    if (btn.disabled) return;
+    setLoading(btn, true);
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa buat faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
       return;
     }
 
     const customerName = document.getElementById('inv-customer-name').value.trim();
-    if (!customerName) { showToast('Nama pelanggan wajib diisi', 'error'); return; }
+    if (!customerName) { showToast('Nama pelanggan wajib diisi', 'error'); setLoading(btn, false); return; }
 
     const items = [];
     let subtotal = 0;
@@ -1124,8 +1129,8 @@
       items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, price, item_discount: disc, discount_type: discType, subtotal: sub, cost_price: costPrice });
     });
 
-    if (!valid) return;
-    if (!items.length) { showToast('Tambahkan minimal 1 produk', 'error'); return; }
+    if (!valid) { setLoading(btn, false); return; }
+    if (!items.length) { showToast('Tambahkan minimal 1 produk', 'error'); setLoading(btn, false); return; }
 
     const discount = parseFormattedNumber(document.getElementById('inv-discount').value);
     const afterDiscount = Math.max(0, subtotal - discount);
@@ -1139,7 +1144,6 @@
     const salesName = salesSel.value ? (salesOpt?.dataset.name || null) : null;
     const salesId   = salesSel.value || null;
 
-    setLoading(btn, true);
     showFullLoading('Menyimpan faktur & memperbarui stok...');
     const { data: invData, error: invErr } = await supabase.from('invoices').insert({
       customer_id:    customerId,

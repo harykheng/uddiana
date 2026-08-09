@@ -1141,11 +1141,18 @@ function recalcTotal() {
 
   async function submitInvoice() {
     const btn = document.getElementById('btn-submit');
+    // Kunci tombol SEBELUM ada await apapun — cegah double-submit kalau user tap
+    // berkali-kali dengan cepat (koneksi lambat, kelihatan nggak respon), yang
+    // sebelumnya bisa bikin beberapa faktur duplikat identik ke-insert.
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = 'Menyimpan...';
 
     // Cek sesi stock opname aktif
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa buat faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      btn.disabled = false; btn.textContent = 'Kirim Faktur';
       return;
     }
 
@@ -1154,8 +1161,8 @@ function recalcTotal() {
     const term = document.getElementById('inv-term').value;
     const notes = document.getElementById('inv-notes').value.trim();
 
-    if (!customerId) { showToast('Pilih customer terlebih dahulu', 'error'); return; }
-    if (!date) { showToast('Isi tanggal faktur', 'error'); return; }
+    if (!customerId) { showToast('Pilih customer terlebih dahulu', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
+    if (!date) { showToast('Isi tanggal faktur', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
 
     const rows = document.querySelectorAll('.item-row');
     const items = [];
@@ -1165,11 +1172,11 @@ function recalcTotal() {
       const price    = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
       const subtotal = parseFormattedNumber(row.querySelector('.item-subtotal-input')?.value) || (qty * price);
       if (!sel.value) continue;
-      if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); return; }
+      if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
       const opt = sel.options[sel.selectedIndex];
       const stock = parseInt(opt.dataset.stock) || 0;
-      if (stock === 0) { showToast(`Stok "${opt.text.split(' (')[0]}" habis`, 'error'); return; }
-      if (qty > stock) { showToast(`Stok "${opt.text.split(' (')[0]}" tidak cukup (stok: ${stock})`, 'error'); return; }
+      if (stock === 0) { showToast(`Stok "${opt.text.split(' (')[0]}" habis`, 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
+      if (qty > stock) { showToast(`Stok "${opt.text.split(' (')[0]}" tidak cukup (stok: ${stock})`, 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
       items.push({
         product_id: sel.value,
         product_name: opt.text.split(' (Stok:')[0].trim(),
@@ -1180,12 +1187,10 @@ function recalcTotal() {
       });
     }
 
-    if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); return; }
+    if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
 
     const total = items.reduce((s, i) => s + i.subtotal, 0);
 
-    btn.disabled = true;
-    btn.textContent = 'Menyimpan...';
     showFullLoading('Menyimpan faktur & memperbarui stok...');
 
     // Fetch customer langsung dari DB agar alamat & telepon selalu akurat
