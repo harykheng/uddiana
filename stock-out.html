@@ -305,10 +305,15 @@
 
   async function saveTransfer() {
     const btn = document.getElementById('btn-save-transfer');
+    // Kunci tombol SEBELUM ada await apapun — cegah double-submit kalau user tap
+    // berkali-kali dengan cepat (lihat catatan sama di purchases.html savePurchase()).
+    if (btn.disabled) return;
+    setLoading(btn, true);
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa simpan keluar barang — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
       return;
     }
 
@@ -331,10 +336,9 @@
       items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, notes: noteEl?.value.trim() || null });
     });
 
-    if (!valid) return;
-    if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); return; }
+    if (!valid) { setLoading(btn, false); return; }
+    if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); setLoading(btn, false); return; }
 
-    setLoading(btn, true);
     showFullLoading('Menyimpan keluar barang & mengurangi stok...');
     const { data: trData, error: trErr } = await supabase.from('stock_transfers').insert({
       transfer_date: document.getElementById('tr-date').value,

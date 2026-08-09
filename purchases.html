@@ -250,6 +250,7 @@
     <div class="modal-body" id="view-po-body"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-view-po')">Tutup</button>
+      <button class="btn btn-ghost" id="btn-delete-po" style="color:var(--danger);border-color:var(--danger)" onclick="deletePurchaseFromModal()">🗑️ Hapus PO</button>
       <button class="btn btn-ghost" id="btn-cancel-po" style="color:var(--danger);border-color:var(--danger)" onclick="cancelCurrentPo()">Batalkan PO</button>
       <button class="btn btn-primary" onclick="printCurrentPo()">🖨 Cetak Surat Jalan</button>
     </div>
@@ -334,6 +335,7 @@
           <div class="table-actions">
             ${p.status !== 'cancelled' ? `<button class="btn btn-ghost btn-sm" onclick="openEditPo('${p.id}')">✏️ Edit</button>` : ''}
             <button class="btn btn-ghost btn-sm" onclick="viewPo('${p.id}')">👁 Detail</button>
+            <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deletePurchase('${p.id}')">🗑️ Hapus</button>
           </div>
         </td>
       </tr>`;
@@ -453,10 +455,18 @@
 
   async function savePurchase() {
     const btn = document.getElementById('btn-save-po');
+    // Kunci tombol SEBELUM ada await apapun (termasuk cek sesi opname di bawah) —
+    // sebelumnya tombol baru ke-disable setelah await pertama selesai, jadi kalau user
+    // tap tombol Simpan berkali-kali dengan cepat (koneksi lambat, kelihatan nggak
+    // respon), tiap tap itu jalanin savePurchase() dari awal secara independen dan
+    // semuanya bisa lolos sampai insert — hasilnya beberapa PO duplikat identik.
+    if (btn.disabled) return;
+    setLoading(btn, true);
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa simpan pembelian — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
       return;
     }
 
@@ -482,10 +492,9 @@
       items.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, cost_price: cost, subtotal: sub, batch_number: batch, expired_date: expiry || null });
     });
 
-    if (!valid) return;
-    if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); return; }
+    if (!valid) { setLoading(btn, false); return; }
+    if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); setLoading(btn, false); return; }
 
-    setLoading(btn, true);
     showFullLoading('Menyimpan pembelian & memperbarui stok...');
     const { data: poData, error: poErr } = await supabase.from('purchases').insert({
       supplier_name: document.getElementById('po-supplier').value.trim() || null,
@@ -588,6 +597,91 @@
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('PO dibatalkan, stok dikembalikan');
     closeModal('modal-view-po');
+    loadPurchases();
+  }
+
+  function deletePurchaseFromModal() {
+    if (!currentPo) return;
+    deletePurchase(currentPo.po.id, true);
+  }
+
+  async function deletePurchase(id, fromModal = false) {
+    const po = allPurchases.find(x => x.id === id) || (currentPo?.po?.id === id ? currentPo.po : null);
+    if (!po) return;
+
+    const confirmMsg = po.status === 'cancelled'
+      ? `Hapus PO ${po.purchase_number} secara permanen?\n\nPO ini sudah dibatalkan sebelumnya (stok sudah dikembalikan), jadi hapus ini TIDAK akan mengubah stok lagi.\nTindakan ini tidak bisa dibatalkan.`
+      : `Hapus PO ${po.purchase_number} secara permanen?\n\nStok yang sudah ditambahkan dari PO ini akan dikurangi kembali.\nTindakan ini tidak bisa dibatalkan.`;
+    if (!confirm(confirmMsg)) return;
+
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa hapus PO — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      return;
+    }
+
+    showFullLoading('Menghapus PO...');
+
+    // 1. Ambil item PO
+    const { data: items } = await supabase
+      .from('purchase_items').select('product_id, product_name, quantity').eq('purchase_id', id);
+
+    // Cek status TERBARU langsung dari DB (bukan cache) — supaya kalau PO ini baru saja
+    // dibatalkan oleh admin lain (stok sudah dikurangi via trigger), tidak dikurangi dua kali.
+    const { data: livePo } = await supabase.from('purchases').select('status').eq('id', id).single();
+    const needsStockReversal = livePo && livePo.status !== 'cancelled';
+
+    if (needsStockReversal && items?.length) {
+      // Gabung qty per produk (kalau produk sama muncul di >1 baris), lalu VALIDASI SEMUA
+      // dulu pakai stok live SEBELUM ada tulisan apapun — kalau stok yang ditambahkan PO
+      // ini sudah kepakai (terjual dsb), jangan hapus diam-diam sampai minus.
+      const needByProduct = {};
+      items.forEach(it => {
+        if (!it.product_id) return;
+        needByProduct[it.product_id] = (needByProduct[it.product_id] || 0) + Number(it.quantity);
+      });
+      const productIds = Object.keys(needByProduct);
+      const { data: liveProducts, error: liveErr } = await supabase
+        .from('products').select('id,name,stock_quantity').in('id', productIds);
+      if (liveErr) { hideFullLoading(); showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); return; }
+
+      const stockById = {};
+      (liveProducts || []).forEach(p => { stockById[p.id] = p; });
+      for (const pid of productIds) {
+        const need = needByProduct[pid];
+        const p = stockById[pid];
+        const avail = p ? p.stock_quantity : 0;
+        if (need > avail) {
+          hideFullLoading();
+          showToast(`Tidak bisa hapus — stok "${p?.name || pid}" sudah terpakai (sisa: ${avail}, PO ini nambah: ${need}). Sesuaikan manual dulu lewat halaman Produk.`, 'error');
+          return;
+        }
+      }
+
+      // Semua tervalidasi aman — baru kurangi stok per produk
+      for (const pid of productIds) {
+        const p = stockById[pid];
+        const newStock = p.stock_quantity - needByProduct[pid];
+        await supabase.from('products').update({ stock_quantity: newStock }).eq('id', pid);
+        const { error: movErr } = await supabase.from('stock_movements').insert({
+          product_id: pid, product_name: p.name, type: 'out',
+          quantity: needByProduct[pid], quantity_before: p.stock_quantity, quantity_after: newStock,
+          reference_type: 'purchase_delete', reference_id: id,
+          notes: `Hapus PO ${po.purchase_number || id}`,
+        });
+        if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
+      }
+    }
+
+    // 2. Hapus purchase_items lalu purchase
+    await supabase.from('purchase_items').delete().eq('purchase_id', id);
+    const { error } = await supabase.from('purchases').delete().eq('id', id);
+
+    hideFullLoading();
+    if (error) { showToast('Gagal hapus: ' + error.message, 'error'); return; }
+
+    showToast(needsStockReversal ? 'PO dihapus, stok dikurangi kembali' : 'PO dihapus');
+    if (fromModal) closeModal('modal-view-po');
     loadPurchases();
   }
 
