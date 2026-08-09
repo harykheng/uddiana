@@ -410,17 +410,22 @@
 
   async function cancelCurrentTransfer() {
     if (!currentTransfer) return;
+    const btn = document.getElementById('btn-cancel-transfer');
+    if (btn.disabled) return;
     if (!showConfirm(`Batalkan ${currentTransfer.tr.transfer_number}?\nStok akan dikembalikan.`)) return;
+    setLoading(btn, true);
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa batalkan transfer — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
       return;
     }
 
     showFullLoading('Membatalkan & mengembalikan stok...');
     const { error } = await supabase.from('stock_transfers').update({ status: 'cancelled' }).eq('id', currentTransfer.tr.id);
     hideFullLoading();
+    setLoading(btn, false);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('Dibatalkan, stok dikembalikan');
     closeModal('modal-view-transfer');

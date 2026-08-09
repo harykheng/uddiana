@@ -1101,16 +1101,18 @@ create table if not exists return_items (
 
   async function saveReturEdit() {
     const btn = document.getElementById('btn-save-retur-edit');
+    if (btn.disabled) return;
     const ret = allReturns.find(r => r.id === editReturId);
     if (!ret) return;
+    setLoading(btn, true);
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa edit retur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
       return;
     }
 
-    setLoading(btn, true);
     showFullLoading('Menyimpan perubahan retur & menyesuaikan stok...');
     let totalValue = 0;
 

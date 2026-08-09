@@ -120,16 +120,8 @@
   checkAlreadySetup();
 
   async function createAdmin() {
-    // Re-cek sesaat sebelum submit, untuk menutup celah race kalau ada 2 orang buka halaman ini bersamaan
-    const { data: existing } = await supabase
-      .from('user_profiles').select('id').in('role', ['admin', 'super_admin']).limit(1);
-    if (existing?.length) {
-      showMsg('⛔ Setup sudah pernah dijalankan oleh orang lain. Silakan login di login.html.', 'error');
-      document.getElementById('setup-form').style.display = 'none';
-      return;
-    }
-
     const btn = document.getElementById('btn-setup');
+    if (btn.disabled) return;
     const name = document.getElementById('admin-name').value.trim();
     const email = document.getElementById('admin-email').value.trim();
     const password = document.getElementById('admin-password').value;
@@ -139,6 +131,15 @@
 
     btn.disabled = true;
     btn.textContent = 'Membuat akun...';
+
+    // Re-cek sesaat sebelum submit, untuk menutup celah race kalau ada 2 orang buka halaman ini bersamaan
+    const { data: existing } = await supabase
+      .from('user_profiles').select('id').in('role', ['admin', 'super_admin']).limit(1);
+    if (existing?.length) {
+      showMsg('⛔ Setup sudah pernah dijalankan oleh orang lain. Silakan login di login.html.', 'error');
+      document.getElementById('setup-form').style.display = 'none';
+      return;
+    }
     setStep('Langkah 1/3: Membuat akun di Supabase Auth...');
 
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });

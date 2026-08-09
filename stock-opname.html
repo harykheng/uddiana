@@ -309,13 +309,14 @@
     const name = document.getElementById('new-session-name').value.trim();
     if (!name) { showToast('Isi nama sesi', 'error'); return; }
 
+    const btn = document.getElementById('btn-create-session');
+    if (btn.disabled) return;
+    setLoading(btn, true);
+
     // Cek tidak ada sesi aktif
     const { data: existing } = await supabase
       .from('opname_sessions').select('id').eq('status','active').limit(1);
-    if (existing?.length) { showToast('Masih ada sesi aktif, tutup dulu sebelum membuat baru', 'error'); return; }
-
-    const btn = document.getElementById('btn-create-session');
-    setLoading(btn, true);
+    if (existing?.length) { showToast('Masih ada sesi aktif, tutup dulu sebelum membuat baru', 'error'); setLoading(btn, false); return; }
     const userName = currentUser?.profile?.name || currentUser?.session?.user?.email || 'Super Admin';
     const { error } = await supabase.from('opname_sessions').insert({
       name,

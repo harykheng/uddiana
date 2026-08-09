@@ -1895,7 +1895,11 @@
     deleteInvoice(currentInvoice.inv.id, true);
   }
 
+  let deletingInvoiceId = null;
   async function deleteInvoice(id, fromModal = false) {
+    // Tombol Hapus digenerate dinamis (nggak ada ID tetap), jadi pakai flag kunci ini
+    // supaya tap berkali-kali nggak jalanin hapus+restore-stok dobel.
+    if (deletingInvoiceId) return;
     const inv = allInvoices.find(x => x.id === id);
     if (!inv) return;
 
@@ -1904,6 +1908,8 @@
       : `Hapus faktur ${inv.invoice_number}?\n\nStok akan dikembalikan dan faktur dihapus permanen.\nTindakan ini tidak bisa dibatalkan.`;
 
     if (!confirm(confirmMsg)) return;
+    deletingInvoiceId = id;
+    try {
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
@@ -1951,6 +1957,9 @@
     showToast('Faktur dihapus dan stok dikembalikan');
     if (fromModal) closeModal('modal-view-invoice');
     loadInvoices();
+    } finally {
+      deletingInvoiceId = null;
+    }
   }
 
   // Hitung tanggal jatuh tempo berdasarkan tanggal faktur + termin
