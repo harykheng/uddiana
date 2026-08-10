@@ -1438,15 +1438,20 @@
 
   async function saveEditInvoice() {
     const btn = document.getElementById('btn-save-edit-invoice');
+    // Kunci tombol SEBELUM ada await apapun — cegah double-submit kalau user tap
+    // berkali-kali dengan cepat (lihat catatan sama di purchases.html savePurchase()).
+    if (btn.disabled) return;
+    setLoading(btn, true);
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa edit faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
       return;
     }
 
     const inv = allInvoices.find(x => x.id === editInvoiceId);
-    if (!inv) return;
+    if (!inv) { setLoading(btn, false); return; }
 
     const rows = document.querySelectorAll('#edit-invoice-items-body tr');
     const newItems = [];
@@ -1501,8 +1506,8 @@
       total += sub;
     }
 
-    if (!valid) return;
-    if (!newItems.length) { showToast('Tambahkan minimal 1 produk', 'error'); return; }
+    if (!valid) { setLoading(btn, false); return; }
+    if (!newItems.length) { showToast('Tambahkan minimal 1 produk', 'error'); setLoading(btn, false); return; }
 
     // Validasi stok LIVE untuk semua produk terdampak dulu, sebelum ada langkah destruktif apapun.
     // Sebelumnya validasi jalan sambil loop tulis satu-satu — kalau item ke-2 dari 3 gagal,
@@ -1519,7 +1524,7 @@
     const affectedIds = [...new Set([...Object.keys(oldByProduct), ...Object.keys(newByProduct)])];
     const { data: liveProducts, error: liveErr } = await supabase
       .from('products').select('id,name,stock_quantity').in('id', affectedIds);
-    if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); return; }
+    if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); setLoading(btn, false); return; }
     const liveStockById = {};
     (liveProducts || []).forEach(p => { liveStockById[p.id] = p; });
     for (const pid of affectedIds) {
@@ -1529,12 +1534,12 @@
         const avail = p ? p.stock_quantity : 0;
         if (delta > avail) {
           showToast(`Stok "${p?.name || pid}" tidak cukup (tersedia: ${avail})`, 'error');
+          setLoading(btn, false);
           return;
         }
       }
     }
 
-    setLoading(btn, true);
     showFullLoading('Menyimpan perubahan faktur...');
     try {
 
