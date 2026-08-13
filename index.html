@@ -7,6 +7,7 @@
   <title>Dashboard - StokManager</title>
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
 <div class="layout">
@@ -132,6 +133,7 @@
             <a href="products.html" class="btn btn-ghost btn-sm">Kelola</a>
           </div>
           <div class="card-body">
+            <p class="text-muted" style="font-size:12px;margin:-4px 0 10px">Produk terlaris 14 hari terakhir dengan stok di bawah 12 pcs</p>
             <div id="low-stock-list">
               <p class="text-muted text-center" style="padding:20px">Memuat...</p>
             </div>
@@ -139,26 +141,36 @@
         </div>
       </div>
 
-      <!-- RECENT MOVEMENTS -->
+      <!-- DAILY SALES -->
       <div class="card mt-12" style="margin-top:20px">
         <div class="card-header">
-          <h3>Pergerakan Stok Terbaru</h3>
+          <h3>📈 Penjualan Harian</h3>
+          <span class="text-muted" style="font-size:12px">14 hari terakhir</span>
+        </div>
+        <div class="card-body">
+          <div style="position:relative;height:240px">
+            <canvas id="chart-daily-sales"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- BEST SELLERS THIS WEEK -->
+      <div class="card mt-12" style="margin-top:20px">
+        <div class="card-header">
+          <h3>🔥 Produk Terlaris Minggu Ini</h3>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
+                <th>#</th>
                 <th>Produk</th>
-                <th>Tipe</th>
-                <th>Jumlah</th>
-                <th>Stok Sebelum</th>
-                <th>Stok Sesudah</th>
-                <th>Referensi</th>
-                <th>Waktu</th>
+                <th class="text-right">Qty Terjual</th>
+                <th class="text-right">Omzet</th>
               </tr>
             </thead>
-            <tbody id="recent-movements">
-              <tr><td colspan="7" class="text-center text-muted" style="padding:30px">Memuat data...</td></tr>
+            <tbody id="best-sellers-week">
+              <tr><td colspan="4" class="text-center text-muted" style="padding:30px">Memuat data...</td></tr>
             </tbody>
           </table>
         </div>
@@ -175,7 +187,15 @@
     new Intl.DateTimeFormat('id-ID', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }).format(new Date());
 
   async function loadDashboard() {
-    await Promise.all([loadStats(), loadRecentInvoices(), loadLowStock(), loadRecentMovements()]);
+    await Promise.all([loadStats(), loadRecentInvoices(), loadLowStock(), loadDailySales(), loadBestSellersWeek()]);
+  }
+
+  function getMondayISO() {
+    const d = new Date();
+    const day = d.getDay(); // 0=Minggu, 1=Senin, ... 6=Sabtu
+    const diff = day === 0 ? 6 : day - 1; // jumlah hari sejak Senin
+    d.setDate(d.getDate() - diff);
+    return d.toISOString().split('T')[0];
   }
 
   async function loadStats() {
@@ -233,54 +253,156 @@
   }
 
   async function loadLowStock() {
-    const { data } = await supabase
-      .from('products').select('name, stock_quantity, min_stock, unit').eq('is_active', true)
-      .order('stock_quantity', { ascending: true }).limit(8);
-
     const container = document.getElementById('low-stock-list');
-    const alerts = (data || []).filter(p => p.stock_quantity <= p.min_stock);
+    const THRESHOLD = 12;
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const fromDate = twoWeeksAgo.toISOString().split('T')[0];
 
-    if (!alerts.length) {
-      container.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><h4>Semua Stok Normal</h4><p>Tidak ada produk dengan stok rendah</p></div>`;
+    // Ambil semua item terjual 14 hari terakhir (invoice pending/paid, bukan cancelled,
+    // dan verification_status approved/belum diverifikasi — bukan yang ditolak)
+    const { data: invoices } = await supabase
+      .from('invoices')
+      .select('invoice_items(product_id, product_name, quantity)')
+      .gte('invoice_date', fromDate)
+      .neq('status', 'cancelled')
+      .or('verification_status.is.null,verification_status.eq.approved');
+
+    const soldByProduct = {};
+    (invoices || []).forEach(inv => {
+      (inv.invoice_items || []).forEach(it => {
+        if (!it.product_id) return;
+        if (!soldByProduct[it.product_id]) soldByProduct[it.product_id] = { name: it.product_name, qty: 0 };
+        soldByProduct[it.product_id].qty += Number(it.quantity);
+      });
+    });
+
+    const productIds = Object.keys(soldByProduct);
+    if (!productIds.length) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><h4>Belum Ada Penjualan</h4><p>Belum ada transaksi dalam 14 hari terakhir</p></div>`;
       return;
     }
 
-    container.innerHTML = `<div class="alert-list">${alerts.map(p => `
-      <div class="alert-item ${p.stock_quantity <= 0 ? 'out-of-stock' : ''}">
+    const { data: prodStock } = await supabase
+      .from('products').select('id, stock_quantity, unit').in('id', productIds);
+    const stockById = {};
+    (prodStock || []).forEach(p => { stockById[p.id] = p; });
+
+    const alerts = productIds
+      .map(pid => ({
+        name: soldByProduct[pid].name,
+        qtySold: soldByProduct[pid].qty,
+        stock: stockById[pid]?.stock_quantity,
+        unit: stockById[pid]?.unit || 'pcs',
+      }))
+      .filter(x => x.stock !== undefined && x.stock < THRESHOLD)
+      .sort((a, b) => b.qtySold - a.qtySold)
+      .slice(0, 8);
+
+    if (!alerts.length) {
+      container.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><h4>Semua Aman</h4><p>Tidak ada produk terlaris dengan stok di bawah ${THRESHOLD} pcs</p></div>`;
+      return;
+    }
+
+    container.innerHTML = `<div class="alert-list">${alerts.map(a => `
+      <div class="alert-item ${a.stock <= 0 ? 'out-of-stock' : ''}">
         <div>
-          <div class="alert-item-name">${escapeHtml(p.name)}</div>
-          <div class="alert-item-meta">Min: ${p.min_stock} ${p.unit}</div>
+          <div class="alert-item-name">${escapeHtml(a.name)}</div>
+          <div class="alert-item-meta">Terjual ${a.qtySold} pcs / 14 hari</div>
         </div>
-        <div class="stock-number ${p.stock_quantity <= 0 ? 'stock-low' : 'stock-warn'}">
-          ${p.stock_quantity} ${p.unit}
+        <div class="stock-number ${a.stock <= 0 ? 'stock-low' : 'stock-warn'}">
+          ${a.stock} ${a.unit}
         </div>
       </div>`).join('')}
     </div>`;
   }
 
-  async function loadRecentMovements() {
-    const { data } = await supabase
-      .from('stock_movements').select('*').order('created_at', { ascending: false }).limit(10);
+  async function loadBestSellersWeek() {
+    const tbody = document.getElementById('best-sellers-week');
+    const monday = getMondayISO();
 
-    const tbody = document.getElementById('recent-movements');
-    if (!data?.length) {
-      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding:30px">Belum ada pergerakan stok</td></tr>`;
+    const { data: invoices } = await supabase
+      .from('invoices')
+      .select('invoice_items(product_id, product_name, quantity, subtotal)')
+      .gte('invoice_date', monday)
+      .neq('status', 'cancelled')
+      .or('verification_status.is.null,verification_status.eq.approved');
+
+    const byProduct = {};
+    (invoices || []).forEach(inv => {
+      (inv.invoice_items || []).forEach(it => {
+        if (!it.product_id) return;
+        if (!byProduct[it.product_id]) byProduct[it.product_id] = { name: it.product_name, qty: 0, omzet: 0 };
+        byProduct[it.product_id].qty += Number(it.quantity);
+        byProduct[it.product_id].omzet += Number(it.subtotal || 0);
+      });
+    });
+
+    const ranked = Object.values(byProduct).sort((a, b) => b.qty - a.qty).slice(0, 10);
+
+    if (!ranked.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted" style="padding:30px">Belum ada penjualan minggu ini</td></tr>`;
       return;
     }
 
-    const typeLabel = { out: ['Keluar', 'danger'], in: ['Masuk', 'success'], adjustment: ['Adj.', 'info'] };
-    tbody.innerHTML = data.map(m => {
-      const [label, color] = typeLabel[m.type] || ['—', 'gray'];
-      return `<tr>
-        <td>${escapeHtml(m.product_name)}</td>
-        <td><span class="badge badge-${color}">${label}</span></td>
-        <td class="font-bold">${m.type === 'out' ? '-' : '+'}${m.quantity}</td>
-        <td>${m.quantity_before}</td>
-        <td>${m.quantity_after}</td>
-        <td>${m.reference_type ? escapeHtml(m.reference_type) : '-'}</td>
-        <td class="text-muted">${formatDate(m.created_at)}</td>
-      </tr>`;
-    }).join('');
+    tbody.innerHTML = ranked.map((p, i) => `<tr>
+      <td class="text-muted">${i + 1}</td>
+      <td>${escapeHtml(p.name)}</td>
+      <td class="text-right font-bold">${p.qty} pcs</td>
+      <td class="text-right">${formatCurrency(p.omzet)}</td>
+    </tr>`).join('');
+  }
+
+  let dailySalesChart = null;
+  async function loadDailySales() {
+    const DAYS = 14;
+    const from = new Date();
+    from.setDate(from.getDate() - (DAYS - 1));
+    const fromISO = from.toISOString().split('T')[0];
+
+    const { data: invoices } = await supabase
+      .from('invoices').select('invoice_date, total')
+      .gte('invoice_date', fromISO)
+      .neq('status', 'cancelled')
+      .or('verification_status.is.null,verification_status.eq.approved');
+
+    const byDay = {};
+    for (let i = 0; i < DAYS; i++) {
+      const d = new Date(from);
+      d.setDate(d.getDate() + i);
+      byDay[d.toISOString().split('T')[0]] = 0;
+    }
+    (invoices || []).forEach(inv => {
+      const key = (inv.invoice_date || '').slice(0, 10);
+      if (key in byDay) byDay[key] += Number(inv.total);
+    });
+
+    const labels = Object.keys(byDay).map(d => {
+      const [, m, dd] = d.split('-');
+      return `${dd}/${m}`;
+    });
+    const values = Object.values(byDay);
+
+    if (dailySalesChart) dailySalesChart.destroy();
+    const ctx = document.getElementById('chart-daily-sales').getContext('2d');
+    dailySalesChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ label: 'Penjualan', data: values, backgroundColor: '#2563eb', borderRadius: 4, maxBarThickness: 28 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => formatCurrency(ctx.parsed.y) } },
+        },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: v => v >= 1e6 ? (v / 1e6).toFixed(1) + 'jt' : (v / 1e3).toFixed(0) + 'rb' }, grid: { color: '#f1f5f9' } },
+          x: { grid: { display: false } },
+        },
+      },
+    });
   }
 
   // Real-time subscription
