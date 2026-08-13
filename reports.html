@@ -51,6 +51,14 @@
     .page-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
     .page-btn:disabled { opacity:.4; cursor:not-allowed; }
 
+    .trend-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 11px; font-weight: 700; margin-top: 4px;
+    }
+    .trend-badge.up      { color: #16a34a; }
+    .trend-badge.down    { color: #dc2626; }
+    .trend-badge.neutral { color: var(--text-muted); }
+
   @media print {
     .sidebar, .topbar, .week-nav, .no-print,
     .chart-container, #filter-movement-type, #search-movement-product,
@@ -142,6 +150,7 @@
             <p>Total Penjualan</p>
             <h3 id="rep-total-sales" style="font-size:16px">—</h3>
             <small id="rep-invoice-count">0 faktur</small>
+            <div id="rep-total-sales-trend"></div>
           </div>
         </div>
         <div class="stat-card">
@@ -150,6 +159,7 @@
             <p>Item Terjual</p>
             <h3 id="rep-items-sold">—</h3>
             <small>unit/pcs total</small>
+            <div id="rep-items-sold-trend"></div>
           </div>
         </div>
         <div class="stat-card">
@@ -158,6 +168,7 @@
             <p>Stok Keluar</p>
             <h3 id="rep-stock-out">—</h3>
             <small>total unit keluar</small>
+            <div id="rep-stock-out-trend"></div>
           </div>
         </div>
         <div class="stat-card">
@@ -166,6 +177,7 @@
             <p>Rata-rata/Hari</p>
             <h3 id="rep-avg-daily" style="font-size:16px">—</h3>
             <small>pendapatan harian</small>
+            <div id="rep-avg-daily-trend"></div>
           </div>
         </div>
       </div>
@@ -285,6 +297,9 @@
     loadReport();
   }
 
+  let currentWeekSummary = { totalSales: 0, itemsSold: 0, stockOut: 0 };
+  let prevWeekSummary = { totalSales: 0, itemsSold: 0, stockOut: 0 };
+
   async function loadReport() {
     const { start, end } = getWeekRange(weekOffset);
     const weekLabelText = formatWeekLabel(start, end);
@@ -295,11 +310,18 @@
     const startISO = start.toISOString();
     const endISO = end.toISOString();
 
+    const { start: prevStart, end: prevEnd } = getWeekRange(weekOffset - 1);
+    const prevStartISO = prevStart.toISOString();
+    const prevEndISO = prevEnd.toISOString();
+
     await Promise.all([
       loadWeekInvoices(startISO, endISO),
       loadWeekMovements(startISO, endISO),
       loadStockStatusChart(),
+      loadPreviousWeekSummary(prevStartISO, prevEndISO),
     ]);
+
+    renderTrends();
   }
 
   async function loadWeekInvoices(startISO, endISO) {
@@ -311,6 +333,8 @@
     const totalSales = (invoices || []).reduce((s, i) => s + Number(i.total), 0);
     const itemsSold  = (invoices || []).reduce((s, i) =>
       s + (i.invoice_items || []).reduce((ss, it) => ss + it.quantity, 0), 0);
+    currentWeekSummary.totalSales = totalSales;
+    currentWeekSummary.itemsSold = itemsSold;
 
     document.getElementById('rep-total-sales').textContent = formatCurrency(totalSales);
     document.getElementById('rep-invoice-count').textContent = `${(invoices || []).length} faktur`;
@@ -330,9 +354,45 @@
     weekMovements = data || [];
 
     const stockOut = weekMovements.filter(m => m.type === 'out').reduce((s, m) => s + m.quantity, 0);
+    currentWeekSummary.stockOut = stockOut;
     document.getElementById('rep-stock-out').textContent = stockOut;
 
     renderMovementsTable();
+  }
+
+  // Ringkasan minggu SEBELUM minggu yang lagi ditampilkan, khusus buat badge tren
+  // (naik/turun %) — nggak nampilin apa-apa lagi di layar selain badge kecil itu.
+  async function loadPreviousWeekSummary(prevStartISO, prevEndISO) {
+    const [{ data: invoices }, { data: movements }] = await Promise.all([
+      supabase.from('invoices').select('total, invoice_items(quantity)')
+        .gte('created_at', prevStartISO).lte('created_at', prevEndISO)
+        .neq('status', 'cancelled'),
+      supabase.from('stock_movements').select('type, quantity')
+        .gte('created_at', prevStartISO).lte('created_at', prevEndISO),
+    ]);
+
+    prevWeekSummary.totalSales = (invoices || []).reduce((s, i) => s + Number(i.total), 0);
+    prevWeekSummary.itemsSold  = (invoices || []).reduce((s, i) =>
+      s + (i.invoice_items || []).reduce((ss, it) => ss + it.quantity, 0), 0);
+    prevWeekSummary.stockOut = (movements || []).filter(m => m.type === 'out').reduce((s, m) => s + m.quantity, 0);
+  }
+
+  function trendBadge(current, previous) {
+    if (!previous) {
+      return current > 0 ? `<span class="trend-badge up">🆕 Baru</span>` : '';
+    }
+    const pct = ((current - previous) / previous) * 100;
+    if (Math.abs(pct) < 0.5) return `<span class="trend-badge neutral">— Sama dengan minggu lalu</span>`;
+    const arrow = pct > 0 ? '▲' : '▼';
+    const cls   = pct > 0 ? 'up' : 'down';
+    return `<span class="trend-badge ${cls}">${arrow} ${Math.abs(pct).toFixed(0)}% vs minggu lalu</span>`;
+  }
+
+  function renderTrends() {
+    document.getElementById('rep-total-sales-trend').innerHTML = trendBadge(currentWeekSummary.totalSales, prevWeekSummary.totalSales);
+    document.getElementById('rep-items-sold-trend').innerHTML  = trendBadge(currentWeekSummary.itemsSold, prevWeekSummary.itemsSold);
+    document.getElementById('rep-stock-out-trend').innerHTML   = trendBadge(currentWeekSummary.stockOut, prevWeekSummary.stockOut);
+    document.getElementById('rep-avg-daily-trend').innerHTML   = trendBadge(currentWeekSummary.totalSales / 7, prevWeekSummary.totalSales / 7);
   }
 
   function renderDailySalesChart(invoices) {
