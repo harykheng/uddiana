@@ -39,6 +39,18 @@
     }
     .top-product-bar .bar-label { font-size: 13px; font-weight: 600; min-width: 40px; text-align: right; }
 
+    .pagination { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:8px; }
+    .pagination-info { font-size:13px; color:var(--text-muted); }
+    .pagination-btns { display:flex; gap:4px; align-items:center; }
+    .page-btn {
+      min-width:32px; height:32px; padding:0 8px; border:1px solid var(--border);
+      border-radius:6px; background:var(--surface); cursor:pointer;
+      font-size:13px; font-weight:600; color:var(--text-muted); transition:all .15s;
+    }
+    .page-btn:hover:not(:disabled) { border-color:var(--primary); color:var(--primary); }
+    .page-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+    .page-btn:disabled { opacity:.4; cursor:not-allowed; }
+
   @media print {
     .sidebar, .topbar, .week-nav, .no-print,
     .chart-container, #filter-movement-type, #search-movement-product,
@@ -185,31 +197,16 @@
         </div>
       </div>
 
-      <!-- CHARTS ROW 2 -->
-      <div class="report-grid">
-        <!-- Stock Movement Chart -->
-        <div class="card">
-          <div class="card-header">
-            <h3>📦 Pergerakan Stok per Kategori</h3>
-          </div>
-          <div class="card-body">
-            <div class="chart-container">
-              <canvas id="chart-category"></canvas>
-            </div>
-          </div>
+      <!-- Stock Status Summary -->
+      <div class="card" style="margin-top:20px">
+        <div class="card-header">
+          <h3>🔴 Kondisi Stok Saat Ini</h3>
         </div>
-
-        <!-- Stock Status Summary -->
-        <div class="card">
-          <div class="card-header">
-            <h3>🔴 Kondisi Stok Saat Ini</h3>
+        <div class="card-body">
+          <div class="chart-container" style="height:200px;margin-bottom:16px">
+            <canvas id="chart-stock-status"></canvas>
           </div>
-          <div class="card-body">
-            <div class="chart-container" style="height:200px;margin-bottom:16px">
-              <canvas id="chart-stock-status"></canvas>
-            </div>
-            <div id="stock-status-legend"></div>
-          </div>
+          <div id="stock-status-legend"></div>
         </div>
       </div>
 
@@ -259,7 +256,6 @@
   let weekOffset = 0;
   let weekMovements = [];
   let dailyChart = null;
-  let categoryChart = null;
   let stockStatusChart = null;
 
   function getWeekRange(offset = 0) {
@@ -337,7 +333,6 @@
     document.getElementById('rep-stock-out').textContent = stockOut;
 
     renderMovementsTable();
-    await renderCategoryChart(startISO, endISO);
   }
 
   function renderDailySalesChart(invoices) {
@@ -410,50 +405,6 @@
         <div class="bar-label">${data.qty}x</div>
       </div>
     `).join('');
-  }
-
-  async function renderCategoryChart(startISO, endISO) {
-    const { data: items } = await supabase
-      .from('invoice_items').select('quantity, subtotal, products(categories(name))')
-      .gte('created_at', startISO).lte('created_at', endISO);
-
-    const catData = {};
-    (items || []).forEach(item => {
-      const cat = item.products?.categories?.name || 'Lainnya';
-      if (!catData[cat]) catData[cat] = 0;
-      catData[cat] += item.quantity;
-    });
-
-    const labels = Object.keys(catData);
-    const values = Object.values(catData);
-    const colors = ['#2563eb','#16a34a','#d97706','#dc2626','#7c3aed','#0891b2','#be185d','#059669'];
-
-    if (categoryChart) categoryChart.destroy();
-    const ctx = document.getElementById('chart-category').getContext('2d');
-
-    if (!labels.length) {
-      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '14px Inter';
-      ctx.textAlign = 'center';
-      ctx.fillText('Tidak ada data minggu ini', ctx.canvas.width/2, ctx.canvas.height/2);
-      return;
-    }
-
-    categoryChart = new Chart(ctx, {
-      type: 'doughnut',
-      data: {
-        labels,
-        datasets: [{ data: values, backgroundColor: colors.slice(0, labels.length), borderWidth: 2 }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'bottom', labels: { font: { size: 12 }, padding: 12 } },
-          tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw} unit` } }
-        }
-      }
-    });
   }
 
   async function loadStockStatusChart() {
