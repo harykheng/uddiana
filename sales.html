@@ -387,6 +387,16 @@
 <!-- TAB: LIST PRODUK -->
 <div class="tab-content" id="tab-products">
   <div style="padding:12px 16px 0;">
+    <div class="card-header" style="padding:0 0 8px;font-weight:700;font-size:14px;">🏆 Top 12 Terlaris</div>
+    <p style="font-size:12px;color:#64748b;margin:0 0 10px;">Tap salah satu buat lihat toko yang belum pernah beli — bagus buat di-push pas kunjungan!</p>
+  </div>
+  <div class="card" style="margin-top:0;">
+    <div id="top-products-push">
+      <div class="empty-state"><div class="icon">🏆</div><h4>Memuat...</h4></div>
+    </div>
+  </div>
+
+  <div style="padding:16px 16px 0;">
     <input type="text" id="search-products" placeholder="🔍 Cari nama produk..." oninput="renderProductList()"
       style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none;">
   </div>
@@ -865,6 +875,59 @@
     document.getElementById('unpaid-count').textContent = data.length;
     document.getElementById('unpaid-codes').textContent = data.map(i => i.invoice_number).join(', ');
     warn.style.display = 'block';
+  }
+
+  let topProductsPushLoaded = false;
+  async function loadTopProductsPush() {
+    if (topProductsPushLoaded) return; // cukup sekali per buka halaman, nggak perlu refetch tiap ganti tab
+    topProductsPushLoaded = true;
+    const container = document.getElementById('top-products-push');
+
+    const { data: invoices } = await fetchAll(() => supabase
+      .from('invoices')
+      .select('customer_id, status, verification_status, invoice_items(product_id, product_name, quantity)'));
+
+    const qtyByProduct = {};
+    const buyersByProduct = {};
+    (invoices || []).forEach(inv => {
+      if (inv.status === 'cancelled') return;
+      if (inv.verification_status && inv.verification_status !== 'approved') return; // skip yang ditolak
+      (inv.invoice_items || []).forEach(it => {
+        if (!it.product_id) return;
+        if (!qtyByProduct[it.product_id]) { qtyByProduct[it.product_id] = { name: it.product_name, qty: 0 }; buyersByProduct[it.product_id] = new Set(); }
+        qtyByProduct[it.product_id].qty += Number(it.quantity);
+        if (inv.customer_id) buyersByProduct[it.product_id].add(inv.customer_id);
+      });
+    });
+
+    const ranked = Object.entries(qtyByProduct)
+      .map(([pid, v]) => ({ pid, name: v.name, qty: v.qty }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 12);
+
+    if (!ranked.length) {
+      container.innerHTML = `<div class="empty-state"><div class="icon">🏆</div><h4>Belum ada penjualan</h4></div>`;
+      return;
+    }
+
+    container.innerHTML = ranked.map((p, i) => {
+      const buyers = buyersByProduct[p.pid] || new Set();
+      const missing = customers.filter(c => !buyers.has(c.id));
+      const missingNames = missing.map(c => escapeHtml(c.store_name || c.name)).join(', ');
+      return `
+      <div style="border-bottom:1px solid #f1f5f9;padding:11px 14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:8px" onclick="const d=document.getElementById('push-detail-${i}');d.style.display=d.style.display==='none'?'block':'none';">
+          <div style="min-width:0">
+            <div style="font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${i + 1}. ${escapeHtml(p.name)}</div>
+            <div style="font-size:11.5px;color:#64748b;margin-top:2px">${p.qty} pcs terjual · <strong style="color:${missing.length ? '#d97706' : '#16a34a'}">${missing.length} toko belum beli</strong></div>
+          </div>
+          <span style="color:#94a3b8;flex-shrink:0">▾</span>
+        </div>
+        <div id="push-detail-${i}" style="display:none;margin-top:8px;font-size:12px;color:#475569;line-height:1.6;background:#f8fafc;border-radius:8px;padding:8px 10px">
+          ${missing.length ? `📍 ${missingNames}` : '🎉 Semua toko sudah pernah beli produk ini!'}
+        </div>
+      </div>`;
+    }).join('');
   }
 
   function renderProductList() {
@@ -1561,7 +1624,7 @@ function recalcTotal() {
     const btn = document.querySelectorAll('.tab-btn')[tabIds.indexOf(id)];
     if (btn) btn.classList.add('active');
     if (id === 'tab-history') loadHistory();
-    if (id === 'tab-products') renderProductList();
+    if (id === 'tab-products') { renderProductList(); loadTopProductsPush(); }
     if (id === 'tab-wishlist') renderWishlist();
   }
 
