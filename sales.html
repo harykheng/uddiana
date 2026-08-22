@@ -910,10 +910,13 @@
       return;
     }
 
-    container.innerHTML = ranked.map((p, i) => {
+    topProductsPushMissing = ranked.map(p => {
       const buyers = buyersByProduct[p.pid] || new Set();
-      const missing = customers.filter(c => !buyers.has(c.id));
-      const missingNames = missing.map(c => escapeHtml(c.store_name || c.name)).join(', ');
+      return customers.filter(c => !buyers.has(c.id)).map(c => c.store_name || c.name);
+    });
+
+    container.innerHTML = ranked.map((p, i) => {
+      const missing = topProductsPushMissing[i];
       return `
       <div style="border-bottom:1px solid #f1f5f9;padding:11px 14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:8px" onclick="const d=document.getElementById('push-detail-${i}');d.style.display=d.style.display==='none'?'block':'none';">
@@ -923,12 +926,30 @@
           </div>
           <span style="color:#94a3b8;flex-shrink:0">▾</span>
         </div>
-        <div id="push-detail-${i}" style="display:none;margin-top:8px;font-size:12px;color:#475569;line-height:1.6;background:#f8fafc;border-radius:8px;padding:8px 10px">
-          ${missing.length ? `📍 ${missingNames}` : '🎉 Semua toko sudah pernah beli produk ini!'}
+        <div id="push-detail-${i}" style="display:none;margin-top:8px">
+          ${missing.length ? `
+            <input type="text" placeholder="🔍 Cari toko..." oninput="filterPushChips(${i}, this.value)"
+              style="width:100%;box-sizing:border-box;padding:6px 10px;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:8px;">
+            <div id="push-chips-${i}" style="max-height:200px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:6px;background:#f8fafc;border-radius:8px;padding:8px;"></div>
+          ` : `<div style="font-size:12px;color:#475569;background:#f8fafc;border-radius:8px;padding:8px 10px">🎉 Semua toko sudah pernah beli produk ini!</div>`}
         </div>
       </div>`;
     }).join('');
+
+    ranked.forEach((p, i) => { if (topProductsPushMissing[i].length) renderPushChips(i, ''); });
   }
+
+  let topProductsPushMissing = [];
+  function renderPushChips(i, filterText) {
+    const chipsEl = document.getElementById(`push-chips-${i}`);
+    if (!chipsEl) return;
+    const q = filterText.trim().toLowerCase();
+    const names = topProductsPushMissing[i].filter(n => n.toLowerCase().includes(q));
+    chipsEl.innerHTML = names.length
+      ? names.map(n => `<span style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:3px 10px;font-size:11.5px;color:#334155;white-space:nowrap;">${escapeHtml(n)}</span>`).join('')
+      : `<span style="font-size:12px;color:#94a3b8;padding:4px;">Tidak ditemukan</span>`;
+  }
+  function filterPushChips(i, value) { renderPushChips(i, value); }
 
   function renderProductList() {
     const el = document.getElementById('product-list-container');
