@@ -8,6 +8,12 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    .top-product-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .top-product-bar .bar-bg { flex: 1; height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; }
+    .top-product-bar .bar-fill { height: 100%; background: var(--primary); border-radius: 4px; transition: width .5s; }
+    .top-product-bar .bar-label { font-size: 13px; font-weight: 600; min-width: 44px; text-align: right; }
+  </style>
 </head>
 <body>
 <div class="layout">
@@ -154,25 +160,41 @@
         </div>
       </div>
 
-      <!-- BEST SELLERS THIS WEEK -->
-      <div class="card mt-12" style="margin-top:20px">
-        <div class="card-header">
-          <h3>🔥 Produk Terlaris Minggu Ini</h3>
+      <!-- BEST SELLERS -->
+      <div class="dashboard-grid mt-12" style="margin-top:20px">
+        <!-- BEST SELLERS THIS WEEK -->
+        <div class="card">
+          <div class="card-header">
+            <h3>🔥 Produk Terlaris Minggu Ini</h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Produk</th>
+                  <th class="text-right">Qty Terjual</th>
+                  <th class="text-right">Omzet</th>
+                </tr>
+              </thead>
+              <tbody id="best-sellers-week">
+                <tr><td colspan="4" class="text-center text-muted" style="padding:30px">Memuat data...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Produk</th>
-                <th class="text-right">Qty Terjual</th>
-                <th class="text-right">Omzet</th>
-              </tr>
-            </thead>
-            <tbody id="best-sellers-week">
-              <tr><td colspan="4" class="text-center text-muted" style="padding:30px">Memuat data...</td></tr>
-            </tbody>
-          </table>
+
+        <!-- BEST SELLERS ALL-TIME -->
+        <div class="card">
+          <div class="card-header">
+            <h3>🏆 Produk Terlaris</h3>
+            <span class="text-muted" style="font-size:12px">Sepanjang waktu</span>
+          </div>
+          <div class="card-body">
+            <div id="best-sellers-alltime">
+              <p class="text-muted text-center" style="padding:20px">Memuat...</p>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -187,7 +209,7 @@
     new Intl.DateTimeFormat('id-ID', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }).format(new Date());
 
   async function loadDashboard() {
-    await Promise.all([loadStats(), loadRecentInvoices(), loadLowStock(), loadDailySales(), loadBestSellersWeek()]);
+    await Promise.all([loadStats(), loadRecentInvoices(), loadLowStock(), loadDailySales(), loadBestSellersWeek(), loadBestSellersAllTime()]);
   }
 
   function getMondayISO() {
@@ -351,6 +373,55 @@
       <td class="text-right font-bold">${p.qty} pcs</td>
       <td class="text-right">${formatCurrency(p.omzet)}</td>
     </tr>`).join('');
+  }
+
+  async function loadBestSellersAllTime() {
+    const container = document.getElementById('best-sellers-alltime');
+
+    // Ambil SEMUA faktur (bukan cuma minggu/hari ini) — pakai pagination loop
+    // buat bypass limit 1000 baris default PostgREST.
+    let all = [], from = 0, CHUNK = 1000;
+    while (true) {
+      const { data } = await supabase
+        .from('invoices')
+        .select('status, verification_status, invoice_items(product_id, product_name, quantity)')
+        .range(from, from + CHUNK - 1);
+      if (!data?.length) break;
+      all = all.concat(data);
+      if (data.length < CHUNK) break;
+      from += CHUNK;
+    }
+
+    const byProduct = {};
+    all.forEach(inv => {
+      if (inv.status === 'cancelled') return;
+      if (inv.verification_status && inv.verification_status !== 'approved') return; // skip yang ditolak
+      (inv.invoice_items || []).forEach(it => {
+        if (!it.product_id) return;
+        if (!byProduct[it.product_id]) byProduct[it.product_id] = { name: it.product_name, qty: 0 };
+        byProduct[it.product_id].qty += Number(it.quantity);
+      });
+    });
+
+    const ranked = Object.values(byProduct).sort((a, b) => b.qty - a.qty).slice(0, 6);
+
+    if (!ranked.length) {
+      container.innerHTML = `<div class="empty-state" style="padding:30px"><div class="empty-icon">🏆</div><h4>Belum Ada Penjualan</h4></div>`;
+      return;
+    }
+
+    const maxQty = ranked[0].qty || 1;
+    const medals = ['🥇', '🥈', '🥉'];
+    container.innerHTML = ranked.map((p, i) => `
+      <div class="top-product-bar">
+        <span style="font-size:16px;width:24px">${medals[i] || (i + 1) + '.'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</div>
+          <div class="bar-bg"><div class="bar-fill" style="width:${(p.qty / maxQty * 100).toFixed(1)}%"></div></div>
+        </div>
+        <div class="bar-label">${p.qty}x</div>
+      </div>
+    `).join('');
   }
 
   let dailySalesChart = null;
