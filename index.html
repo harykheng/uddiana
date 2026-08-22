@@ -403,7 +403,7 @@
       });
     });
 
-    const ranked = Object.values(byProduct).sort((a, b) => b.qty - a.qty).slice(0, 6);
+    const ranked = Object.values(byProduct).sort((a, b) => b.qty - a.qty).slice(0, 12);
 
     if (!ranked.length) {
       container.innerHTML = `<div class="empty-state" style="padding:30px"><div class="empty-icon">🏆</div><h4>Belum Ada Penjualan</h4></div>`;
