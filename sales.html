@@ -738,7 +738,7 @@
     // karena diskon grup baru relevan setelah tahu kombinasi produk di keranjang.
     const { data } = await supabase
       .from('product_discount_rules')
-      .select('product_id, description, min_qty, min_amount, discount_type, discount_value, discount_value2')
+      .select('product_id, customer_id, description, min_qty, min_amount, discount_type, discount_value, discount_value2')
       .eq('is_active', true)
       .is('group_id', null);
 
@@ -762,14 +762,21 @@
   }
 
   // Cari aturan diskon yang syaratnya (min_qty/min_amount) sudah terpenuhi oleh qty
-  // saat ini, lalu hitung harga satuan setelah diskon. Prioritas: min_qty tertinggi.
-  function computeEffectivePrice(productId, basePrice, qty) {
-    const rules = discountRulesByProduct[productId] || [];
+  // saat ini, lalu hitung harga satuan setelah diskon. Prioritas: aturan khusus
+  // customer yang lagi dipilih menang di atas aturan umum, baru min_qty tertinggi.
+  function computeEffectivePrice(productId, basePrice, qty, customerId) {
+    const rules = (discountRulesByProduct[productId] || [])
+      .filter(r => !r.customer_id || r.customer_id === customerId);
     const eligible = rules.filter(r => {
       const meetsQty = !r.min_qty || qty >= r.min_qty;
       const meetsAmt = !r.min_amount || (qty * basePrice) >= Number(r.min_amount);
       return meetsQty && meetsAmt;
-    }).sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+    }).sort((a, b) => {
+      const aCust = a.customer_id && a.customer_id === customerId ? 1 : 0;
+      const bCust = b.customer_id && b.customer_id === customerId ? 1 : 0;
+      if (aCust !== bCust) return bCust - aCust;
+      return (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0);
+    });
     const rule = eligible[0] || null;
     if (!rule) return { price: basePrice, rule: null };
     const price = rule.discount_type === 'percent'
@@ -782,8 +789,8 @@
   // terpenuhi), badge diskon (highlight yang lagi aktif), dan simpan detail diskon
   // yang dipakai di dataset baris — dibaca lagi saat submit biar tercatat terpisah
   // dari harga katalog (bukan cuma "harga baru" tanpa jejak diskon).
-  function applyItemDiscount(row, productId, basePrice, qty) {
-    const { price, rule } = computeEffectivePrice(productId, basePrice, qty);
+  function applyItemDiscount(row, productId, basePrice, qty, customerId) {
+    const { price, rule } = computeEffectivePrice(productId, basePrice, qty, customerId);
     const priceInput = row.querySelector('.item-price-input');
     if (priceInput) priceInput.value = price.toLocaleString('id-ID');
 
@@ -795,10 +802,12 @@
 
     const badgesEl = row.querySelector('.item-disc-badges');
     if (badgesEl) {
-      const rules = discountRulesByProduct[productId] || [];
+      // Cuma tampilin aturan yang relevan buat customer ini (umum + khusus toko ini)
+      const rules = (discountRulesByProduct[productId] || []).filter(r => !r.customer_id || r.customer_id === customerId);
       badgesEl.innerHTML = rules.map(r => {
         const active = rule && r === rule;
-        return `<span style="display:inline-block;background:${active ? '#dcfce7' : '#fef3c7'};color:${active ? '#166534' : '#92400e'};font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;">${active ? '✅' : '🏷️'} ${formatDiscountLabel(r)}</span>`;
+        const label = r.customer_id ? `🏪 ${formatDiscountLabel(r)}` : formatDiscountLabel(r);
+        return `<span style="display:inline-block;background:${active ? '#dcfce7' : '#fef3c7'};color:${active ? '#166534' : '#92400e'};font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;">${active ? '✅' : '🏷️'} ${label}</span>`;
       }).join('');
     }
 
@@ -824,7 +833,11 @@
         openNewCustomerModal(input, callback);
       },
       createFilter: function(input) { return input.trim().length >= 1; },
-      onChange: function(value) { checkUnpaidInvoices(value); },
+      onChange: function(value) {
+        checkUnpaidInvoices(value);
+        // Customer ini mungkin punya aturan diskon khusus — evaluasi ulang baris yang ada
+        document.querySelectorAll('#items-list .item-row').forEach(row => recalcItem(row.id.replace('item-', '')));
+      },
       render: {
         option_create: function(data, escape) {
           return `<div class="create" style="color:#2563eb">➕ Tambah customer baru: <strong>${escape(data.input)}</strong></div>`;
@@ -1112,7 +1125,9 @@
         </tr></thead>
         <tbody>${pageItems.map(p => {
           const hargaLusin = Math.round((p.price * 12) / 100) * 100;
-          const rules = discountRulesByProduct[p.id] || [];
+          // Cuma aturan umum (bukan khusus toko) yang ditampilkan di list browsing ini —
+          // aturan khusus toko baru relevan & muncul setelah customer dipilih di form faktur
+          const rules = (discountRulesByProduct[p.id] || []).filter(r => !r.customer_id);
           const discBadges = rules.length
             ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:4px">${
                 rules.slice(0, 2).map(r => `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap;">🏷️ ${formatDiscountLabel(r)}</span>`).join('')
@@ -1417,7 +1432,7 @@
 
     const productId = row.dataset.productId;
     const basePrice = Number(row.dataset.basePrice) || 0;
-    if (productId && basePrice > 0) applyItemDiscount(row, productId, basePrice, qty);
+    if (productId && basePrice > 0) applyItemDiscount(row, productId, basePrice, qty, customerTS?.getValue() || null);
 
     const price = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
 
@@ -1611,7 +1626,11 @@ function recalcTotal() {
       options: customers.map(c => ({
         value: c.id,
         text: c.name + (c.store_name ? ' — ' + c.store_name : '')
-      }))
+      })),
+      onChange: function() {
+        // Customer ini mungkin punya aturan diskon khusus — evaluasi ulang baris yang ada
+        document.querySelectorAll('#edit-items-list .item-row').forEach(row => recalcEditItem(row.id.replace('edit-item-', '')));
+      }
     });
     if (inv.customer_id) editCustomerTS.setValue(inv.customer_id);
 
@@ -1727,7 +1746,7 @@ function recalcTotal() {
 
     const productId = row.dataset.productId;
     const basePrice = Number(row.dataset.basePrice) || 0;
-    if (productId && basePrice > 0) applyItemDiscount(row, productId, basePrice, qty);
+    if (productId && basePrice > 0) applyItemDiscount(row, productId, basePrice, qty, editCustomerTS?.getValue() || null);
 
     const price = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
     const errEl = row.querySelector('.qty-error');

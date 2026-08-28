@@ -760,6 +760,13 @@
     document.getElementById('inv-store-name').value       = c.store_name || '';
     document.getElementById('inv-customer-phone').value   = c.phone      || '';
     document.getElementById('inv-customer-address').value = c.address    || '';
+
+    // Re-evaluate diskon di baris yang udah ada — customer ini mungkin punya
+    // aturan diskon khusus (product_discount_rules.customer_id)
+    document.querySelectorAll('#invoice-items-body tr').forEach(tr => {
+      const sel = tr.querySelector('select');
+      if (sel?.value) onProductSelect(sel, tr.id);
+    });
   }
 
   function setPriceMode(mode) {
@@ -851,16 +858,28 @@
     return result;
   }
 
+  // Urutkan aturan yang eligible: khusus customer ini menang di atas aturan umum,
+  // baru dalam grup itu diurutkan min_qty tertinggi
+  function sortRulesByCustomerThenQty(rules, customerId) {
+    return rules.slice().sort((a, b) => {
+      const aCust = a.customer_id && a.customer_id === customerId ? 1 : 0;
+      const bCust = b.customer_id && b.customer_id === customerId ? 1 : 0;
+      if (aCust !== bCust) return bCust - aCust;
+      return (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0);
+    });
+  }
+
   function applyDiscountRule(rowId, productId, qty, price) {
-    // 1. Cek aturan produk tunggal
-    const productEligible = (discountRules || [])
-      .filter(r => r.product_id === productId && !r.group_id)
+    const customerId = document.getElementById('inv-customer-select')?.value || null;
+
+    // 1. Cek aturan produk tunggal — cuma yang umum ATAU khusus customer ini
+    const productEligible = sortRulesByCustomerThenQty((discountRules || [])
+      .filter(r => r.product_id === productId && !r.group_id && (!r.customer_id || r.customer_id === customerId))
       .filter(r => {
         const meetsQty = !r.min_qty || qty >= r.min_qty;
         const meetsAmt = !r.min_amount || (qty * price) >= Number(r.min_amount);
         return meetsQty && meetsAmt;
-      })
-      .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+      }), customerId);
 
     // 2. Cek aturan grup varian
     const myGroupIds = (discountGroupMembers || [])
@@ -880,17 +899,18 @@
           .filter(r => groupProdIds.includes(r.productId))
           .reduce((s, r) => s + r.qty * r.price, 0);
 
-        const eligible = (discountRules || [])
-          .filter(r => r.group_id === groupId)
+        const eligible = sortRulesByCustomerThenQty((discountRules || [])
+          .filter(r => r.group_id === groupId && (!r.customer_id || r.customer_id === customerId))
           .filter(r => {
             const meetsQty = !r.min_qty || groupQty >= r.min_qty;
             const meetsAmt = !r.min_amount || groupAmt >= Number(r.min_amount);
             return meetsQty && meetsAmt;
-          })
-          .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+          }), customerId);
 
         if (eligible.length > 0) {
-          if (!groupBest || Number(eligible[0].min_qty) > Number(groupBest.min_qty)) {
+          const curBestCust = groupBest?.customer_id && groupBest.customer_id === customerId;
+          const newCust = eligible[0].customer_id && eligible[0].customer_id === customerId;
+          if (!groupBest || (newCust && !curBestCust) || (newCust === curBestCust && Number(eligible[0].min_qty) > Number(groupBest.min_qty))) {
             groupBest = eligible[0];
           }
         }
@@ -921,6 +941,7 @@
 
   // Re-apply aturan GRUP setiap kali qty berubah di baris manapun
   function reapplyGroupDiscounts() {
+    const customerId = document.getElementById('inv-customer-select')?.value || null;
     const allRowData = _getAllRowData();
     allRowData.forEach(({ rowId, productId }) => {
       // Hanya proses baris yang produknya masuk grup
@@ -953,17 +974,20 @@
           .filter(r => groupProdIds.includes(r.productId))
           .reduce((s, r) => s + r.qty * r.price, 0);
 
-        const eligible = (discountRules || [])
-          .filter(r => r.group_id === groupId)
+        const eligible = sortRulesByCustomerThenQty((discountRules || [])
+          .filter(r => r.group_id === groupId && (!r.customer_id || r.customer_id === customerId))
           .filter(r => {
             const meetsQty = !r.min_qty || groupQty >= r.min_qty;
             const meetsAmt = !r.min_amount || groupAmt >= Number(r.min_amount);
             return meetsQty && meetsAmt;
-          })
-          .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+          }), customerId);
 
-        if (eligible.length > 0 && (!bestRule || Number(eligible[0].min_qty) > Number(bestRule.min_qty))) {
-          bestRule = eligible[0];
+        if (eligible.length > 0) {
+          const curBestCust = bestRule?.customer_id && bestRule.customer_id === customerId;
+          const newCust = eligible[0].customer_id && eligible[0].customer_id === customerId;
+          if (!bestRule || (newCust && !curBestCust) || (newCust === curBestCust && Number(eligible[0].min_qty) > Number(bestRule.min_qty))) {
+            bestRule = eligible[0];
+          }
         }
       });
 
@@ -1220,14 +1244,15 @@
     const discEl     = document.getElementById(`edisc-${rowId}`);
     if (!discTypeEl || !discEl) return;
 
-    const productEligible = (discountRules || [])
-      .filter(r => r.product_id === productId && !r.group_id)
+    const customerId = editInvoiceCustomerId || null;
+
+    const productEligible = sortRulesByCustomerThenQty((discountRules || [])
+      .filter(r => r.product_id === productId && !r.group_id && (!r.customer_id || r.customer_id === customerId))
       .filter(r => {
         const meetsQty = !r.min_qty || qty >= r.min_qty;
         const meetsAmt = !r.min_amount || (qty * price) >= Number(r.min_amount);
         return meetsQty && meetsAmt;
-      })
-      .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
+      }), customerId);
 
     const myGroupIds = (discountGroupMembers || [])
       .filter(m => m.product_id === productId).map(m => m.group_id);
@@ -1240,12 +1265,16 @@
           .filter(m => m.group_id === groupId).map(m => m.product_id);
         const groupQty = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty, 0);
         const groupAmt = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty * r.price, 0);
-        const eligible = (discountRules || [])
-          .filter(r => r.group_id === groupId)
-          .filter(r => (!r.min_qty || groupQty >= r.min_qty) && (!r.min_amount || groupAmt >= Number(r.min_amount)))
-          .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
-        if (eligible.length > 0 && (!groupBest || Number(eligible[0].min_qty) > Number(groupBest.min_qty)))
-          groupBest = eligible[0];
+        const eligible = sortRulesByCustomerThenQty((discountRules || [])
+          .filter(r => r.group_id === groupId && (!r.customer_id || r.customer_id === customerId))
+          .filter(r => (!r.min_qty || groupQty >= r.min_qty) && (!r.min_amount || groupAmt >= Number(r.min_amount))), customerId);
+        if (eligible.length > 0) {
+          const curBestCust = groupBest?.customer_id && groupBest.customer_id === customerId;
+          const newCust = eligible[0].customer_id && eligible[0].customer_id === customerId;
+          if (!groupBest || (newCust && !curBestCust) || (newCust === curBestCust && Number(eligible[0].min_qty) > Number(groupBest.min_qty))) {
+            groupBest = eligible[0];
+          }
+        }
       });
     }
 
@@ -1266,6 +1295,7 @@
   }
 
   function reapplyGroupDiscountsEdit() {
+    const customerId = editInvoiceCustomerId || null;
     const allRowData = _getAllEditRowData();
     allRowData.forEach(({ rowId, productId }) => {
       const myGroupIds = (discountGroupMembers || [])
@@ -1286,12 +1316,16 @@
           .filter(m => m.group_id === groupId).map(m => m.product_id);
         const groupQty = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty, 0);
         const groupAmt = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty * r.price, 0);
-        const eligible = (discountRules || [])
-          .filter(r => r.group_id === groupId)
-          .filter(r => (!r.min_qty || groupQty >= r.min_qty) && (!r.min_amount || groupAmt >= Number(r.min_amount)))
-          .sort((a, b) => (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0));
-        if (eligible.length > 0 && (!bestRule || Number(eligible[0].min_qty) > Number(bestRule.min_qty)))
-          bestRule = eligible[0];
+        const eligible = sortRulesByCustomerThenQty((discountRules || [])
+          .filter(r => r.group_id === groupId && (!r.customer_id || r.customer_id === customerId))
+          .filter(r => (!r.min_qty || groupQty >= r.min_qty) && (!r.min_amount || groupAmt >= Number(r.min_amount))), customerId);
+        if (eligible.length > 0) {
+          const curBestCust = bestRule?.customer_id && bestRule.customer_id === customerId;
+          const newCust = eligible[0].customer_id && eligible[0].customer_id === customerId;
+          if (!bestRule || (newCust && !curBestCust) || (newCust === curBestCust && Number(eligible[0].min_qty) > Number(bestRule.min_qty))) {
+            bestRule = eligible[0];
+          }
+        }
       });
 
       if (bestRule) {
@@ -1317,11 +1351,13 @@
   let editItemRowCount = 0;
   let editInvoiceItems = [];
   let editTomSelectInstances = {};
+  let editInvoiceCustomerId = null;
 
   async function openEditInvoice(id) {
     const inv = allInvoices.find(x => x.id === id);
     if (!inv) return;
     editInvoiceId = id;
+    editInvoiceCustomerId = inv.customer_id || null;
     editItemRowCount = 0;
     Object.values(editTomSelectInstances).forEach(ts => ts.destroy());
     editTomSelectInstances = {};
