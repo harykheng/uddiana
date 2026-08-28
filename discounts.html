@@ -278,6 +278,14 @@
         </div>
       </div>
 
+      <div class="form-group mb-0" id="rule-disc2-wrap" style="margin-top:10px">
+        <label>Tier 2 (opsional) <span style="font-weight:400;color:var(--text-muted)">— contoh 20%+5%</span></label>
+        <div style="position:relative">
+          <input type="text" id="rule-disc-value2" inputmode="numeric" data-number value="0" style="padding-right:32px">
+          <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;pointer-events:none">%</span>
+        </div>
+      </div>
+
       <div class="form-group" style="margin-top:14px;margin-bottom:0">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
           <input type="checkbox" id="rule-active" checked style="width:16px;height:16px">
@@ -521,8 +529,8 @@
         : `<strong>${escapeHtml(r.products?.name || '—')}</strong>`;
 
       const discLabel = r.discount_type === 'percent'
-        ? `<span class="badge badge-disc-pct">${r.discount_value}%</span>`
-        : `<span class="badge badge-disc-nom">${formatCurrency(r.discount_value)}</span>`;
+        ? `<span class="badge badge-disc-pct">${r.discount_value}%${r.discount_value2 > 0 ? '+' + r.discount_value2 + '%' : ''}</span>`
+        : `<span class="badge badge-disc-nom">${formatCurrency(r.discount_value)}/pcs</span>`;
 
       const minQtyLabel = isGroup ? 'Total grup' : '';
       const minQty  = r.min_qty   > 0 ? `${r.min_qty} pcs${minQtyLabel ? ' <span style="font-size:10px;color:#94a3b8">(' + minQtyLabel + ')</span>' : ''}` : '<span class="text-muted">—</span>';
@@ -581,6 +589,8 @@
     const input = document.getElementById('rule-disc-value');
     input.style.paddingLeft  = isNominal ? '32px' : '12px';
     input.style.paddingRight = isNominal ? '12px' : '32px';
+    document.getElementById('rule-disc2-wrap').style.display = isNominal ? 'none' : 'block';
+    if (isNominal) document.getElementById('rule-disc-value2').value = '0';
   }
 
   function openAddRule() {
@@ -595,6 +605,7 @@
     document.getElementById('rule-min-amount').value = '0';
     document.querySelector('input[name="rule-disc-type"][value="percent"]').checked = true;
     document.getElementById('rule-disc-value').value = '0';
+    document.getElementById('rule-disc-value2').value = '0';
     document.getElementById('rule-active').checked = true;
     onDiscTypeChange();
     openModal('modal-rule');
@@ -620,6 +631,7 @@
     document.getElementById('rule-disc-value').value  = r.discount_type === 'nominal'
       ? Number(r.discount_value).toLocaleString('id-ID')
       : String(r.discount_value);
+    document.getElementById('rule-disc-value2').value = String(r.discount_value2 || 0);
     document.getElementById('rule-active').checked = r.is_active;
     onDiscTypeChange();
     openModal('modal-rule');
@@ -639,20 +651,23 @@
       if (!groupId) { showToast('Pilih grup varian terlebih dahulu', 'error'); return; }
     }
 
-    const discType  = document.querySelector('input[name="rule-disc-type"]:checked')?.value || 'percent';
-    const discValue = parseFormattedNumber(document.getElementById('rule-disc-value').value) || 0;
+    const discType   = document.querySelector('input[name="rule-disc-type"]:checked')?.value || 'percent';
+    const discValue  = parseFormattedNumber(document.getElementById('rule-disc-value').value) || 0;
+    const discValue2 = discType === 'percent' ? (parseFormattedNumber(document.getElementById('rule-disc-value2').value) || 0) : 0;
     if (discValue <= 0) { showToast('Nilai diskon harus lebih dari 0', 'error'); return; }
     if (discType === 'percent' && discValue > 100) { showToast('Persentase tidak boleh melebihi 100%', 'error'); return; }
+    if (discType === 'percent' && discValue2 > 100) { showToast('Persentase tier 2 tidak boleh melebihi 100%', 'error'); return; }
 
     const payload = {
-      product_id:     productId,
-      group_id:       groupId,
-      description:    document.getElementById('rule-description').value.trim() || null,
-      min_qty:        parseInt(document.getElementById('rule-min-qty').value) || 0,
-      min_amount:     parseFormattedNumber(document.getElementById('rule-min-amount').value) || 0,
-      discount_type:  discType,
-      discount_value: discValue,
-      is_active:      document.getElementById('rule-active').checked,
+      product_id:      productId,
+      group_id:        groupId,
+      description:     document.getElementById('rule-description').value.trim() || null,
+      min_qty:         parseInt(document.getElementById('rule-min-qty').value) || 0,
+      min_amount:      parseFormattedNumber(document.getElementById('rule-min-amount').value) || 0,
+      discount_type:   discType,
+      discount_value:  discValue,
+      discount_value2: discValue2,
+      is_active:       document.getElementById('rule-active').checked,
     };
 
     setLoading(btn, true);

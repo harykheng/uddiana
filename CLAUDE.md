@@ -281,7 +281,8 @@ git push -u origin feat/nama-fitur
 ### discounts.html
 - CRUD aturan diskon per produk (`product_discount_rules` table)
 - Syarat berlaku: `min_qty` (pcs) dan/atau `min_amount` (Rp) — 0 = tanpa syarat
-- Tipe diskon: `percent` (%) atau `nominal` (Rp)
+- Tipe diskon: `percent` (%) atau `nominal` (Rp per pcs)
+- Diskon bertingkat opsional (`discount_value2`, migration29) khusus tipe `percent` — contoh "20%+5%", ikut ke-auto-apply ke faktur (tier 1 & 2)
 - Jika beberapa rule cocok untuk satu produk → prioritas rule dengan `min_qty` tertinggi
 - Accessible: admin + super_admin (`requireAdmin()`)
 
@@ -336,5 +337,6 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration26.sql` | View `public_catalog_products` (read-only, kolom aman saja) untuk katalog publik di domain terpisah (`diana-kosmetik-katalog`) |
 | `supabase_migration27.sql` | Tabel `sales_visits` + bucket Storage privat `visit-photos` untuk fitur Absen Kunjungan (foto+GPS+jam) di `sales.html` |
 | `supabase_migration28.sql` | Kolom `item_discount2` di `invoice_items` — diskon bertingkat per item (contoh 20%+5%) di `invoices.html` |
+| `supabase_migration29.sql` | Kolom `discount_value2` di `product_discount_rules` — diskon bertingkat di aturan diskon `discounts.html`, ikut ke-auto-apply ke faktur |
 
 
