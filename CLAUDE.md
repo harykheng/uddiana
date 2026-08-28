@@ -261,6 +261,7 @@ git push -u origin feat/nama-fitur
 - Import: strip BOM, fallback alias kolom SKU, error detail tabel scrollable + download xlsx
 - Export XLS termasuk harga lusin
 - **Update Harga Massal**: checkbox pilih produk di tabel (desktop only, belum ada di mobile card view) → bar aksi muncul → modal set Harga Modal & Harga Jual sekaligus untuk semua produk terpilih, mode "Set nilai baru" atau "Naik/Turun %/Rp" (dihitung dari harga masing-masing produk saat ini, bukan disamakan)
+- **Edit Nama/SKU Massal**: dari bar aksi yang sama → modal list produk terpilih dengan input nama & SKU per baris (pre-filled), simpan sekaligus. Validasi: nama/SKU wajib diisi, SKU harus unik (dicek terhadap sesama baris terpilih & produk lain di luar seleksi) sebelum submit
 
 ### invoices.html
 - Price mode: Regular / Shopee / Custom
