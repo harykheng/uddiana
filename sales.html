@@ -1289,6 +1289,7 @@
         <option value="">— Pilih Produk —</option>
         ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`).join('')}
       </select>
+      <div class="item-disc-badges" style="margin:4px 0 0;display:flex;flex-wrap:wrap;gap:4px"></div>
       <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:start;">
         <div class="item-field">
           <label>Qty</label>
@@ -1337,9 +1338,11 @@
   function updateItemPrice(sel) {
     const row = sel.closest('.item-row');
     const opt = sel.options[sel.selectedIndex];
+    const badgesEl = row.querySelector('.item-disc-badges');
     if (!opt.value) {
       row.querySelector('.item-stock-input').value = '—';
       row.querySelector('.item-price-input').value = 0;
+      if (badgesEl) badgesEl.innerHTML = '';
       recalcItem(row.id.replace('item-', ''));
       return;
     }
@@ -1349,6 +1352,12 @@
     const qtyInput = row.querySelector('.item-qty-input');
     qtyInput.max = stock;
     if (parseInt(qtyInput.value) > stock) qtyInput.value = stock;
+    if (badgesEl) {
+      const rules = discountRulesByProduct[opt.value] || [];
+      badgesEl.innerHTML = rules.map(r =>
+        `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;">🏷️ ${formatDiscountLabel(r)}</span>`
+      ).join('');
+    }
     const id = row.id.replace('item-', '');
     recalcItem(id);
   }
@@ -1579,6 +1588,7 @@ function recalcTotal() {
         <option value="">— Pilih Produk —</option>
         ${optionsHtml}
       </select>
+      <div class="item-disc-badges" style="margin:4px 0 0;display:flex;flex-wrap:wrap;gap:4px"></div>
       <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:start;">
         <div class="item-field">
           <label>Qty</label>
@@ -1629,9 +1639,11 @@ function recalcTotal() {
     const row = document.getElementById('edit-item-' + id);
     if (!row) return;
     const opt = sel.options[sel.selectedIndex];
+    const badgesEl = row.querySelector('.item-disc-badges');
     if (!opt || !opt.value) {
       row.querySelector('.item-stock-input').value = '—';
       row.querySelector('.item-price-input').value = '0';
+      if (badgesEl) badgesEl.innerHTML = '';
       recalcEditItem(id);
       return;
     }
@@ -1640,6 +1652,12 @@ function recalcTotal() {
     row.querySelector('.item-price-input').value = Number(opt.dataset.price || 0).toLocaleString('id-ID');
     const qtyInput = row.querySelector('.item-qty-input');
     qtyInput.max = stock;
+    if (badgesEl) {
+      const rules = discountRulesByProduct[opt.value] || [];
+      badgesEl.innerHTML = rules.map(r =>
+        `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;">🏷️ ${formatDiscountLabel(r)}</span>`
+      ).join('');
+    }
     recalcEditItem(id);
   }
 
