@@ -282,6 +282,27 @@
           </table>
         </div>
       </div>
+
+      <!-- RIWAYAT KUNJUNGAN (ABSEN) -->
+      <div class="card no-print">
+        <div class="card-header"><h3>📍 Riwayat Kunjungan (Absen)</h3></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tanggal</th>
+                <th>Jam</th>
+                <th>Sales</th>
+                <th>Toko</th>
+                <th>Lokasi</th>
+              </tr>
+            </thead>
+            <tbody id="visits-table">
+              <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">Memuat...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </main>
   </div>
 </div>
@@ -401,6 +422,43 @@
     renderTrendChart();
     renderSummaryTable();
     closeDetail();
+    loadVisits(from, to);
+  }
+
+  // ── RIWAYAT KUNJUNGAN (ABSEN) ─────────────────────────────
+  async function loadVisits(from, to) {
+    const tbody = document.getElementById('visits-table');
+    const { data, error } = await supabase
+      .from('sales_visits')
+      .select('sales_name,customer_name,store_name,latitude,longitude,visited_at')
+      .gte('visited_at', from)
+      .lte('visited_at', to + 'T23:59:59')
+      .order('visited_at', { ascending: false });
+
+    if (error) {
+      // Tabel belum ada / belum dijalankan migration-nya — sembunyikan diam-diam
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">Belum ada data absen (jalankan supabase_migration27.sql)</td></tr>`;
+      return;
+    }
+    if (!data.length) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">Belum ada kunjungan di periode ini</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = data.map(v => {
+      const dt = new Date(v.visited_at);
+      const tanggal = formatDate(v.visited_at);
+      const jam = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      const toko = v.store_name ? `${v.store_name} — ${v.customer_name}` : v.customer_name;
+      const mapsUrl = `https://www.google.com/maps?q=${v.latitude},${v.longitude}`;
+      return `<tr>
+        <td>${tanggal}</td>
+        <td>${jam}</td>
+        <td>${v.sales_name}</td>
+        <td>${toko}</td>
+        <td><a href="${mapsUrl}" target="_blank" rel="noopener">🗺️ Lihat Lokasi</a></td>
+      </tr>`;
+    }).join('');
   }
 
   // ── SUMMARY CARDS ─────────────────────────────────────────

@@ -59,6 +59,7 @@
         <button class="tab-pill active" onclick="switchTab('tab-profile', this)">👤 Profil Saya</button>
         <button class="tab-pill" onclick="switchTab('tab-sales', this)">👥 Akun Sales</button>
         <button class="tab-pill" onclick="switchTab('tab-target', this)">🎯 Target Omzet</button>
+        <button class="tab-pill" onclick="switchTab('tab-absen', this)">📍 Absen Kunjungan</button>
       </div>
 
       <!-- TAB: PROFIL -->
@@ -138,6 +139,25 @@
           </div>
           <div class="modal-footer" style="border-top:1px solid var(--border);padding:14px 20px">
             <button class="btn btn-primary" id="btn-save-targets" onclick="saveTargets()">💾 Simpan Target</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: ABSEN KUNJUNGAN -->
+      <div id="tab-absen" style="display:none">
+        <div class="card" style="max-width:520px">
+          <div class="card-header"><h3>📍 Absen Kunjungan Sales</h3></div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
+              Saat sales kirim absen kunjungan (foto + lokasi) dari halaman mereka, pesan WhatsApp otomatis terbuka ke nomor ini.
+            </p>
+            <div class="form-group mb-0">
+              <label>Nomor WhatsApp Tujuan</label>
+              <input type="text" id="absen-wa-number" placeholder="Contoh: 628123456789 (tanpa spasi/+/-)">
+            </div>
+          </div>
+          <div class="modal-footer" style="border-top:1px solid #e2e8f0;padding:16px 20px">
+            <button class="btn btn-primary" id="btn-save-absen-wa" onclick="saveAbsenWaNumber()">Simpan</button>
           </div>
         </div>
       </div>
@@ -300,13 +320,33 @@
   }
 
   function switchTab(id, btn) {
-    ['tab-profile','tab-sales','tab-target'].forEach(t => {
+    ['tab-profile','tab-sales','tab-target','tab-absen'].forEach(t => {
       document.getElementById(t).style.display = 'none';
     });
     document.getElementById(id).style.display = 'block';
     document.querySelectorAll('.tab-pill').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     if (id === 'tab-target') loadTargetTab();
+    if (id === 'tab-absen') loadAbsenWaNumber();
+  }
+
+  async function loadAbsenWaNumber() {
+    const { data } = await supabase.from('app_settings').select('value').eq('key', 'absen_wa_number').single();
+    document.getElementById('absen-wa-number').value = data?.value || '';
+  }
+
+  async function saveAbsenWaNumber() {
+    const btn = document.getElementById('btn-save-absen-wa');
+    const raw = document.getElementById('absen-wa-number').value.trim();
+    const number = raw.replace(/\D/g, '');
+    if (raw && !number) { showToast('Nomor WA tidak valid', 'error'); return; }
+
+    setLoading(btn, true);
+    const { error } = await supabase.from('app_settings')
+      .upsert({ key: 'absen_wa_number', value: number, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    setLoading(btn, false);
+    if (error) { showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
+    showToast('Nomor WA absen tersimpan ✅', 'success');
   }
 
   async function saveProfile() {

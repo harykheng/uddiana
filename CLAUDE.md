@@ -284,11 +284,12 @@ git push -u origin feat/nama-fitur
 
 ### sales.html
 - Desain mobile-first dengan top nav (bukan sidebar)
-- 4 tab: Buat Faktur, Riwayat, Produk, Wishlist
+- Tab: Buat Faktur, Riwayat, Produk, Customer, Absen, Wishlist
 - Subtotal readonly (auto-round `Math.ceil` ke kelipatan 100)
 - Payment term: COD, 14 Hari, 15 Hari, 30 Hari
 - Simpan `customer_phone` & `customer_address` saat submit
 - Tab produk: search, scroll horizontal mobile
+- **Tab Absen**: bukti kunjungan sales — pilih customer, ambil foto (di-compress ke browser sebelum upload), ambil GPS device, submit → simpan ke `sales_visits` (`supabase_migration27.sql`) + foto ke Storage bucket privat `visit-photos`, lalu buka WhatsApp otomatis (nomor tujuan diatur di `settings.html`) berisi link lokasi & signed URL foto (berlaku 30 hari). Jam kunjungan pakai `default now()` server, bukan jam device, supaya nggak bisa dipalsukan.
 
 ### retur.html
 - Print layout mirip invoice (3 kolom TTD)
@@ -330,5 +331,6 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration24.sql` | Sama seperti migration23 tapi untuk `decrease_stock_on_transfer` (Keluar Barang) |
 | `supabase_migration25.sql` | Perbaiki akurasi quantity_before/after di `increase_stock_on_purchase` (bukan bug oversell, cuma akurasi catatan) |
 | `supabase_migration26.sql` | View `public_catalog_products` (read-only, kolom aman saja) untuk katalog publik di domain terpisah (`diana-kosmetik-katalog`) |
+| `supabase_migration27.sql` | Tabel `sales_visits` + bucket Storage privat `visit-photos` untuk fitur Absen Kunjungan (foto+GPS+jam) di `sales.html` |
 
 
