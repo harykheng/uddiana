@@ -263,8 +263,8 @@ git push -u origin feat/nama-fitur
 
 ### invoices.html
 - Price mode: Regular / Shopee / Custom
-- **Diskon per item**: toggle `%` (persentase) atau `Rp` (nominal) per baris item
-  - `item_discount`: nilai diskon tier pertama (angka % atau Rp)
+- **Diskon per item**: toggle `%` (persentase) atau `Rp` (nominal, **per pcs** — otomatis dikali qty) per baris item
+  - `item_discount`: nilai diskon tier pertama (angka % atau Rp per pcs)
   - `discount_type`: `'percent'` | `'nominal'` (migration8)
   - `item_discount2`: diskon tier kedua opsional, cuma berlaku kalau `discount_type = 'percent'` (migration28) — contoh "20%+5%". Dihitung **bertingkat/compound**, bukan dijumlah: `harga * (1 - d1/100) * (1 - d2/100)`. Field tier 2 otomatis disembunyikan kalau tipe diskon nominal.
   - Auto-apply dari `product_discount_rules` saat pilih produk (cuma isi tier pertama, tier 2 direset ke 0)

@@ -575,7 +575,7 @@
   function onDiscTypeChange() {
     const type = document.querySelector('input[name="rule-disc-type"]:checked')?.value || 'percent';
     const isNominal = type === 'nominal';
-    document.getElementById('rule-disc-label').textContent = isNominal ? 'Nilai Diskon (Rp)' : 'Nilai Diskon (%)';
+    document.getElementById('rule-disc-label').textContent = isNominal ? 'Nilai Diskon (Rp per pcs)' : 'Nilai Diskon (%)';
     document.getElementById('rule-disc-prefix').style.display = isNominal ? 'block' : 'none';
     document.getElementById('rule-disc-suffix').style.display = isNominal ? 'none'  : 'block';
     const input = document.getElementById('rule-disc-value');
