@@ -910,11 +910,13 @@
       discEl.value = best.discount_type === 'nominal'
         ? Number(best.discount_value).toLocaleString('id-ID')
         : String(best.discount_value);
+      if (disc2El) disc2El.value = best.discount_type === 'percent' ? String(best.discount_value2 || 0) : '0';
     } else {
       discTypeEl.value = 'percent';
       discEl.value = '0';
+      if (disc2El) disc2El.value = '0';
     }
-    if (disc2El) disc2El.value = '0';
+    toggleDisc2(rowId, discTypeEl.value, 'disc');
   }
 
   // Re-apply aturan GRUP setiap kali qty berubah di baris manapun
@@ -1254,11 +1256,13 @@
       discEl.value = best.discount_type === 'nominal'
         ? Number(best.discount_value).toLocaleString('id-ID')
         : String(best.discount_value);
+      if (disc2El) disc2El.value = best.discount_type === 'percent' ? String(best.discount_value2 || 0) : '0';
     } else {
       discTypeEl.value = 'percent';
       discEl.value = '0';
+      if (disc2El) disc2El.value = '0';
     }
-    if (disc2El) disc2El.value = '0';
+    toggleDisc2(rowId, discTypeEl.value, 'edisc');
   }
 
   function reapplyGroupDiscountsEdit() {
