@@ -1756,6 +1756,8 @@ function recalcTotal() {
   let absenCustomerTS = null;
   let absenPhotoBlob = null;
   let absenLat = null, absenLng = null;
+  let absenAddress = null;
+  let absenLocating = false;
 
   function initAbsenSelect() {
     if (absenCustomerTS) { absenCustomerTS.destroy(); absenCustomerTS = null; }
@@ -1771,7 +1773,9 @@ function recalcTotal() {
     });
   }
 
-  function compressImage(file, maxWidth, quality) {
+  // Stempel alamat + jam langsung ke pixel foto (canvas) — bukan cuma metadata,
+  // jadi kalau foto di-screenshot/download pun keterangannya tetap nempel.
+  function compressImage(file, maxWidth, quality, stampLines) {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
@@ -1779,7 +1783,26 @@ function recalcTotal() {
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(img.width * scale);
         canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        if (stampLines && stampLines.length) {
+          const fontSize = Math.max(12, Math.round(canvas.width / 30));
+          const lineHeight = Math.round(fontSize * 1.4);
+          const padding = Math.round(fontSize * 0.6);
+          const barHeight = stampLines.length * lineHeight + padding * 2;
+
+          ctx.fillStyle = 'rgba(0,0,0,0.55)';
+          ctx.fillRect(0, canvas.height - barHeight, canvas.width, barHeight);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `${fontSize}px sans-serif`;
+          ctx.textBaseline = 'top';
+          stampLines.forEach((line, i) => {
+            ctx.fillText(line, padding, canvas.height - barHeight + padding + i * lineHeight, canvas.width - padding * 2);
+          });
+        }
+
         canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Gagal memproses foto')), 'image/jpeg', quality);
         URL.revokeObjectURL(img.src);
       };
@@ -1791,15 +1814,38 @@ function recalcTotal() {
   async function onAbsenPhotoSelected(e) {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (absenLat == null || absenLng == null) {
+      showToast('Lokasi belum siap, tunggu sebentar lalu coba lagi', 'warning');
+      requestAbsenLocation();
+      e.target.value = '';
+      return;
+    }
+
     try {
-      absenPhotoBlob = await compressImage(file, 800, 0.6);
+      const jam = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const stampLines = [absenAddress || `${absenLat.toFixed(5)}, ${absenLng.toFixed(5)}`, jam];
+      absenPhotoBlob = await compressImage(file, 900, 0.65, stampLines);
       document.getElementById('absen-photo-preview').src = URL.createObjectURL(absenPhotoBlob);
       document.getElementById('absen-photo-preview-wrap').style.display = 'block';
-      requestAbsenLocation();
     } catch (err) {
       showToast(err.message, 'error');
     }
     updateAbsenSubmitState();
+  }
+
+  // Reverse geocode via OpenStreetMap Nominatim (gratis, tanpa API key).
+  // Cukup untuk skala pakai harian (bukan bulk) — kalau gagal/timeout, stempel fallback ke koordinat.
+  async function reverseGeocodeAbsen(lat, lng) {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=0`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data.display_name) return null;
+      return data.display_name.split(',').map(p => p.trim()).slice(0, 3).join(', ');
+    } catch {
+      return null;
+    }
   }
 
   function requestAbsenLocation() {
@@ -1808,18 +1854,28 @@ function recalcTotal() {
       statusEl.textContent = '⚠️ HP/browser tidak mendukung GPS';
       return;
     }
+    if (absenLocating) return;
+    absenLocating = true;
     statusEl.textContent = '📍 Mengambil lokasi...';
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         absenLat = pos.coords.latitude;
         absenLng = pos.coords.longitude;
-        statusEl.textContent = `✅ Lokasi didapat (akurasi ~${Math.round(pos.coords.accuracy)}m)`;
+        absenAddress = null;
+        statusEl.textContent = `✅ Lokasi didapat (akurasi ~${Math.round(pos.coords.accuracy)}m) — mencari alamat...`;
         updateAbsenSubmitState();
+
+        absenAddress = await reverseGeocodeAbsen(absenLat, absenLng);
+        statusEl.textContent = absenAddress
+          ? `✅ ${absenAddress}`
+          : `✅ Lokasi didapat (akurasi ~${Math.round(pos.coords.accuracy)}m)`;
+        absenLocating = false;
       },
       () => {
-        absenLat = null; absenLng = null;
+        absenLat = null; absenLng = null; absenAddress = null;
         statusEl.textContent = '⚠️ Gagal ambil lokasi — aktifkan GPS & izinkan akses lokasi di browser';
         updateAbsenSubmitState();
+        absenLocating = false;
       },
       { enableHighAccuracy: true, timeout: 15000 }
     );
@@ -1868,7 +1924,8 @@ function recalcTotal() {
       const jam = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       const mapsUrl = `https://www.google.com/maps?q=${absenLat},${absenLng}`;
       const toko = customer.store_name ? `${customer.store_name} — ${customer.name}` : customer.name;
-      const message = `📍 Absen Kunjungan\nSales: ${currentUser.profile.name}\nToko: ${toko}\nWaktu: ${jam}\nLokasi: ${mapsUrl}\nFoto: ${signed?.signedUrl || '-'}`;
+      const lokasiText = absenAddress ? `${absenAddress} (${mapsUrl})` : mapsUrl;
+      const message = `📍 Absen Kunjungan\nSales: ${currentUser.profile.name}\nToko: ${toko}\nWaktu: ${jam}\nLokasi: ${lokasiText}\nFoto: ${signed?.signedUrl || '-'}`;
 
       if (waNumber) {
         window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(message)}`, '_blank');
@@ -1886,12 +1943,13 @@ function recalcTotal() {
   }
 
   function resetAbsenForm() {
-    absenPhotoBlob = null; absenLat = null; absenLng = null;
+    absenPhotoBlob = null; absenLat = null; absenLng = null; absenAddress = null;
     document.getElementById('absen-photo-preview-wrap').style.display = 'none';
     document.getElementById('absen-photo-input').value = '';
     document.getElementById('absen-gps-status').textContent = '📍 Lokasi belum diambil';
     if (absenCustomerTS) absenCustomerTS.setValue('');
     updateAbsenSubmitState();
+    requestAbsenLocation(); // langsung ambil ulang buat kunjungan berikutnya
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1906,6 +1964,7 @@ function recalcTotal() {
     if (id === 'tab-history') loadHistory();
     if (id === 'tab-products') { renderProductList(); loadTopProductsPush(); }
     if (id === 'tab-customers') renderCustomerList();
+    if (id === 'tab-absen' && absenLat == null) requestAbsenLocation();
     if (id === 'tab-wishlist') renderWishlist();
   }
 

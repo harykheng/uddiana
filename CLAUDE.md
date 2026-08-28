@@ -289,7 +289,7 @@ git push -u origin feat/nama-fitur
 - Payment term: COD, 14 Hari, 15 Hari, 30 Hari
 - Simpan `customer_phone` & `customer_address` saat submit
 - Tab produk: search, scroll horizontal mobile
-- **Tab Absen**: bukti kunjungan sales — pilih customer, ambil foto (di-compress ke browser sebelum upload), ambil GPS device, submit → simpan ke `sales_visits` (`supabase_migration27.sql`) + foto ke Storage bucket privat `visit-photos`, lalu buka WhatsApp otomatis (nomor tujuan diatur di `settings.html`) berisi link lokasi & signed URL foto (berlaku 30 hari). Jam kunjungan pakai `default now()` server, bukan jam device, supaya nggak bisa dipalsukan.
+- **Tab Absen**: bukti kunjungan sales — pilih customer, GPS + reverse-geocode alamat (OpenStreetMap Nominatim, gratis) diambil begitu tab dibuka, foto di-ambil lalu di-stempel alamat+jam langsung ke pixel canvas (nggak bisa dihapus tanpa keliatan diedit) sambil di-compress, submit → simpan ke `sales_visits` (`supabase_migration27.sql`) + foto ke Storage bucket privat `visit-photos`, lalu buka WhatsApp otomatis (nomor tujuan diatur di `settings.html`) berisi link lokasi & signed URL foto (berlaku 30 hari). Jam yang tercatat di database pakai `default now()` server (bukan jam device) sebagai sumber kebenaran utama — stempel di foto pakai jam device, jadi kalau beda jauh dari jam server itu tanda kecurigaan.
 
 ### retur.html
 - Print layout mirip invoice (3 kolom TTD)
