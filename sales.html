@@ -972,7 +972,8 @@
     if (resetPage) productListPage = 1;
     const el = document.getElementById('product-list-container');
     const search = (document.getElementById('search-products')?.value || '').toLowerCase();
-    const filtered = products.filter(p => !search || p.name.toLowerCase().includes(search));
+    const searchWords = search.split(/\s+/).filter(Boolean);
+    const filtered = products.filter(p => searchWords.every(w => p.name.toLowerCase().includes(w)));
     if (!filtered.length) {
       el.innerHTML = `<div class="empty-state"><div class="icon">📦</div><h4>${search ? 'Produk tidak ditemukan' : 'Tidak ada produk'}</h4></div>`;
       return;

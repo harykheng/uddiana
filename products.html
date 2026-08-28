@@ -528,8 +528,10 @@
     const search = document.getElementById('search-input').value.toLowerCase();
     const stockFilter = document.getElementById('filter-stock').value;
     const opnameFilter = document.getElementById('filter-opname')?.value || '';
+    const searchWords = search.split(/\s+/).filter(Boolean);
     let filtered = allProducts.filter(p => {
-      const matchSearch = !search || p.name.toLowerCase().includes(search) || (p.sku||'').toLowerCase().includes(search) || (p.description||'').toLowerCase().includes(search);
+      const haystack = `${p.name} ${p.sku||''} ${p.description||''}`.toLowerCase();
+      const matchSearch = searchWords.every(w => haystack.includes(w));
       let matchStock = true;
       if (stockFilter === 'low') matchStock = p.stock_quantity > 0 && p.stock_quantity <= p.min_stock;
       if (stockFilter === 'out') matchStock = p.stock_quantity <= 0;
