@@ -293,6 +293,7 @@ git push -u origin feat/nama-fitur
 - Payment term: COD, 14 Hari, 15 Hari, 30 Hari
 - Simpan `customer_phone` & `customer_address` saat submit
 - Tab produk: search, scroll horizontal mobile
+  - Badge diskon 🏷️ di bawah nama produk kalau ada aturan diskon aktif dari `product_discount_rules` (cuma rule per-produk, bukan grup — diskon grup butuh konteks isi keranjang jadi belum ditampilkan di sini), format sama dengan `discounts.html` (contoh "20%+5% (≥72pcs)")
 - **Tab Absen** *(masih tahap testing — default cuma tampil buat admin/super_admin, di-ON-kan ke semua sales lewat toggle "Tampilkan tab Absen ke semua sales" di settings.html, key `app_settings.absen_tab_enabled`)*: bukti kunjungan sales — pilih customer, GPS + reverse-geocode alamat (OpenStreetMap Nominatim, gratis) diambil begitu tab dibuka, foto di-ambil lalu di-stempel nama toko+alamat+jam langsung ke pixel canvas (nggak bisa dihapus tanpa keliatan diedit) sambil di-compress, submit → simpan ke `sales_visits` (`supabase_migration27.sql`) + foto ke Storage bucket privat `visit-photos`, lalu buka WhatsApp otomatis (nomor tujuan diatur di `settings.html`) berisi link lokasi & signed URL foto (berlaku 30 hari). Jam yang tercatat di database pakai `default now()` server (bukan jam device) sebagai sumber kebenaran utama — stempel di foto pakai jam device, jadi kalau beda jauh dari jam server itu tanda kecurigaan. Thumbnail foto (signed URL, expired 1 jam, di-generate ulang tiap load) juga tampil di tabel "Riwayat Kunjungan" `laporan-sales.html`.
 
 ### retur.html
