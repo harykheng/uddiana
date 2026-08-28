@@ -2041,6 +2041,7 @@ function recalcTotal() {
 
     btn.disabled = true; btn.textContent = 'Mengirim...';
     showFullLoading('Mengirim absen kunjungan...');
+    const loadingShownAt = Date.now();
 
     try {
       const path = `${currentUser.session.user.id}/${Date.now()}.jpg`;
@@ -2066,6 +2067,10 @@ function recalcTotal() {
       // (backgrounded selama entah berapa lama), pas balik ke browser tampilannya
       // suka nyangkut/rusak. Bagian share ke WA cuma aksi tambahan, bukan bagian
       // yang wajib ditunggu.
+      // Tahan minimal 500ms biar loading-nya kelihatan jelas (kalau upload cepet
+      // banget, overlay-nya bisa nongol-ilang dalam sekejap dan malah nggak kerasa).
+      const elapsed = Date.now() - loadingShownAt;
+      if (elapsed < 500) await new Promise(r => setTimeout(r, 500 - elapsed));
       hideFullLoading();
       btn.disabled = false; btn.textContent = 'Kirim Absen';
       showToast('Absen tersimpan ✅', 'success');
