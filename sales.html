@@ -306,6 +306,7 @@
   <button class="tab-btn active" onclick="switchTab('tab-new')">+ Buat Faktur</button>
   <button class="tab-btn" onclick="switchTab('tab-history')">📋 Riwayat</button>
   <button class="tab-btn" onclick="switchTab('tab-products')">📦 Produk</button>
+  <button class="tab-btn" onclick="switchTab('tab-customers')">👥 Customer</button>
   <button class="tab-btn" onclick="switchTab('tab-wishlist')">⭐ Wishlist</button>
 </div>
 
@@ -403,6 +404,19 @@
   <div class="card" style="margin-top:12px;">
     <div id="product-list-container">
       <div class="empty-state"><div class="icon">📦</div><h4>Memuat...</h4></div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: CUSTOMER -->
+<div class="tab-content" id="tab-customers">
+  <div style="padding:0 0 12px;">
+    <input type="text" id="search-customers" placeholder="🔍 Cari nama / toko / telepon..." oninput="renderCustomerList(true)"
+      style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;outline:none;box-sizing:border-box;">
+  </div>
+  <div class="card">
+    <div id="customer-list-container">
+      <div class="empty-state"><div class="icon">👥</div><h4>Memuat...</h4></div>
     </div>
   </div>
 </div>
@@ -1001,6 +1015,53 @@
   function changeProductListPage(delta) {
     productListPage += delta;
     renderProductList();
+  }
+
+  const CUSTOMER_PAGE_SIZE = 10;
+  let customerListPage = 1;
+
+  function renderCustomerList(resetPage) {
+    if (resetPage) customerListPage = 1;
+    const el = document.getElementById('customer-list-container');
+    const search = (document.getElementById('search-customers')?.value || '').toLowerCase();
+    const filtered = customers.filter(c => !search
+      || (c.name || '').toLowerCase().includes(search)
+      || (c.store_name || '').toLowerCase().includes(search)
+      || (c.phone || '').toLowerCase().includes(search));
+    if (!filtered.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">👥</div><h4>${search ? 'Customer tidak ditemukan' : 'Belum ada customer'}</h4></div>`;
+      return;
+    }
+    const totalPages = Math.max(1, Math.ceil(filtered.length / CUSTOMER_PAGE_SIZE));
+    if (customerListPage > totalPages) customerListPage = totalPages;
+    const start = (customerListPage - 1) * CUSTOMER_PAGE_SIZE;
+    const pageItems = filtered.slice(start, start + CUSTOMER_PAGE_SIZE);
+
+    el.innerHTML = pageItems.map(c => {
+      const mapsUrl = c.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}` : '';
+      return `
+      <div style="border-bottom:1px solid #f1f5f9;padding:12px 14px;">
+        <div style="font-weight:600;font-size:14px;">${escapeHtml(c.name)}</div>
+        ${c.store_name ? `<div style="font-size:12px;color:#64748b;margin-top:2px;">🏪 ${escapeHtml(c.store_name)}</div>` : ''}
+        ${c.phone ? `<div style="font-size:12.5px;margin-top:6px;"><a href="tel:${escapeHtml(c.phone)}" style="color:var(--primary);text-decoration:none;">📞 ${escapeHtml(c.phone)}</a></div>` : ''}
+        ${c.address ? `<div style="font-size:12.5px;margin-top:4px;color:#334155;line-height:1.5;">📍 ${escapeHtml(c.address)} ${mapsUrl ? `<a href="${mapsUrl}" target="_blank" rel="noopener" style="color:var(--primary);font-weight:600;text-decoration:none;">(Buka Maps)</a>` : ''}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    el.innerHTML += `<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;gap:8px;flex-wrap:wrap;">
+      <div style="font-size:11.5px;color:#64748b;">${filtered.length} customer · hal ${customerListPage}/${totalPages}</div>
+      <div style="display:flex;gap:6px;">
+        <button type="button" onclick="changeCustomerListPage(-1)" ${customerListPage <= 1 ? 'disabled' : ''}
+          style="padding:5px 12px;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;${customerListPage <= 1 ? 'opacity:.4;' : 'cursor:pointer;'}">‹ Prev</button>
+        <button type="button" onclick="changeCustomerListPage(1)" ${customerListPage >= totalPages ? 'disabled' : ''}
+          style="padding:5px 12px;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;background:#fff;${customerListPage >= totalPages ? 'opacity:.4;' : 'cursor:pointer;'}">Next ›</button>
+      </div>
+    </div>`;
+  }
+
+  function changeCustomerListPage(delta) {
+    customerListPage += delta;
+    renderCustomerList();
   }
 
   let myWishlists = [];
@@ -1664,11 +1725,12 @@ function recalcTotal() {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     document.getElementById(id).classList.add('active');
-    const tabIds = ['tab-new', 'tab-history', 'tab-products', 'tab-wishlist'];
+    const tabIds = ['tab-new', 'tab-history', 'tab-products', 'tab-customers', 'tab-wishlist'];
     const btn = document.querySelectorAll('.tab-btn')[tabIds.indexOf(id)];
     if (btn) btn.classList.add('active');
     if (id === 'tab-history') loadHistory();
     if (id === 'tab-products') { renderProductList(); loadTopProductsPush(); }
+    if (id === 'tab-customers') renderCustomerList();
     if (id === 'tab-wishlist') renderWishlist();
   }
 
