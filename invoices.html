@@ -790,14 +790,14 @@
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="qty-${id}" value="1" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onQtyChange('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="price-${id}" value="0" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')"></td>
       <td style="padding:5px 6px">
-        <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">
-          <select id="disctype-${id}" style="padding:5px 3px;border:1px solid var(--border);border-radius:6px;font-size:11px;width:46px;flex-shrink:0" onchange="recalcRow('${id}')">
+        <div style="display:flex;gap:2px;align-items:center;flex-wrap:nowrap">
+          <select id="disctype-${id}" style="padding:5px 2px;border:1px solid var(--border);border-radius:6px;font-size:10.5px;width:34px;flex-shrink:0" onchange="recalcRow('${id}')">
             <option value="percent">%</option>
             <option value="nominal">Rp</option>
           </select>
-          <input type="text" inputmode="numeric" data-number id="disc-${id}" value="0" style="width:44px;padding:6px 6px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')" placeholder="0">
-          <span id="discplus-${id}" style="font-size:11px;color:var(--text-muted)">+</span>
-          <input type="text" inputmode="numeric" data-number id="disc2-${id}" value="0" style="width:40px;padding:6px 6px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcRow('${id}')" placeholder="0">
+          <input type="text" inputmode="numeric" data-number id="disc-${id}" value="0" style="width:32px;flex-shrink:0;padding:6px 3px;border:1px solid var(--border);border-radius:6px;font-size:11.5px" oninput="recalcRow('${id}')" placeholder="0">
+          <span id="discplus-${id}" style="font-size:10px;color:var(--text-muted);flex-shrink:0">+</span>
+          <input type="text" inputmode="numeric" data-number id="disc2-${id}" value="0" style="width:30px;flex-shrink:0;padding:6px 3px;border:1px solid var(--border);border-radius:6px;font-size:11.5px" oninput="recalcRow('${id}')" placeholder="0">
         </div>
       </td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="sub-${id}" value="0" style="width:90px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)" oninput="recalcRowFromSubtotal('${id}')"></td>
@@ -1364,14 +1364,14 @@
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eqty-${id}" value="${existingItem ? existingItem.quantity : '1'}" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onEditQtyChange('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eprice-${id}" value="${existingItem ? Number(existingItem.price||0).toLocaleString('id-ID') : '0'}" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')"></td>
       <td style="padding:5px 6px">
-        <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">
-          <select id="edisctype-${id}" style="padding:5px 3px;border:1px solid var(--border);border-radius:6px;font-size:11px;width:46px;flex-shrink:0" onchange="recalcEditInvoiceRow('${id}')">
+        <div style="display:flex;gap:2px;align-items:center;flex-wrap:nowrap">
+          <select id="edisctype-${id}" style="padding:5px 2px;border:1px solid var(--border);border-radius:6px;font-size:10.5px;width:34px;flex-shrink:0" onchange="recalcEditInvoiceRow('${id}')">
             <option value="percent"${(existingItem?.discount_type||'percent')==='percent'?' selected':''}>%</option>
             <option value="nominal"${(existingItem?.discount_type||'percent')==='nominal'?' selected':''}>Rp</option>
           </select>
-          <input type="text" inputmode="numeric" data-number id="edisc-${id}" value="${existingItem ? (existingItem.discount_type==='nominal' ? Number(existingItem.item_discount||0).toLocaleString('id-ID') : (existingItem.item_discount||0)) : '0'}" style="width:44px;padding:6px 6px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')" placeholder="0">
-          <span id="ediscplus-${id}" style="font-size:11px;color:var(--text-muted)">+</span>
-          <input type="text" inputmode="numeric" data-number id="edisc2-${id}" value="${existingItem ? (existingItem.item_discount2||0) : '0'}" style="width:40px;padding:6px 6px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')" placeholder="0">
+          <input type="text" inputmode="numeric" data-number id="edisc-${id}" value="${existingItem ? (existingItem.discount_type==='nominal' ? Number(existingItem.item_discount||0).toLocaleString('id-ID') : (existingItem.item_discount||0)) : '0'}" style="width:32px;flex-shrink:0;padding:6px 3px;border:1px solid var(--border);border-radius:6px;font-size:11.5px" oninput="recalcEditInvoiceRow('${id}')" placeholder="0">
+          <span id="ediscplus-${id}" style="font-size:10px;color:var(--text-muted);flex-shrink:0">+</span>
+          <input type="text" inputmode="numeric" data-number id="edisc2-${id}" value="${existingItem ? (existingItem.item_discount2||0) : '0'}" style="width:30px;flex-shrink:0;padding:6px 3px;border:1px solid var(--border);border-radius:6px;font-size:11.5px" oninput="recalcEditInvoiceRow('${id}')" placeholder="0">
         </div>
       </td>
       <td style="padding:5px 6px"><input type="text" id="esub-${id}" readonly value="${existingItem ? Number(existingItem.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:90px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)"></td>
