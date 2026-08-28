@@ -196,6 +196,7 @@
         <span style="font-size:13px;font-weight:600;color:#1e3a8a"><span id="bulk-selected-count">0</span> produk dipilih</span>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Batal</button>
+          <button class="btn btn-ghost btn-sm" onclick="openBulkRenameModal()">✏️ Edit Nama/SKU Massal</button>
           <button class="btn btn-primary btn-sm" onclick="openBulkPriceModal()">💰 Update Harga Massal</button>
         </div>
       </div>
@@ -480,6 +481,36 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-bulk-price')">Batal</button>
       <button class="btn btn-primary" id="btn-bulk-price-save" onclick="submitBulkPrice()">Update Produk</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDIT NAMA/SKU MASSAL -->
+<div class="modal-overlay" id="modal-bulk-rename" data-no-overlay-close>
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <h3>✏️ Edit Nama/SKU Massal</h3>
+      <button class="modal-close" onclick="closeModal('modal-bulk-rename')">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--text-muted);margin:0 0 14px">
+        Ubah nama dan/atau SKU per produk di bawah, lalu simpan sekaligus. SKU harus tetap unik antar produk.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:50%">Nama Produk</th>
+              <th>SKU</th>
+            </tr>
+          </thead>
+          <tbody id="bulk-rename-rows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bulk-rename')">Batal</button>
+      <button class="btn btn-primary" id="btn-bulk-rename-save" onclick="submitBulkRename()">Simpan Semua</button>
     </div>
   </div>
 </div>
@@ -782,6 +813,77 @@
 
     setLoading(btn, false);
     closeModal('modal-bulk-price');
+    clearSelection();
+    showToast(
+      failCount ? `${successCount} produk diupdate, ${failCount} gagal` : `${successCount} produk berhasil diupdate ✅`,
+      failCount ? 'warning' : 'success'
+    );
+    loadProducts();
+  }
+
+  function openBulkRenameModal() {
+    if (!selectedProductIds.size) return;
+    const targets = allProducts.filter(p => selectedProductIds.has(p.id));
+    const tbody = document.getElementById('bulk-rename-rows');
+    tbody.innerHTML = targets.map(p => `
+      <tr data-product-id="${p.id}">
+        <td style="padding:5px 6px">
+          <input type="text" id="brename-name-${p.id}" value="${escapeHtml(p.name)}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;box-sizing:border-box">
+        </td>
+        <td style="padding:5px 6px">
+          <input type="text" id="brename-sku-${p.id}" value="${escapeHtml(p.sku || '')}" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px;box-sizing:border-box">
+        </td>
+      </tr>
+    `).join('');
+    openModal('modal-bulk-rename');
+  }
+
+  async function submitBulkRename() {
+    const targets = allProducts.filter(p => selectedProductIds.has(p.id));
+    const changes = [];
+    const skusInBatch = new Map(); // sku lowercase -> product name (buat cek duplikat sesama baris terpilih)
+
+    for (const p of targets) {
+      const nameEl = document.getElementById(`brename-name-${p.id}`);
+      const skuEl  = document.getElementById(`brename-sku-${p.id}`);
+      const newName = nameEl.value.trim();
+      const newSku  = skuEl.value.trim();
+
+      if (!newName) { showToast(`Nama produk tidak boleh kosong (${p.name})`, 'error'); return; }
+      if (!newSku)  { showToast(`SKU tidak boleh kosong (${p.name})`, 'error'); return; }
+
+      const skuLower = newSku.toLowerCase();
+      if (skusInBatch.has(skuLower) && skusInBatch.get(skuLower) !== p.id) {
+        showToast(`SKU "${newSku}" dipakai lebih dari 1 produk di daftar ini`, 'error');
+        return;
+      }
+      skusInBatch.set(skuLower, p.id);
+
+      // Cek bentrok dengan produk LAIN di luar daftar terpilih
+      const conflict = allProducts.find(o => o.id !== p.id && (o.sku || '').toLowerCase() === skuLower);
+      if (conflict) {
+        showToast(`SKU "${newSku}" sudah dipakai produk lain: ${conflict.name}`, 'error');
+        return;
+      }
+
+      if (newName !== p.name || newSku !== (p.sku || '')) {
+        changes.push({ id: p.id, name: newName, sku: newSku });
+      }
+    }
+
+    if (!changes.length) { showToast('Tidak ada perubahan untuk disimpan', 'warning'); return; }
+
+    const btn = document.getElementById('btn-bulk-rename-save');
+    setLoading(btn, true);
+
+    let successCount = 0, failCount = 0;
+    for (const c of changes) {
+      const { error } = await supabase.from('products').update({ name: c.name, sku: c.sku }).eq('id', c.id);
+      if (error) failCount++; else successCount++;
+    }
+
+    setLoading(btn, false);
+    closeModal('modal-bulk-rename');
     clearSelection();
     showToast(
       failCount ? `${successCount} produk diupdate, ${failCount} gagal` : `${successCount} produk berhasil diupdate ✅`,
