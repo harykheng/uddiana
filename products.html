@@ -192,6 +192,14 @@
         </div>
       </div>
 
+      <div id="bulk-actions-bar" style="display:none;align-items:center;justify-content:space-between;background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:10px 16px;margin-bottom:12px">
+        <span style="font-size:13px;font-weight:600;color:#1e3a8a"><span id="bulk-selected-count">0</span> produk dipilih</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Batal</button>
+          <button class="btn btn-primary btn-sm" onclick="openBulkPriceModal()">💰 Update Harga Massal</button>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header">
           <h3>Daftar Produk <span id="product-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
@@ -205,6 +213,7 @@
           <table>
             <thead>
               <tr>
+                <th style="width:32px"><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)"></th>
                 <th class="col-hide-mobile">#</th>
                 <th>SKU</th>
                 <th class="sortable" id="th-name" onclick="setSort('name')">Nama Produk <span class="sort-icon"></span></th>
@@ -221,7 +230,7 @@
               </tr>
             </thead>
             <tbody id="products-table">
-              <tr><td colspan="12" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+              <tr><td colspan="13" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
             </tbody>
           </table>
         </div>
@@ -424,6 +433,57 @@
   </div>
 </div>
 
+<!-- MODAL: UPDATE HARGA MASSAL -->
+<div class="modal-overlay" id="modal-bulk-price" data-no-overlay-close>
+  <div class="modal">
+    <div class="modal-header">
+      <h3>💰 Update Harga Massal</h3>
+      <button class="modal-close" onclick="closeModal('modal-bulk-price')">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="bulk-price-count" style="font-size:13px;color:var(--text-muted);margin:0 0 16px"></p>
+
+      <div class="form-group col-harga-modal">
+        <label>Harga Modal</label>
+        <div style="display:flex;gap:8px">
+          <select id="bulk-cost-mode" style="width:170px;flex-shrink:0" onchange="onBulkModeChange('cost')">
+            <option value="none">Tidak diubah</option>
+            <option value="set">Set ke nilai baru</option>
+            <option value="pct_up">Naik %</option>
+            <option value="pct_down">Turun %</option>
+            <option value="rp_up">Naik Rp</option>
+            <option value="rp_down">Turun Rp</option>
+          </select>
+          <input type="text" inputmode="numeric" data-number id="bulk-cost-value" placeholder="0" style="flex:1" disabled>
+        </div>
+      </div>
+
+      <div class="form-group mb-0">
+        <label>Harga Jual</label>
+        <div style="display:flex;gap:8px">
+          <select id="bulk-price-mode" style="width:170px;flex-shrink:0" onchange="onBulkModeChange('price')">
+            <option value="none">Tidak diubah</option>
+            <option value="set">Set ke nilai baru</option>
+            <option value="pct_up">Naik %</option>
+            <option value="pct_down">Turun %</option>
+            <option value="rp_up">Naik Rp</option>
+            <option value="rp_down">Turun Rp</option>
+          </select>
+          <input type="text" inputmode="numeric" data-number id="bulk-price-value" placeholder="0" style="flex:1" disabled>
+        </div>
+      </div>
+
+      <p style="font-size:12px;color:var(--text-muted);margin:14px 0 0">
+        "Naik/Turun %" dan "Naik/Turun Rp" dihitung dari harga masing-masing produk saat ini (bisa beda-beda), bukan disamakan.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bulk-price')">Batal</button>
+      <button class="btn btn-primary" id="btn-bulk-price-save" onclick="submitBulkPrice()">Update Produk</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
@@ -440,6 +500,7 @@
 
   let isSuperAdmin = false;
   let activeOpnameSession = null;
+  let selectedProductIds = new Set();
 
   async function init() {
     const auth = await requireAdmin(); if (!auth) return;
@@ -554,7 +615,7 @@
     const tbody = document.getElementById('products-table');
 
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">📦</div><h4>Tidak ada produk</h4><p>Tambah produk baru atau ubah filter</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="14"><div class="empty-state"><div class="empty-icon">📦</div><h4>Tidak ada produk</h4><p>Tambah produk baru atau ubah filter</p></div></td></tr>`;
       const mob = document.getElementById('products-mobile');
       if (mob) mob.innerHTML = `<div class="empty-state"><div class="empty-icon">📦</div><h4>Tidak ada produk</h4></div>`;
       document.getElementById('pagination-bar').style.display = 'none';
@@ -581,6 +642,7 @@
           : `<div style="font-size:10px;color:#94a3b8;margin-top:3px">Belum</div>`)
         : '';
       return `<tr>
+        <td><input type="checkbox" class="row-select" onchange="toggleSelectProduct('${p.id}', this.checked)" ${selectedProductIds.has(p.id) ? 'checked' : ''}></td>
         <td class="text-muted col-hide-mobile" style="font-size:12px">${start + i + 1}</td>
         <td><code style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px">${escapeHtml(p.sku)}</code></td>
         <td><strong>${escapeHtml(p.name)}</strong></td>
@@ -613,12 +675,119 @@
     }).join('');
 
     renderMobileCards(paged);
+    updateBulkBar();
+    const selectAllEl = document.getElementById('select-all-checkbox');
+    if (selectAllEl) {
+      const allSelected = filtered.length > 0 && filtered.every(p => selectedProductIds.has(p.id));
+      const someSelected = filtered.some(p => selectedProductIds.has(p.id));
+      selectAllEl.checked = allSelected;
+      selectAllEl.indeterminate = someSelected && !allSelected;
+    }
 
     // Render pagination controls
     document.getElementById('pagination-bar').style.display = '';
     document.getElementById('pagination-info').textContent =
       `Menampilkan ${start + 1}–${end} dari ${total} produk`;
     renderPaginationBtns(totalPages);
+  }
+
+  function toggleSelectProduct(id, checked) {
+    if (checked) selectedProductIds.add(id); else selectedProductIds.delete(id);
+    updateBulkBar();
+  }
+
+  function toggleSelectAll(checked) {
+    if (checked) currentFiltered.forEach(p => selectedProductIds.add(p.id));
+    else currentFiltered.forEach(p => selectedProductIds.delete(p.id));
+    renderProducts();
+  }
+
+  function clearSelection() {
+    selectedProductIds.clear();
+    renderProducts();
+  }
+
+  function updateBulkBar() {
+    const bar = document.getElementById('bulk-actions-bar');
+    const count = selectedProductIds.size;
+    document.getElementById('bulk-selected-count').textContent = count;
+    bar.style.display = count > 0 ? 'flex' : 'none';
+  }
+
+  function openBulkPriceModal() {
+    if (!selectedProductIds.size) return;
+    document.getElementById('bulk-price-count').textContent = `${selectedProductIds.size} produk terpilih akan diupdate`;
+    document.getElementById('bulk-cost-mode').value = 'none';
+    document.getElementById('bulk-price-mode').value = 'none';
+    onBulkModeChange('cost');
+    onBulkModeChange('price');
+    openModal('modal-bulk-price');
+  }
+
+  function onBulkModeChange(field) {
+    const mode  = document.getElementById(`bulk-${field}-mode`).value;
+    const input = document.getElementById(`bulk-${field}-value`);
+    input.disabled = mode === 'none';
+    if (mode === 'none') input.value = '';
+    const isPct = mode === 'pct_up' || mode === 'pct_down';
+    input.placeholder = isPct ? '0 (%)' : '0 (Rp)';
+  }
+
+  function computeBulkValue(oldVal, mode, val) {
+    oldVal = Number(oldVal) || 0;
+    switch (mode) {
+      case 'set':      return Math.max(0, Math.round(val));
+      case 'pct_up':   return Math.round(oldVal * (1 + val / 100));
+      case 'pct_down': return Math.max(0, Math.round(oldVal * (1 - val / 100)));
+      case 'rp_up':    return Math.round(oldVal + val);
+      case 'rp_down':  return Math.max(0, Math.round(oldVal - val));
+      default:         return null;
+    }
+  }
+
+  async function submitBulkPrice() {
+    const ids = [...selectedProductIds];
+    if (!ids.length) return;
+
+    const costMode  = document.getElementById('bulk-cost-mode').value;
+    const priceMode = document.getElementById('bulk-price-mode').value;
+    const costVal   = parseFormattedNumber(document.getElementById('bulk-cost-value').value) || 0;
+    const priceVal  = parseFormattedNumber(document.getElementById('bulk-price-value').value) || 0;
+
+    if (costMode === 'none' && priceMode === 'none') {
+      showToast('Pilih minimal 1 field (Harga Modal / Harga Jual) untuk diupdate', 'error');
+      return;
+    }
+
+    const btn = document.getElementById('btn-bulk-price-save');
+    setLoading(btn, true);
+
+    const targets = allProducts.filter(p => ids.includes(p.id));
+    let successCount = 0, failCount = 0;
+
+    for (const p of targets) {
+      const updates = {};
+      if (costMode !== 'none') {
+        const newCost = computeBulkValue(p.cost, costMode, costVal);
+        if (newCost !== null) updates.cost = newCost;
+      }
+      if (priceMode !== 'none') {
+        const newPrice = computeBulkValue(p.price, priceMode, priceVal);
+        if (newPrice !== null) updates.price = newPrice;
+      }
+      if (!Object.keys(updates).length) continue;
+      const { error } = await supabase.from('products').update(updates).eq('id', p.id);
+      if (error) failCount++; else successCount++;
+    }
+
+    setLoading(btn, false);
+    closeModal('modal-bulk-price');
+    clearSelection();
+    showToast(
+      failCount ? `${successCount} produk diupdate, ${failCount} gagal` : `${successCount} produk berhasil diupdate ✅`,
+      failCount ? 'warning' : 'success'
+    );
+    loadProducts();
   }
 
   function renderMobileCards(paged) {

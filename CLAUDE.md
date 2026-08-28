@@ -260,6 +260,7 @@ git push -u origin feat/nama-fitur
 - Import CSV: SKU opsional, auto-generate jika kosong, batch upsert, bypass 1000 row limit
 - Import: strip BOM, fallback alias kolom SKU, error detail tabel scrollable + download xlsx
 - Export XLS termasuk harga lusin
+- **Update Harga Massal**: checkbox pilih produk di tabel (desktop only, belum ada di mobile card view) → bar aksi muncul → modal set Harga Modal & Harga Jual sekaligus untuk semua produk terpilih, mode "Set nilai baru" atau "Naik/Turun %/Rp" (dihitung dari harga masing-masing produk saat ini, bukan disamakan)
 
 ### invoices.html
 - Price mode: Regular / Shopee / Custom
