@@ -263,11 +263,12 @@ git push -u origin feat/nama-fitur
 
 ### invoices.html
 - Price mode: Regular / Shopee / Custom
-- **Diskon per item**: toggle `%` (persentase) atau `Rp` (nominal) per baris item
-  - `item_discount`: nilai diskon (angka % atau Rp)
+- **Diskon per item**: toggle `%` (persentase) atau `Rp` (nominal, **per pcs** — otomatis dikali qty) per baris item
+  - `item_discount`: nilai diskon tier pertama (angka % atau Rp per pcs)
   - `discount_type`: `'percent'` | `'nominal'` (migration8)
-  - Auto-apply dari `product_discount_rules` saat pilih produk
-  - Tampil di detail view & print jika ada item ber-diskon
+  - `item_discount2`: diskon tier kedua opsional, cuma berlaku kalau `discount_type = 'percent'` (migration28) — contoh "20%+5%". Dihitung **bertingkat/compound**, bukan dijumlah: `harga * (1 - d1/100) * (1 - d2/100)`. Field tier 2 otomatis disembunyikan kalau tipe diskon nominal.
+  - Auto-apply dari `product_discount_rules` saat pilih produk (cuma isi tier pertama, tier 2 direset ke 0)
+  - Tampil di detail view & print jika ada item ber-diskon (format `20%+5%` kalau ada tier kedua)
 - **Biaya tambahan**: nama bebas, tipe nominal atau persentase, disimpan ke `additional_charges` JSONB
 - **Edit faktur**: admin bisa ubah termin pembayaran
 - **Bayar sebagian**: akumulasi `cash_paid` + `transfer_paid` per metode pembayaran
@@ -332,5 +333,6 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration25.sql` | Perbaiki akurasi quantity_before/after di `increase_stock_on_purchase` (bukan bug oversell, cuma akurasi catatan) |
 | `supabase_migration26.sql` | View `public_catalog_products` (read-only, kolom aman saja) untuk katalog publik di domain terpisah (`diana-kosmetik-katalog`) |
 | `supabase_migration27.sql` | Tabel `sales_visits` + bucket Storage privat `visit-photos` untuk fitur Absen Kunjungan (foto+GPS+jam) di `sales.html` |
+| `supabase_migration28.sql` | Kolom `item_discount2` di `invoice_items` — diskon bertingkat per item (contoh 20%+5%) di `invoices.html` |
 
 
