@@ -10,6 +10,19 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
+    /* ── PAGINATION ── */
+    .pagination { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-top:1px solid var(--border); flex-wrap:wrap; gap:8px; }
+    .pagination-info { font-size:13px; color:var(--text-muted); }
+    .pagination-btns { display:flex; gap:4px; align-items:center; }
+    .page-btn {
+      min-width:32px; height:32px; padding:0 8px; border:1px solid var(--border);
+      border-radius:6px; background:var(--surface); cursor:pointer;
+      font-size:13px; font-weight:600; color:var(--text-muted); transition:all .15s;
+    }
+    .page-btn:hover:not(:disabled) { border-color:var(--primary); color:var(--primary); }
+    .page-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+    .page-btn:disabled { opacity:.4; cursor:not-allowed; }
+
     /* ── SUMMARY CARDS ── */
     .sl-card {
       background: var(--surface); border-radius: var(--radius);
@@ -303,6 +316,7 @@
             </tbody>
           </table>
         </div>
+        <div class="pagination" id="visits-pagination" style="display:none"></div>
       </div>
     </main>
   </div>
@@ -427,8 +441,12 @@
   }
 
   // ── RIWAYAT KUNJUNGAN (ABSEN) ─────────────────────────────
+  const VISITS_PAGE_SIZE = 10;
+  let allVisitsData = [];
+
   async function loadVisits(from, to) {
     const tbody = document.getElementById('visits-table');
+    const pagEl = document.getElementById('visits-pagination');
     const { data, error } = await supabase
       .from('sales_visits')
       .select('sales_name,customer_name,store_name,latitude,longitude,visited_at,photo_path')
@@ -439,22 +457,37 @@
     if (error) {
       // Tabel belum ada / belum dijalankan migration-nya — sembunyikan diam-diam
       tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px">Belum ada data absen (jalankan supabase_migration27.sql)</td></tr>`;
-      return;
-    }
-    if (!data.length) {
-      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px">Belum ada kunjungan di periode ini</td></tr>`;
+      pagEl.style.display = 'none';
       return;
     }
 
-    // Generate signed URL sekaligus (bucket privat) buat semua foto di halaman ini
-    const paths = data.filter(v => v.photo_path).map(v => v.photo_path);
+    allVisitsData = data || [];
+    await renderVisitsPage(1);
+  }
+
+  async function renderVisitsPage(page = 1) {
+    const tbody = document.getElementById('visits-table');
+    const pagEl = document.getElementById('visits-pagination');
+
+    if (!allVisitsData.length) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px">Belum ada kunjungan di periode ini</td></tr>`;
+      pagEl.style.display = 'none';
+      return;
+    }
+
+    const totalPages = Math.ceil(allVisitsData.length / VISITS_PAGE_SIZE);
+    const start = (page - 1) * VISITS_PAGE_SIZE;
+    const pageData = allVisitsData.slice(start, start + VISITS_PAGE_SIZE);
+
+    // Generate signed URL cuma buat foto di halaman yang lagi ditampilkan
+    const paths = pageData.filter(v => v.photo_path).map(v => v.photo_path);
     let urlMap = {};
     if (paths.length) {
       const { data: signedList } = await supabase.storage.from('visit-photos').createSignedUrls(paths, 3600);
       (signedList || []).forEach(s => { if (s.signedUrl) urlMap[s.path] = s.signedUrl; });
     }
 
-    tbody.innerHTML = data.map(v => {
+    tbody.innerHTML = pageData.map(v => {
       const dt = new Date(v.visited_at);
       const tanggal = formatDate(v.visited_at);
       const jam = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -473,6 +506,21 @@
         <td><a href="${mapsUrl}" target="_blank" rel="noopener">🗺️ Lihat Lokasi</a></td>
       </tr>`;
     }).join('');
+
+    if (totalPages <= 1) { pagEl.style.display = 'none'; return; }
+    pagEl.style.display = 'flex';
+
+    let html = `<div class="pagination-info">${start + 1}–${Math.min(start + VISITS_PAGE_SIZE, allVisitsData.length)} dari ${allVisitsData.length}</div><div class="pagination-btns">`;
+    html += `<button class="page-btn" onclick="renderVisitsPage(${page - 1})" ${page === 1 ? 'disabled' : ''}>‹</button>`;
+    for (let p = 1; p <= totalPages; p++) {
+      if (totalPages > 7 && p > 2 && p < totalPages - 1 && Math.abs(p - page) > 1) {
+        if (p === 3 || p === totalPages - 2) html += `<span style="padding:0 4px;color:var(--text-muted)">…</span>`;
+        continue;
+      }
+      html += `<button class="page-btn ${p === page ? 'active' : ''}" onclick="renderVisitsPage(${p})">${p}</button>`;
+    }
+    html += `<button class="page-btn" onclick="renderVisitsPage(${page + 1})" ${page === totalPages ? 'disabled' : ''}>›</button></div>`;
+    pagEl.innerHTML = html;
   }
 
   // ── SUMMARY CARDS ─────────────────────────────────────────
