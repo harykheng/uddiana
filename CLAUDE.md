@@ -269,7 +269,7 @@ git push -u origin feat/nama-fitur
   - `item_discount`: nilai diskon tier pertama (angka % atau Rp per pcs)
   - `discount_type`: `'percent'` | `'nominal'` (migration8)
   - `item_discount2`: diskon tier kedua opsional, cuma berlaku kalau `discount_type = 'percent'` (migration28) — contoh "20%+5%". Dihitung **bertingkat/compound**, bukan dijumlah: `harga * (1 - d1/100) * (1 - d2/100)`. Field tier 2 otomatis disembunyikan kalau tipe diskon nominal.
-  - Auto-apply dari `product_discount_rules` saat pilih produk (cuma isi tier pertama, tier 2 direset ke 0)
+  - Auto-apply dari `product_discount_rules` saat pilih produk (cuma isi tier pertama, tier 2 direset ke 0) — aturan khusus customer yang lagi dipilih diprioritaskan di atas aturan umum, dievaluasi ulang tiap ganti customer
   - Tampil di detail view & print jika ada item ber-diskon (format `20%+5%` kalau ada tier kedua)
 - **Biaya tambahan**: nama bebas, tipe nominal atau persentase, disimpan ke `additional_charges` JSONB
 - **Edit faktur**: admin bisa ubah termin pembayaran
@@ -280,10 +280,11 @@ git push -u origin feat/nama-fitur
 
 ### discounts.html
 - CRUD aturan diskon per produk (`product_discount_rules` table)
-- Syarat berlaku: `min_qty` (pcs) dan/atau `min_amount` (Rp) — 0 = tanpa syarat
+- Syarat berlaku: `min_qty` (disimpan dalam pcs, tapi **input & tampilan di UI dalam lusin** — 1 lusin = 12 pcs, dikonversi otomatis) dan/atau `min_amount` (Rp) — 0 = tanpa syarat
 - Tipe diskon: `percent` (%) atau `nominal` (Rp per pcs)
 - Diskon bertingkat opsional (`discount_value2`, migration29) khusus tipe `percent` — contoh "20%+5%", ikut ke-auto-apply ke faktur (tier 1 & 2)
-- Jika beberapa rule cocok untuk satu produk → prioritas rule dengan `min_qty` tertinggi
+- **Diskon khusus customer** (`customer_id`, migration30) — opsional, kosong = berlaku semua toko (aturan umum), diisi = cuma berlaku toko itu. Kalau ada aturan umum & khusus toko yang sama-sama cocok, yang khusus toko diprioritaskan (di `invoices.html` & `sales.html`)
+- Jika beberapa rule cocok untuk satu produk → prioritas: khusus customer dulu, baru `min_qty` tertinggi
 - Accessible: admin + super_admin (`requireAdmin()`)
 
 ### sales.html
@@ -293,8 +294,8 @@ git push -u origin feat/nama-fitur
 - Payment term: COD, 14 Hari, 15 Hari, 30 Hari
 - Simpan `customer_phone` & `customer_address` saat submit
 - Tab produk: search, scroll horizontal mobile
-  - Badge diskon 🏷️ di bawah nama produk kalau ada aturan diskon aktif dari `product_discount_rules` (cuma rule per-produk, bukan grup — diskon grup butuh konteks isi keranjang jadi belum ditampilkan di sini), format sama dengan `discounts.html` (contoh "20%+5% (≥72pcs)")
-  - Di kartu item Buat Faktur & Edit Faktur: begitu qty memenuhi syarat rule, **Harga Satuan otomatis berubah ke harga setelah diskon** (badge yang aktif jadi ✅ hijau, evaluasi ulang tiap qty berubah) + baris kecil "Harga normal: Rp X" di bawahnya. Yang disubmit ke `invoice_items` tetap `price` = harga katalog asli + `item_discount`/`item_discount2`/`discount_type` tercatat terpisah (bukan harga baru begitu aja) — biar laporan margin & histori diskon tetap akurat
+  - Badge diskon 🏷️ di bawah nama produk kalau ada aturan diskon aktif dari `product_discount_rules` (cuma rule per-produk, bukan grup — diskon grup butuh konteks isi keranjang jadi belum ditampilkan di sini; juga cuma aturan **umum**, aturan khusus customer nggak muncul di list ini karena belum ada konteks customer), format sama dengan `discounts.html` (contoh "20%+5% (≥72pcs)")
+  - Di kartu item Buat Faktur & Edit Faktur: begitu qty memenuhi syarat rule, **Harga Satuan otomatis berubah ke harga setelah diskon** (badge yang aktif jadi ✅ hijau, evaluasi ulang tiap qty berubah). Badge di sini menampilkan aturan umum **dan** aturan khusus customer yang lagi dipilih (label 🏪 buat yang khusus toko), dievaluasi ulang tiap ganti customer juga — plus baris kecil "Harga normal: Rp X" di bawahnya. Yang disubmit ke `invoice_items` tetap `price` = harga katalog asli + `item_discount`/`item_discount2`/`discount_type` tercatat terpisah (bukan harga baru begitu aja) — biar laporan margin & histori diskon tetap akurat
 - **Tab Absen** *(masih tahap testing — default cuma tampil buat admin/super_admin, di-ON-kan ke semua sales lewat toggle "Tampilkan tab Absen ke semua sales" di settings.html, key `app_settings.absen_tab_enabled`)*: bukti kunjungan sales — pilih customer, GPS + reverse-geocode alamat (OpenStreetMap Nominatim, gratis) diambil begitu tab dibuka, foto di-ambil lalu di-stempel nama toko+alamat+jam langsung ke pixel canvas (nggak bisa dihapus tanpa keliatan diedit) sambil di-compress, submit → simpan ke `sales_visits` (`supabase_migration27.sql`) + foto ke Storage bucket privat `visit-photos`, lalu foto asli (bukan link) di-attach otomatis ke share sheet WhatsApp HP via Web Share API (`navigator.share`) berisi teks lokasi+jam — sales pilih grup/kontak tujuan sendiri (nggak ada nomor/grup tetap, karena Web Share API cuma bisa buka share sheet umum, bukan target spesifik). Kalau browser nggak dukung file share (jarang, biasanya desktop), foto dibuka di tab baru via signed URL (30 hari) buat di-share manual. Jam yang tercatat di database pakai `default now()` server (bukan jam device) sebagai sumber kebenaran utama — stempel di foto pakai jam device, jadi kalau beda jauh dari jam server itu tanda kecurigaan. Thumbnail foto (signed URL, expired 1 jam, di-generate ulang tiap load — cuma buat foto di halaman yang lagi ditampilkan) juga tampil di tabel "Riwayat Kunjungan" `laporan-sales.html`, dengan pagination 10 per halaman.
 
 ### retur.html

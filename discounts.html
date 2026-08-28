@@ -136,6 +136,7 @@
             <thead>
               <tr>
                 <th>Target</th>
+                <th>Customer</th>
                 <th>Deskripsi</th>
                 <th style="text-align:center">Min. Qty</th>
                 <th style="text-align:right">Min. Pembelian</th>
@@ -145,7 +146,7 @@
               </tr>
             </thead>
             <tbody id="rules-table">
-              <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+              <tr><td colspan="8" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
             </tbody>
           </table>
         </div>
@@ -235,6 +236,14 @@
       </div>
 
       <div class="form-group">
+        <label>Khusus Customer <span class="text-muted" style="font-weight:400">(opsional)</span></label>
+        <select id="rule-customer">
+          <option value="">— Semua Customer (aturan umum) —</option>
+        </select>
+        <div class="form-hint">Kosongkan = berlaku buat semua toko. Diisi = cuma berlaku buat toko ini (diprioritaskan di atas aturan umum kalau sama-sama cocok).</div>
+      </div>
+
+      <div class="form-group">
         <label>Deskripsi <span class="text-muted" style="font-weight:400">(opsional)</span></label>
         <input type="text" id="rule-description" placeholder="Cth: 6 Lusin ke atas, Pembelian ≥ Rp 100.000">
       </div>
@@ -243,9 +252,9 @@
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:10px">Syarat Berlaku (opsional — isi salah satu atau keduanya)</div>
         <div class="form-row" style="margin-bottom:0">
           <div class="form-group mb-0">
-            <label id="min-qty-label">Min. Qty (pcs)</label>
-            <input type="number" id="rule-min-qty" value="0" min="0" placeholder="0">
-            <div class="form-hint" id="min-qty-hint">0 = tanpa syarat qty</div>
+            <label id="min-qty-label">Min. Qty (lusin)</label>
+            <input type="number" id="rule-min-qty" value="0" min="0" step="0.5" placeholder="0">
+            <div class="form-hint" id="min-qty-hint">0 = tanpa syarat qty. Contoh: 6 = 6 lusin (72 pcs)</div>
           </div>
           <div class="form-group mb-0">
             <label>Min. Nilai Pembelian (Rp)</label>
@@ -313,6 +322,8 @@
   let productSelect      = null;  // TomSelect untuk rule-product (single)
   let groupSelect        = null;  // TomSelect untuk rule-group (single)
   let groupProductsSelect = null; // TomSelect untuk group-products (multi)
+  let customerSelect     = null;  // TomSelect untuk rule-customer (single, opsional)
+  let allCustomers       = [];
 
   const handleSearch = debounce(() => renderRules(), 300);
 
@@ -320,7 +331,17 @@
     const auth = await requireAdmin();
     if (!auth) return;
     updateSidebarUser(auth.profile);
-    await Promise.all([loadProducts(), loadGroups(), loadRules()]);
+    await Promise.all([loadProducts(), loadGroups(), loadCustomers(), loadRules()]);
+  }
+
+  async function loadCustomers() {
+    const { data } = await supabase.from('customers').select('id,name,store_name').order('name');
+    allCustomers = data || [];
+    const selCust = document.getElementById('rule-customer');
+    selCust.innerHTML = '<option value="">— Semua Customer (aturan umum) —</option>' +
+      allCustomers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}${c.store_name ? ' — ' + escapeHtml(c.store_name) : ''}</option>`).join('');
+    if (customerSelect) { try { customerSelect.destroy(); } catch(e){} }
+    customerSelect = new TomSelect(selCust, { placeholder: '— Semua Customer (aturan umum) —', maxOptions: 300, dropdownParent: 'body' });
   }
 
   /* ─── PRODUK ─────────────────────────────────────── */
@@ -491,7 +512,7 @@
   async function loadRules() {
     const { data, error } = await supabase
       .from('product_discount_rules')
-      .select('*, products(name), discount_groups(name)')
+      .select('*, products(name), discount_groups(name), customers(name, store_name)')
       .order('created_at', { ascending: false });
     if (error) { showToast('Gagal memuat aturan diskon', 'error'); return; }
     allRules = data || [];
@@ -518,7 +539,7 @@
     const tbody = document.getElementById('rules-table');
 
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">🏷️</div><h4>Belum ada aturan diskon</h4><p>Klik <strong>+ Tambah Aturan Diskon</strong> untuk mulai.</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🏷️</div><h4>Belum ada aturan diskon</h4><p>Klik <strong>+ Tambah Aturan Diskon</strong> untuk mulai.</p></div></td></tr>`;
       return;
     }
 
@@ -533,15 +554,20 @@
         : `<span class="badge badge-disc-nom">${formatCurrency(r.discount_value)}/pcs</span>`;
 
       const minQtyLabel = isGroup ? 'Total grup' : '';
-      const minQty  = r.min_qty   > 0 ? `${r.min_qty} pcs${minQtyLabel ? ' <span style="font-size:10px;color:#94a3b8">(' + minQtyLabel + ')</span>' : ''}` : '<span class="text-muted">—</span>';
+      const minQtyLusin = r.min_qty > 0 ? (r.min_qty / 12) : 0;
+      const minQty  = r.min_qty   > 0 ? `${minQtyLusin % 1 === 0 ? minQtyLusin : minQtyLusin.toFixed(1)} lsn${minQtyLabel ? ' <span style="font-size:10px;color:#94a3b8">(' + minQtyLabel + ')</span>' : ''}` : '<span class="text-muted">—</span>';
       const minAmt  = r.min_amount > 0 ? formatCurrency(r.min_amount) : '<span class="text-muted">—</span>';
       const status  = r.is_active
         ? '<span class="badge badge-success">Aktif</span>'
         : '<span class="badge badge-gray">Nonaktif</span>';
+      const customerCell = r.customer_id
+        ? `<span class="badge" style="background:#fee2e2;color:#991b1b">🏪 ${escapeHtml(r.customers?.name || '—')}</span>`
+        : '<span class="text-muted" style="font-size:12px">Semua</span>';
 
       return `
         <tr style="${!r.is_active ? 'opacity:.55;' : ''}">
           <td>${targetCell}</td>
+          <td>${customerCell}</td>
           <td>${r.description ? escapeHtml(r.description) : '<span class="text-muted">—</span>'}</td>
           <td style="text-align:center">${minQty}</td>
           <td style="text-align:right">${minAmt}</td>
@@ -574,10 +600,10 @@
     document.getElementById('target-hint').textContent = isGroup
       ? 'Diskon berlaku jika total qty semua varian dalam grup memenuhi syarat.'
       : 'Diskon berlaku jika qty produk ini memenuhi syarat.';
-    document.getElementById('min-qty-label').textContent = isGroup ? 'Min. Qty Total Grup (pcs)' : 'Min. Qty (pcs)';
+    document.getElementById('min-qty-label').textContent = isGroup ? 'Min. Qty Total Grup (lusin)' : 'Min. Qty (lusin)';
     document.getElementById('min-qty-hint').textContent  = isGroup
-      ? '0 = tanpa syarat qty (dihitung total semua varian grup)'
-      : '0 = tanpa syarat qty';
+      ? '0 = tanpa syarat qty (dihitung total semua varian grup). Contoh: 6 = 6 lusin (72 pcs)'
+      : '0 = tanpa syarat qty. Contoh: 6 = 6 lusin (72 pcs)';
   }
 
   function onDiscTypeChange() {
@@ -600,6 +626,7 @@
     onTargetChange();
     if (productSelect) productSelect.setValue('');
     if (groupSelect)   groupSelect.setValue('');
+    if (customerSelect) customerSelect.setValue('');
     document.getElementById('rule-description').value = '';
     document.getElementById('rule-min-qty').value = '0';
     document.getElementById('rule-min-amount').value = '0';
@@ -623,9 +650,10 @@
 
     if (!isGroup && productSelect) productSelect.setValue(r.product_id || '');
     if (isGroup  && groupSelect)   groupSelect.setValue(r.group_id   || '');
+    if (customerSelect) customerSelect.setValue(r.customer_id || '');
 
     document.getElementById('rule-description').value = r.description || '';
-    document.getElementById('rule-min-qty').value     = r.min_qty || 0;
+    document.getElementById('rule-min-qty').value     = r.min_qty > 0 ? (r.min_qty / 12) : 0;
     document.getElementById('rule-min-amount').value  = r.min_amount > 0 ? Number(r.min_amount).toLocaleString('id-ID') : '0';
     document.querySelectorAll('input[name="rule-disc-type"]').forEach(rad => { rad.checked = rad.value === r.discount_type; });
     document.getElementById('rule-disc-value').value  = r.discount_type === 'nominal'
@@ -658,11 +686,14 @@
     if (discType === 'percent' && discValue > 100) { showToast('Persentase tidak boleh melebihi 100%', 'error'); return; }
     if (discType === 'percent' && discValue2 > 100) { showToast('Persentase tier 2 tidak boleh melebihi 100%', 'error'); return; }
 
+    const minQtyLusin = parseFloat(document.getElementById('rule-min-qty').value) || 0;
+
     const payload = {
       product_id:      productId,
       group_id:        groupId,
+      customer_id:     customerSelect?.getValue() || null,
       description:     document.getElementById('rule-description').value.trim() || null,
-      min_qty:         parseInt(document.getElementById('rule-min-qty').value) || 0,
+      min_qty:         Math.round(minQtyLusin * 12),
       min_amount:      parseFormattedNumber(document.getElementById('rule-min-amount').value) || 0,
       discount_type:   discType,
       discount_value:  discValue,
