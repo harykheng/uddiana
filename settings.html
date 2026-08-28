@@ -145,6 +145,22 @@
 
       <!-- TAB: ABSEN KUNJUNGAN -->
       <div id="tab-absen" style="display:none">
+        <div class="card" style="max-width:520px;margin-bottom:20px">
+          <div class="card-header"><h3>🧪 Status Fitur</h3></div>
+          <div class="card-body">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+              <div>
+                <div style="font-size:14px;font-weight:600;">Tampilkan tab Absen ke semua sales</div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Kalau OFF, tab Absen cuma kelihatan buat akun admin/super_admin (buat testing) — akun role sales belum lihat</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="toggle-absen-tab" onchange="saveAbsenTabToggle()">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <div class="card" style="max-width:520px">
           <div class="card-header"><h3>📍 Absen Kunjungan Sales</h3></div>
           <div class="card-body">
@@ -333,6 +349,17 @@
   async function loadAbsenWaNumber() {
     const { data } = await supabase.from('app_settings').select('value').eq('key', 'absen_wa_number').single();
     document.getElementById('absen-wa-number').value = data?.value || '';
+
+    const { data: toggle } = await supabase.from('app_settings').select('value').eq('key', 'absen_tab_enabled').single();
+    document.getElementById('toggle-absen-tab').checked = toggle?.value === 'true';
+  }
+
+  async function saveAbsenTabToggle() {
+    const val = document.getElementById('toggle-absen-tab').checked ? 'true' : 'false';
+    const { error } = await supabase.from('app_settings')
+      .upsert({ key: 'absen_tab_enabled', value: val, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) { showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
+    showToast(val === 'true' ? 'Tab Absen sekarang tampil buat semua sales ✅' : 'Tab Absen disembunyikan dari sales (masih kelihatan buat admin)', 'success');
   }
 
   async function saveAbsenWaNumber() {

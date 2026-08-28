@@ -42,3 +42,10 @@ create policy "Authenticated read visit photos" on storage.objects
 insert into app_settings (key, value)
 values ('absen_wa_number', '')
 on conflict (key) do nothing;
+
+-- Fitur masih tahap testing: default OFF untuk role sales (cuma kelihatan buat
+-- admin/super_admin), diaktifkan manual lewat toggle di halaman Pengaturan
+-- kalau sudah siap dipakai semua sales.
+insert into app_settings (key, value)
+values ('absen_tab_enabled', 'false')
+on conflict (key) do nothing;

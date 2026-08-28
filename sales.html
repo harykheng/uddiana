@@ -307,7 +307,7 @@
   <button class="tab-btn" onclick="switchTab('tab-history')">📋 Riwayat</button>
   <button class="tab-btn" onclick="switchTab('tab-products')">📦 Produk</button>
   <button class="tab-btn" onclick="switchTab('tab-customers')">👥 Customer</button>
-  <button class="tab-btn" onclick="switchTab('tab-absen')">📍 Absen</button>
+  <button class="tab-btn" id="tab-btn-absen" onclick="switchTab('tab-absen')" style="display:none">📍 Absen</button>
   <button class="tab-btn" onclick="switchTab('tab-wishlist')">⭐ Wishlist</button>
 </div>
 
@@ -635,6 +635,20 @@
     await Promise.all([loadProducts(), loadCustomers(), loadHistory(), loadOmzetBar()]);
     addItem();
     initAbsenSelect();
+    initAbsenTabVisibility();
+  }
+
+  // Fitur Absen masih tahap testing: default hanya kelihatan buat admin/super_admin
+  // (biar bisa dicoba dulu pakai akun sendiri), sales baru lihat kalau di-ON-kan
+  // lewat toggle di settings.html
+  async function initAbsenTabVisibility() {
+    const role = currentUser.profile.role;
+    let visible = role === 'admin' || role === 'super_admin';
+    if (!visible) {
+      const { data } = await supabase.from('app_settings').select('value').eq('key', 'absen_tab_enabled').single();
+      visible = data?.value === 'true';
+    }
+    if (visible) document.getElementById('tab-btn-absen').style.display = '';
   }
 
   async function loadOmzetBar() {
