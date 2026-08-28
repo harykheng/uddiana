@@ -1829,6 +1829,14 @@ function recalcTotal() {
     const file = e.target.files[0];
     if (!file) return;
 
+    const customerId = absenCustomerTS?.getValue();
+    const customer = customers.find(c => c.id === customerId);
+    if (!customer) {
+      showToast('Pilih toko/customer dulu sebelum ambil foto', 'warning');
+      e.target.value = '';
+      return;
+    }
+
     if (absenLat == null || absenLng == null) {
       showToast('Lokasi belum siap, tunggu sebentar lalu coba lagi', 'warning');
       requestAbsenLocation();
@@ -1838,7 +1846,8 @@ function recalcTotal() {
 
     try {
       const jam = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      const stampLines = [absenAddress || `${absenLat.toFixed(5)}, ${absenLng.toFixed(5)}`, jam];
+      const toko = customer.store_name ? `${customer.store_name} — ${customer.name}` : customer.name;
+      const stampLines = [toko, absenAddress || `${absenLat.toFixed(5)}, ${absenLng.toFixed(5)}`, jam];
       absenPhotoBlob = await compressImage(file, 900, 0.65, stampLines);
       document.getElementById('absen-photo-preview').src = URL.createObjectURL(absenPhotoBlob);
       document.getElementById('absen-photo-preview-wrap').style.display = 'block';
