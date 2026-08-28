@@ -1911,6 +1911,7 @@ function recalcTotal() {
     if (!customer || !absenPhotoBlob || absenLat == null || absenLng == null) return;
 
     btn.disabled = true; btn.textContent = 'Mengirim...';
+    showFullLoading('Mengirim absen kunjungan...');
 
     try {
       const path = `${currentUser.session.user.id}/${Date.now()}.jpg`;
@@ -1955,6 +1956,7 @@ function recalcTotal() {
     } catch (err) {
       showToast('Gagal kirim absen: ' + err.message, 'error');
     } finally {
+      hideFullLoading();
       btn.disabled = false; btn.textContent = 'Kirim Absen';
     }
   }
