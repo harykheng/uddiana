@@ -632,7 +632,7 @@
 
     document.getElementById('inv-date').value = new Date().toISOString().split('T')[0];
 
-    await Promise.all([loadProducts(), loadCustomers(), loadHistory(), loadOmzetBar()]);
+    await Promise.all([loadProducts(), loadCustomers(), loadHistory(), loadOmzetBar(), loadDiscountRules()]);
     addItem();
     initAbsenSelect();
     initAbsenTabVisibility();
@@ -729,6 +729,36 @@
   async function loadProducts() {
     const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit').eq('is_active', true).order('name'));
     products = data || [];
+  }
+
+  let discountRulesByProduct = {};
+
+  async function loadDiscountRules() {
+    // Cuma aturan per-produk (bukan grup) yang ditampilkan di sini — biar simpel,
+    // karena diskon grup baru relevan setelah tahu kombinasi produk di keranjang.
+    const { data } = await supabase
+      .from('product_discount_rules')
+      .select('product_id, description, min_qty, min_amount, discount_type, discount_value, discount_value2')
+      .eq('is_active', true)
+      .is('group_id', null);
+
+    discountRulesByProduct = {};
+    (data || []).forEach(r => {
+      if (!discountRulesByProduct[r.product_id]) discountRulesByProduct[r.product_id] = [];
+      discountRulesByProduct[r.product_id].push(r);
+    });
+    Object.values(discountRulesByProduct).forEach(rules => rules.sort((a, b) => (a.min_qty || 0) - (b.min_qty || 0)));
+  }
+
+  function formatDiscountLabel(rule) {
+    const syaratParts = [];
+    if (rule.min_qty > 0) syaratParts.push(`≥${rule.min_qty}pcs`);
+    if (rule.min_amount > 0) syaratParts.push(`≥${formatCurrency(rule.min_amount)}`);
+    const syarat = syaratParts.length ? syaratParts.join(' / ') : 'tanpa syarat min.';
+    const nilai = rule.discount_type === 'percent'
+      ? `${rule.discount_value}%${rule.discount_value2 > 0 ? '+' + rule.discount_value2 + '%' : ''}`
+      : `${formatCurrency(rule.discount_value)}/pcs`;
+    return `${nilai} (${syarat})`;
   }
 
   let customerTS = null;
@@ -1036,8 +1066,14 @@
         </tr></thead>
         <tbody>${pageItems.map(p => {
           const hargaLusin = Math.round((p.price * 12) / 100) * 100;
+          const rules = discountRulesByProduct[p.id] || [];
+          const discBadges = rules.length
+            ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:4px">${
+                rules.slice(0, 2).map(r => `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap;">🏷️ ${formatDiscountLabel(r)}</span>`).join('')
+              }${rules.length > 2 ? `<span style="font-size:10px;color:#94a3b8;">+${rules.length - 2} lagi</span>` : ''}</div>`
+            : '';
           return `<tr style="border-bottom:1px solid #f1f5f9;">
-            <td style="padding:9px 14px;">${escapeHtml(p.name)}</td>
+            <td style="padding:9px 14px;">${escapeHtml(p.name)}${discBadges}</td>
             <td style="text-align:center;padding:9px 8px;white-space:nowrap;">${p.stock_quantity} ${p.unit || 'pcs'}</td>
             <td style="text-align:right;padding:9px 14px;font-weight:600;white-space:nowrap;">${formatCurrency(p.price)}</td>
             <td style="text-align:right;padding:9px 14px;color:#64748b;white-space:nowrap;">${formatCurrency(hargaLusin)}</td>
