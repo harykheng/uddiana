@@ -164,16 +164,9 @@
         <div class="card" style="max-width:520px">
           <div class="card-header"><h3>📍 Absen Kunjungan Sales</h3></div>
           <div class="card-body">
-            <p style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
-              Saat sales kirim absen kunjungan (foto + lokasi) dari halaman mereka, pesan WhatsApp otomatis terbuka ke nomor ini.
+            <p style="font-size:12px;color:var(--text-muted);margin:0">
+              Saat sales kirim absen kunjungan, foto (dengan stempel alamat+jam) otomatis di-attach ke share sheet WhatsApp HP mereka — sales tinggal pilih grup/kontak tujuan sendiri (nggak bisa auto-set ke grup tertentu, cuma bisa untuk nomor pribadi lewat link, jadi ini emang harus dipilih manual tiap kirim).
             </p>
-            <div class="form-group mb-0">
-              <label>Nomor WhatsApp Tujuan</label>
-              <input type="text" id="absen-wa-number" placeholder="Contoh: 628123456789 (tanpa spasi/+/-)">
-            </div>
-          </div>
-          <div class="modal-footer" style="border-top:1px solid #e2e8f0;padding:16px 20px">
-            <button class="btn btn-primary" id="btn-save-absen-wa" onclick="saveAbsenWaNumber()">Simpan</button>
           </div>
         </div>
       </div>
@@ -343,13 +336,10 @@
     document.querySelectorAll('.tab-pill').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     if (id === 'tab-target') loadTargetTab();
-    if (id === 'tab-absen') loadAbsenWaNumber();
+    if (id === 'tab-absen') loadAbsenTabToggle();
   }
 
-  async function loadAbsenWaNumber() {
-    const { data } = await supabase.from('app_settings').select('value').eq('key', 'absen_wa_number').single();
-    document.getElementById('absen-wa-number').value = data?.value || '';
-
+  async function loadAbsenTabToggle() {
     const { data: toggle } = await supabase.from('app_settings').select('value').eq('key', 'absen_tab_enabled').single();
     document.getElementById('toggle-absen-tab').checked = toggle?.value === 'true';
   }
@@ -360,20 +350,6 @@
       .upsert({ key: 'absen_tab_enabled', value: val, updated_at: new Date().toISOString() }, { onConflict: 'key' });
     if (error) { showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
     showToast(val === 'true' ? 'Tab Absen sekarang tampil buat semua sales ✅' : 'Tab Absen disembunyikan dari sales (masih kelihatan buat admin)', 'success');
-  }
-
-  async function saveAbsenWaNumber() {
-    const btn = document.getElementById('btn-save-absen-wa');
-    const raw = document.getElementById('absen-wa-number').value.trim();
-    const number = raw.replace(/\D/g, '');
-    if (raw && !number) { showToast('Nomor WA tidak valid', 'error'); return; }
-
-    setLoading(btn, true);
-    const { error } = await supabase.from('app_settings')
-      .upsert({ key: 'absen_wa_number', value: number, updated_at: new Date().toISOString() }, { onConflict: 'key' });
-    setLoading(btn, false);
-    if (error) { showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
-    showToast('Nomor WA absen tersimpan ✅', 'success');
   }
 
   async function saveProfile() {

@@ -2061,26 +2061,29 @@ function recalcTotal() {
       });
       if (insErr) throw insErr;
 
-      const { data: signed } = await supabase.storage
-        .from('visit-photos')
-        .createSignedUrl(path, 2592000); // berlaku 30 hari
-      const { data: waSetting } = await supabase
-        .from('app_settings').select('value').eq('key', 'absen_wa_number').single();
-      const waNumber = (waSetting?.value || '').replace(/\D/g, '');
-
       const jam = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       const mapsUrl = `https://www.google.com/maps?q=${absenLat},${absenLng}`;
       const toko = customer.store_name ? `${customer.store_name} — ${customer.name}` : customer.name;
       const lokasiText = absenAddress ? `${absenAddress} (${mapsUrl})` : mapsUrl;
-      const message = `📍 Absen Kunjungan\nSales: ${currentUser.profile.name}\nToko: ${toko}\nWaktu: ${jam}\nLokasi: ${lokasiText}\nFoto: ${signed?.signedUrl || '-'}`;
+      const message = `📍 Absen Kunjungan\nSales: ${currentUser.profile.name}\nToko: ${toko}\nWaktu: ${jam}\nLokasi: ${lokasiText}`;
 
-      if (waNumber) {
-        window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(message)}`, '_blank');
+      showToast('Absen tersimpan ✅', 'success');
+
+      // Attach foto asli (bukan link) — buka share sheet HP, sales pilih grup/kontak
+      // WA sendiri (nggak bisa auto-pilih grup lewat wa.me, jadi ini bukan trade-off)
+      const file = new File([absenPhotoBlob], `absen-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], text: message });
+        } catch (shareErr) {
+          if (shareErr.name !== 'AbortError') showToast('Absen tersimpan, tapi gagal buka share: ' + shareErr.message, 'warning');
+        }
       } else {
-        showToast('Absen tersimpan. Nomor WA tujuan belum diatur di Pengaturan.', 'warning');
+        const { data: signed } = await supabase.storage.from('visit-photos').createSignedUrl(path, 2592000);
+        showToast('Browser ini tidak mendukung attach foto langsung — foto dibuka di tab baru buat di-share manual', 'warning');
+        if (signed?.signedUrl) window.open(signed.signedUrl, '_blank');
       }
 
-      showToast('Absen berhasil dikirim ✅', 'success');
       resetAbsenForm();
     } catch (err) {
       showToast('Gagal kirim absen: ' + err.message, 'error');
