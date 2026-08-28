@@ -284,11 +284,12 @@ git push -u origin feat/nama-fitur
 
 ### sales.html
 - Desain mobile-first dengan top nav (bukan sidebar)
-- 4 tab: Buat Faktur, Riwayat, Produk, Wishlist
+- Tab: Buat Faktur, Riwayat, Produk, Customer, Absen, Wishlist
 - Subtotal readonly (auto-round `Math.ceil` ke kelipatan 100)
 - Payment term: COD, 14 Hari, 15 Hari, 30 Hari
 - Simpan `customer_phone` & `customer_address` saat submit
 - Tab produk: search, scroll horizontal mobile
+- **Tab Absen** *(masih tahap testing — default cuma tampil buat admin/super_admin, di-ON-kan ke semua sales lewat toggle "Tampilkan tab Absen ke semua sales" di settings.html, key `app_settings.absen_tab_enabled`)*: bukti kunjungan sales — pilih customer, GPS + reverse-geocode alamat (OpenStreetMap Nominatim, gratis) diambil begitu tab dibuka, foto di-ambil lalu di-stempel alamat+jam langsung ke pixel canvas (nggak bisa dihapus tanpa keliatan diedit) sambil di-compress, submit → simpan ke `sales_visits` (`supabase_migration27.sql`) + foto ke Storage bucket privat `visit-photos`, lalu buka WhatsApp otomatis (nomor tujuan diatur di `settings.html`) berisi link lokasi & signed URL foto (berlaku 30 hari). Jam yang tercatat di database pakai `default now()` server (bukan jam device) sebagai sumber kebenaran utama — stempel di foto pakai jam device, jadi kalau beda jauh dari jam server itu tanda kecurigaan.
 
 ### retur.html
 - Print layout mirip invoice (3 kolom TTD)
@@ -330,5 +331,6 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration24.sql` | Sama seperti migration23 tapi untuk `decrease_stock_on_transfer` (Keluar Barang) |
 | `supabase_migration25.sql` | Perbaiki akurasi quantity_before/after di `increase_stock_on_purchase` (bukan bug oversell, cuma akurasi catatan) |
 | `supabase_migration26.sql` | View `public_catalog_products` (read-only, kolom aman saja) untuk katalog publik di domain terpisah (`diana-kosmetik-katalog`) |
+| `supabase_migration27.sql` | Tabel `sales_visits` + bucket Storage privat `visit-photos` untuk fitur Absen Kunjungan (foto+GPS+jam) di `sales.html` |
 
 
