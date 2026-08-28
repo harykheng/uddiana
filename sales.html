@@ -2061,13 +2061,21 @@ function recalcTotal() {
       });
       if (insErr) throw insErr;
 
+      // Absen udah tersimpan di titik ini — tutup loading & re-enable UI SEBELUM
+      // buka share sheet WA. Kalau overlay masih nyala pas HP pindah ke app WA
+      // (backgrounded selama entah berapa lama), pas balik ke browser tampilannya
+      // suka nyangkut/rusak. Bagian share ke WA cuma aksi tambahan, bukan bagian
+      // yang wajib ditunggu.
+      hideFullLoading();
+      btn.disabled = false; btn.textContent = 'Kirim Absen';
+      showToast('Absen tersimpan ✅', 'success');
+      resetAbsenForm();
+
       const jam = new Date().toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
       const mapsUrl = `https://www.google.com/maps?q=${absenLat},${absenLng}`;
       const toko = customer.store_name ? `${customer.store_name} — ${customer.name}` : customer.name;
       const lokasiText = absenAddress ? `${absenAddress} (${mapsUrl})` : mapsUrl;
       const message = `📍 Absen Kunjungan\nSales: ${currentUser.profile.name}\nToko: ${toko}\nWaktu: ${jam}\nLokasi: ${lokasiText}`;
-
-      showToast('Absen tersimpan ✅', 'success');
 
       // Attach foto asli (bukan link) — buka share sheet HP, sales pilih grup/kontak
       // WA sendiri (nggak bisa auto-pilih grup lewat wa.me, jadi ini bukan trade-off)
@@ -2083,8 +2091,6 @@ function recalcTotal() {
         showToast('Browser ini tidak mendukung attach foto langsung — foto dibuka di tab baru buat di-share manual', 'warning');
         if (signed?.signedUrl) window.open(signed.signedUrl, '_blank');
       }
-
-      resetAbsenForm();
     } catch (err) {
       showToast('Gagal kirim absen: ' + err.message, 'error');
     } finally {
