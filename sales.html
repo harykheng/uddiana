@@ -438,7 +438,7 @@
         <div id="absen-photo-preview-wrap" style="display:none;margin-bottom:10px">
           <img id="absen-photo-preview" style="width:100%;max-width:280px;border-radius:8px;border:1px solid var(--border)">
         </div>
-        <button type="button" class="btn btn-ghost btn-full" style="border:1.5px dashed var(--border);color:var(--primary)" onclick="document.getElementById('absen-photo-input').click()">📷 Ambil Foto</button>
+        <button type="button" class="btn btn-ghost btn-full" id="btn-absen-photo" style="border:1.5px dashed var(--border);color:var(--primary)" onclick="document.getElementById('absen-photo-input').click()" disabled>📷 Ambil Foto</button>
       </div>
 
       <div id="absen-gps-status" style="font-size:12px;color:#94a3b8;margin:8px 0 4px">📍 Lokasi belum diambil</div>
@@ -1864,6 +1864,8 @@ function recalcTotal() {
 
   function requestAbsenLocation() {
     const statusEl = document.getElementById('absen-gps-status');
+    const photoBtn = document.getElementById('btn-absen-photo');
+    photoBtn.disabled = true;
     if (!navigator.geolocation) {
       statusEl.textContent = '⚠️ HP/browser tidak mendukung GPS';
       return;
@@ -1876,13 +1878,14 @@ function recalcTotal() {
         absenLat = pos.coords.latitude;
         absenLng = pos.coords.longitude;
         absenAddress = null;
-        statusEl.textContent = `✅ Lokasi didapat (akurasi ~${Math.round(pos.coords.accuracy)}m) — mencari alamat...`;
+        statusEl.textContent = `📍 Lokasi didapat, mencari alamat...`;
         updateAbsenSubmitState();
 
         absenAddress = await reverseGeocodeAbsen(absenLat, absenLng);
         statusEl.textContent = absenAddress
           ? `✅ ${absenAddress}`
-          : `✅ Lokasi didapat (akurasi ~${Math.round(pos.coords.accuracy)}m)`;
+          : `✅ Lokasi didapat (akurasi ~${Math.round(pos.coords.accuracy)}m) — alamat tidak ditemukan, pakai koordinat`;
+        photoBtn.disabled = false;
         absenLocating = false;
       },
       () => {
@@ -1908,6 +1911,7 @@ function recalcTotal() {
     if (!customer || !absenPhotoBlob || absenLat == null || absenLng == null) return;
 
     btn.disabled = true; btn.textContent = 'Mengirim...';
+    showFullLoading('Mengirim absen kunjungan...');
 
     try {
       const path = `${currentUser.session.user.id}/${Date.now()}.jpg`;
@@ -1952,6 +1956,7 @@ function recalcTotal() {
     } catch (err) {
       showToast('Gagal kirim absen: ' + err.message, 'error');
     } finally {
+      hideFullLoading();
       btn.disabled = false; btn.textContent = 'Kirim Absen';
     }
   }

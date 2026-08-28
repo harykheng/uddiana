@@ -290,6 +290,7 @@
           <table>
             <thead>
               <tr>
+                <th>Foto</th>
                 <th>Tanggal</th>
                 <th>Jam</th>
                 <th>Sales</th>
@@ -298,7 +299,7 @@
               </tr>
             </thead>
             <tbody id="visits-table">
-              <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">Memuat...</td></tr>
+              <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px">Memuat...</td></tr>
             </tbody>
           </table>
         </div>
@@ -430,19 +431,27 @@
     const tbody = document.getElementById('visits-table');
     const { data, error } = await supabase
       .from('sales_visits')
-      .select('sales_name,customer_name,store_name,latitude,longitude,visited_at')
+      .select('sales_name,customer_name,store_name,latitude,longitude,visited_at,photo_path')
       .gte('visited_at', from)
       .lte('visited_at', to + 'T23:59:59')
       .order('visited_at', { ascending: false });
 
     if (error) {
       // Tabel belum ada / belum dijalankan migration-nya — sembunyikan diam-diam
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">Belum ada data absen (jalankan supabase_migration27.sql)</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px">Belum ada data absen (jalankan supabase_migration27.sql)</td></tr>`;
       return;
     }
     if (!data.length) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px">Belum ada kunjungan di periode ini</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px">Belum ada kunjungan di periode ini</td></tr>`;
       return;
+    }
+
+    // Generate signed URL sekaligus (bucket privat) buat semua foto di halaman ini
+    const paths = data.filter(v => v.photo_path).map(v => v.photo_path);
+    let urlMap = {};
+    if (paths.length) {
+      const { data: signedList } = await supabase.storage.from('visit-photos').createSignedUrls(paths, 3600);
+      (signedList || []).forEach(s => { if (s.signedUrl) urlMap[s.path] = s.signedUrl; });
     }
 
     tbody.innerHTML = data.map(v => {
@@ -451,7 +460,12 @@
       const jam = dt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
       const toko = v.store_name ? `${v.store_name} — ${v.customer_name}` : v.customer_name;
       const mapsUrl = `https://www.google.com/maps?q=${v.latitude},${v.longitude}`;
+      const photoUrl = urlMap[v.photo_path];
+      const photoCell = photoUrl
+        ? `<a href="${photoUrl}" target="_blank" rel="noopener"><img src="${photoUrl}" alt="Foto kunjungan" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border)"></a>`
+        : '—';
       return `<tr>
+        <td>${photoCell}</td>
         <td>${tanggal}</td>
         <td>${jam}</td>
         <td>${v.sales_name}</td>
