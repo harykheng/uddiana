@@ -1391,7 +1391,8 @@
 
     editInvoiceItems = data || []; // simpan untuk dipakai di saveEditInvoice
     document.getElementById('edit-invoice-items-body').innerHTML = '';
-    editInvoiceItems.forEach(it => addEditItemRow(it));
+    const sortedForEdit = editInvoiceItems.slice().sort((a, b) => (a.product_name || '').localeCompare(b.product_name || '', 'id'));
+    sortedForEdit.forEach(it => addEditItemRow(it));
     addEditItemRow(); // baris kosong untuk item baru
     recalcEditInvoiceTotal();
   }

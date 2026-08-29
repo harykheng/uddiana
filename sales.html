@@ -1642,8 +1642,9 @@ function recalcTotal() {
     });
     if (inv.customer_id) editCustomerTS.setValue(inv.customer_id);
 
-    // Isi item yang sudah ada
-    const items = inv.invoice_items || [];
+    // Isi item yang sudah ada, urut alfabetis
+    const items = (inv.invoice_items || []).slice()
+      .sort((a, b) => (a.products?.name || '').localeCompare(b.products?.name || '', 'id'));
     if (items.length === 0) {
       addEditItem();
     } else {
