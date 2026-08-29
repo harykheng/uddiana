@@ -515,10 +515,15 @@
 
   async function loadDiscountRules() {
     const [rulesRes, membersRes] = await Promise.all([
-      supabase.from('product_discount_rules').select('*').eq('is_active', true),
+      supabase.from('product_discount_rules')
+        .select('*, product_discount_rule_customers(customer_id)')
+        .eq('is_active', true),
       supabase.from('discount_group_members').select('group_id, product_id')
     ]);
-    discountRules        = rulesRes.data  || [];
+    discountRules = (rulesRes.data || []).map(r => ({
+      ...r,
+      customer_ids: (r.product_discount_rule_customers || []).map(x => x.customer_id),
+    }));
     discountGroupMembers = membersRes.data || [];
   }
 
@@ -858,12 +863,21 @@
     return result;
   }
 
+  // Aturan berlaku umum (nggak diikat ke customer manapun) atau khusus customer ini
+  function ruleAppliesToCustomer(r, customerId) {
+    return !r.customer_ids || !r.customer_ids.length || r.customer_ids.includes(customerId);
+  }
+  // Aturan ini secara spesifik menyasar customer ini (bukan aturan umum)
+  function ruleIsSpecificToCustomer(r, customerId) {
+    return !!(r.customer_ids && r.customer_ids.length && customerId && r.customer_ids.includes(customerId));
+  }
+
   // Urutkan aturan yang eligible: khusus customer ini menang di atas aturan umum,
   // baru dalam grup itu diurutkan min_qty tertinggi
   function sortRulesByCustomerThenQty(rules, customerId) {
     return rules.slice().sort((a, b) => {
-      const aCust = a.customer_id && a.customer_id === customerId ? 1 : 0;
-      const bCust = b.customer_id && b.customer_id === customerId ? 1 : 0;
+      const aCust = ruleIsSpecificToCustomer(a, customerId) ? 1 : 0;
+      const bCust = ruleIsSpecificToCustomer(b, customerId) ? 1 : 0;
       if (aCust !== bCust) return bCust - aCust;
       return (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0);
     });
@@ -874,7 +888,7 @@
 
     // 1. Cek aturan produk tunggal — cuma yang umum ATAU khusus customer ini
     const productEligible = sortRulesByCustomerThenQty((discountRules || [])
-      .filter(r => r.product_id === productId && !r.group_id && (!r.customer_id || r.customer_id === customerId))
+      .filter(r => r.product_id === productId && !r.group_id && ruleAppliesToCustomer(r, customerId))
       .filter(r => {
         const meetsQty = !r.min_qty || qty >= r.min_qty;
         const meetsAmt = !r.min_amount || (qty * price) >= Number(r.min_amount);
@@ -900,7 +914,7 @@
           .reduce((s, r) => s + r.qty * r.price, 0);
 
         const eligible = sortRulesByCustomerThenQty((discountRules || [])
-          .filter(r => r.group_id === groupId && (!r.customer_id || r.customer_id === customerId))
+          .filter(r => r.group_id === groupId && ruleAppliesToCustomer(r, customerId))
           .filter(r => {
             const meetsQty = !r.min_qty || groupQty >= r.min_qty;
             const meetsAmt = !r.min_amount || groupAmt >= Number(r.min_amount);
@@ -908,8 +922,8 @@
           }), customerId);
 
         if (eligible.length > 0) {
-          const curBestCust = groupBest?.customer_id && groupBest.customer_id === customerId;
-          const newCust = eligible[0].customer_id && eligible[0].customer_id === customerId;
+          const curBestCust = ruleIsSpecificToCustomer(groupBest || {}, customerId);
+          const newCust = ruleIsSpecificToCustomer(eligible[0], customerId);
           if (!groupBest || (newCust && !curBestCust) || (newCust === curBestCust && Number(eligible[0].min_qty) > Number(groupBest.min_qty))) {
             groupBest = eligible[0];
           }
@@ -975,7 +989,7 @@
           .reduce((s, r) => s + r.qty * r.price, 0);
 
         const eligible = sortRulesByCustomerThenQty((discountRules || [])
-          .filter(r => r.group_id === groupId && (!r.customer_id || r.customer_id === customerId))
+          .filter(r => r.group_id === groupId && ruleAppliesToCustomer(r, customerId))
           .filter(r => {
             const meetsQty = !r.min_qty || groupQty >= r.min_qty;
             const meetsAmt = !r.min_amount || groupAmt >= Number(r.min_amount);
@@ -983,8 +997,8 @@
           }), customerId);
 
         if (eligible.length > 0) {
-          const curBestCust = bestRule?.customer_id && bestRule.customer_id === customerId;
-          const newCust = eligible[0].customer_id && eligible[0].customer_id === customerId;
+          const curBestCust = ruleIsSpecificToCustomer(bestRule || {}, customerId);
+          const newCust = ruleIsSpecificToCustomer(eligible[0], customerId);
           if (!bestRule || (newCust && !curBestCust) || (newCust === curBestCust && Number(eligible[0].min_qty) > Number(bestRule.min_qty))) {
             bestRule = eligible[0];
           }
@@ -1247,7 +1261,7 @@
     const customerId = editInvoiceCustomerId || null;
 
     const productEligible = sortRulesByCustomerThenQty((discountRules || [])
-      .filter(r => r.product_id === productId && !r.group_id && (!r.customer_id || r.customer_id === customerId))
+      .filter(r => r.product_id === productId && !r.group_id && ruleAppliesToCustomer(r, customerId))
       .filter(r => {
         const meetsQty = !r.min_qty || qty >= r.min_qty;
         const meetsAmt = !r.min_amount || (qty * price) >= Number(r.min_amount);
@@ -1266,11 +1280,11 @@
         const groupQty = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty, 0);
         const groupAmt = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty * r.price, 0);
         const eligible = sortRulesByCustomerThenQty((discountRules || [])
-          .filter(r => r.group_id === groupId && (!r.customer_id || r.customer_id === customerId))
+          .filter(r => r.group_id === groupId && ruleAppliesToCustomer(r, customerId))
           .filter(r => (!r.min_qty || groupQty >= r.min_qty) && (!r.min_amount || groupAmt >= Number(r.min_amount))), customerId);
         if (eligible.length > 0) {
-          const curBestCust = groupBest?.customer_id && groupBest.customer_id === customerId;
-          const newCust = eligible[0].customer_id && eligible[0].customer_id === customerId;
+          const curBestCust = ruleIsSpecificToCustomer(groupBest || {}, customerId);
+          const newCust = ruleIsSpecificToCustomer(eligible[0], customerId);
           if (!groupBest || (newCust && !curBestCust) || (newCust === curBestCust && Number(eligible[0].min_qty) > Number(groupBest.min_qty))) {
             groupBest = eligible[0];
           }
@@ -1317,11 +1331,11 @@
         const groupQty = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty, 0);
         const groupAmt = allRowData.filter(r => groupProdIds.includes(r.productId)).reduce((s, r) => s + r.qty * r.price, 0);
         const eligible = sortRulesByCustomerThenQty((discountRules || [])
-          .filter(r => r.group_id === groupId && (!r.customer_id || r.customer_id === customerId))
+          .filter(r => r.group_id === groupId && ruleAppliesToCustomer(r, customerId))
           .filter(r => (!r.min_qty || groupQty >= r.min_qty) && (!r.min_amount || groupAmt >= Number(r.min_amount))), customerId);
         if (eligible.length > 0) {
-          const curBestCust = bestRule?.customer_id && bestRule.customer_id === customerId;
-          const newCust = eligible[0].customer_id && eligible[0].customer_id === customerId;
+          const curBestCust = ruleIsSpecificToCustomer(bestRule || {}, customerId);
+          const newCust = ruleIsSpecificToCustomer(eligible[0], customerId);
           if (!bestRule || (newCust && !curBestCust) || (newCust === curBestCust && Number(eligible[0].min_qty) > Number(bestRule.min_qty))) {
             bestRule = eligible[0];
           }

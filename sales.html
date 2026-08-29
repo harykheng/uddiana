@@ -738,12 +738,13 @@
     // karena diskon grup baru relevan setelah tahu kombinasi produk di keranjang.
     const { data } = await supabase
       .from('product_discount_rules')
-      .select('product_id, customer_id, description, min_qty, min_amount, discount_type, discount_value, discount_value2')
+      .select('product_id, description, min_qty, min_amount, discount_type, discount_value, discount_value2, product_discount_rule_customers(customer_id)')
       .eq('is_active', true)
       .is('group_id', null);
 
     discountRulesByProduct = {};
-    (data || []).forEach(r => {
+    (data || []).forEach(raw => {
+      const r = { ...raw, customer_ids: (raw.product_discount_rule_customers || []).map(x => x.customer_id) };
       if (!discountRulesByProduct[r.product_id]) discountRulesByProduct[r.product_id] = [];
       discountRulesByProduct[r.product_id].push(r);
     });
@@ -764,16 +765,23 @@
   // Cari aturan diskon yang syaratnya (min_qty/min_amount) sudah terpenuhi oleh qty
   // saat ini, lalu hitung harga satuan setelah diskon. Prioritas: aturan khusus
   // customer yang lagi dipilih menang di atas aturan umum, baru min_qty tertinggi.
+  function ruleAppliesToCustomer(r, customerId) {
+    return !r.customer_ids || !r.customer_ids.length || r.customer_ids.includes(customerId);
+  }
+  function ruleIsSpecificToCustomer(r, customerId) {
+    return !!(r.customer_ids && r.customer_ids.length && customerId && r.customer_ids.includes(customerId));
+  }
+
   function computeEffectivePrice(productId, basePrice, qty, customerId) {
     const rules = (discountRulesByProduct[productId] || [])
-      .filter(r => !r.customer_id || r.customer_id === customerId);
+      .filter(r => ruleAppliesToCustomer(r, customerId));
     const eligible = rules.filter(r => {
       const meetsQty = !r.min_qty || qty >= r.min_qty;
       const meetsAmt = !r.min_amount || (qty * basePrice) >= Number(r.min_amount);
       return meetsQty && meetsAmt;
     }).sort((a, b) => {
-      const aCust = a.customer_id && a.customer_id === customerId ? 1 : 0;
-      const bCust = b.customer_id && b.customer_id === customerId ? 1 : 0;
+      const aCust = ruleIsSpecificToCustomer(a, customerId) ? 1 : 0;
+      const bCust = ruleIsSpecificToCustomer(b, customerId) ? 1 : 0;
       if (aCust !== bCust) return bCust - aCust;
       return (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0);
     });
@@ -803,10 +811,10 @@
     const badgesEl = row.querySelector('.item-disc-badges');
     if (badgesEl) {
       // Cuma tampilin aturan yang relevan buat customer ini (umum + khusus toko ini)
-      const rules = (discountRulesByProduct[productId] || []).filter(r => !r.customer_id || r.customer_id === customerId);
+      const rules = (discountRulesByProduct[productId] || []).filter(r => ruleAppliesToCustomer(r, customerId));
       badgesEl.innerHTML = rules.map(r => {
         const active = rule && r === rule;
-        const label = r.customer_id ? `🏪 ${formatDiscountLabel(r)}` : formatDiscountLabel(r);
+        const label = ruleIsSpecificToCustomer(r, customerId) ? `🏪 ${formatDiscountLabel(r)}` : formatDiscountLabel(r);
         return `<span style="display:inline-block;background:${active ? '#dcfce7' : '#fef3c7'};color:${active ? '#166534' : '#92400e'};font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;">${active ? '✅' : '🏷️'} ${label}</span>`;
       }).join('');
     }
@@ -1127,7 +1135,7 @@
           const hargaLusin = Math.round((p.price * 12) / 100) * 100;
           // Cuma aturan umum (bukan khusus toko) yang ditampilkan di list browsing ini —
           // aturan khusus toko baru relevan & muncul setelah customer dipilih di form faktur
-          const rules = (discountRulesByProduct[p.id] || []).filter(r => !r.customer_id);
+          const rules = (discountRulesByProduct[p.id] || []).filter(r => !r.customer_ids || !r.customer_ids.length);
           const discBadges = rules.length
             ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:4px">${
                 rules.slice(0, 2).map(r => `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:10px;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap;">🏷️ ${formatDiscountLabel(r)}</span>`).join('')
