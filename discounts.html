@@ -236,11 +236,9 @@
       </div>
 
       <div class="form-group">
-        <label>Khusus Customer <span class="text-muted" style="font-weight:400">(opsional)</span></label>
-        <select id="rule-customer">
-          <option value="">— Semua Customer (aturan umum) —</option>
-        </select>
-        <div class="form-hint">Kosongkan = berlaku buat semua toko. Diisi = cuma berlaku buat toko ini (diprioritaskan di atas aturan umum kalau sama-sama cocok).</div>
+        <label>Khusus Customer <span class="text-muted" style="font-weight:400">(opsional, bisa pilih beberapa)</span></label>
+        <select id="rule-customer" multiple></select>
+        <div class="form-hint">Kosongkan = berlaku buat semua toko. Diisi 1 atau lebih = cuma berlaku buat toko-toko itu (diprioritaskan di atas aturan umum kalau sama-sama cocok).</div>
       </div>
 
       <div class="form-group">
@@ -335,19 +333,23 @@
   }
 
   async function loadCustomers() {
-    const { data } = await supabase.from('customers').select('id,name,store_name').order('name');
+    const { data } = await fetchAll(() => supabase.from('customers').select('id,name,store_name').order('name'));
     allCustomers = data || [];
     const selCust = document.getElementById('rule-customer');
-    selCust.innerHTML = '<option value="">— Semua Customer (aturan umum) —</option>' +
-      allCustomers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}${c.store_name ? ' — ' + escapeHtml(c.store_name) : ''}</option>`).join('');
+    selCust.innerHTML = allCustomers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}${c.store_name ? ' — ' + escapeHtml(c.store_name) : ''}</option>`).join('');
     if (customerSelect) { try { customerSelect.destroy(); } catch(e){} }
-    customerSelect = new TomSelect(selCust, { placeholder: '— Semua Customer (aturan umum) —', maxOptions: 300, dropdownParent: 'body' });
+    customerSelect = new TomSelect(selCust, {
+      plugins: ['remove_button'],
+      placeholder: '— Semua Customer (aturan umum) —',
+      maxOptions: 300,
+      dropdownParent: 'body',
+    });
   }
 
   /* ─── PRODUK ─────────────────────────────────────── */
 
   async function loadProducts() {
-    const { data } = await supabase.from('products').select('id,name').eq('is_active', true).order('name');
+    const { data } = await fetchAll(() => supabase.from('products').select('id,name').eq('is_active', true).order('name'));
     allProducts = data || [];
 
     // rule-product select (single)
@@ -512,10 +514,13 @@
   async function loadRules() {
     const { data, error } = await supabase
       .from('product_discount_rules')
-      .select('*, products(name), discount_groups(name), customers(name, store_name)')
+      .select('*, products(name), discount_groups(name), product_discount_rule_customers(customer_id, customers(name, store_name))')
       .order('created_at', { ascending: false });
     if (error) { showToast('Gagal memuat aturan diskon', 'error'); return; }
-    allRules = data || [];
+    allRules = (data || []).map(r => ({
+      ...r,
+      customer_ids: (r.product_discount_rule_customers || []).map(x => x.customer_id),
+    }));
     renderRules();
   }
 
@@ -560,8 +565,11 @@
       const status  = r.is_active
         ? '<span class="badge badge-success">Aktif</span>'
         : '<span class="badge badge-gray">Nonaktif</span>';
-      const customerCell = r.customer_id
-        ? `<span class="badge" style="background:#fee2e2;color:#991b1b">🏪 ${escapeHtml(r.customers?.name || '—')}</span>`
+      const customerNames = (r.product_discount_rule_customers || []).map(x => x.customers?.name).filter(Boolean);
+      const customerCell = customerNames.length
+        ? (customerNames.length <= 2
+            ? customerNames.map(n => `<span class="badge" style="background:#fee2e2;color:#991b1b;margin:1px">🏪 ${escapeHtml(n)}</span>`).join(' ')
+            : `<span class="badge" style="background:#fee2e2;color:#991b1b" title="${escapeHtml(customerNames.join(', '))}">🏪 ${customerNames.length} toko</span>`)
         : '<span class="text-muted" style="font-size:12px">Semua</span>';
 
       return `
@@ -626,7 +634,7 @@
     onTargetChange();
     if (productSelect) productSelect.setValue('');
     if (groupSelect)   groupSelect.setValue('');
-    if (customerSelect) customerSelect.setValue('');
+    if (customerSelect) customerSelect.setValue([]);
     document.getElementById('rule-description').value = '';
     document.getElementById('rule-min-qty').value = '0';
     document.getElementById('rule-min-amount').value = '0';
@@ -650,7 +658,7 @@
 
     if (!isGroup && productSelect) productSelect.setValue(r.product_id || '');
     if (isGroup  && groupSelect)   groupSelect.setValue(r.group_id   || '');
-    if (customerSelect) customerSelect.setValue(r.customer_id || '');
+    if (customerSelect) customerSelect.setValue(r.customer_ids || []);
 
     document.getElementById('rule-description').value = r.description || '';
     document.getElementById('rule-min-qty').value     = r.min_qty > 0 ? (r.min_qty / 12) : 0;
@@ -687,11 +695,11 @@
     if (discType === 'percent' && discValue2 > 100) { showToast('Persentase tier 2 tidak boleh melebihi 100%', 'error'); return; }
 
     const minQtyLusin = parseFloat(document.getElementById('rule-min-qty').value) || 0;
+    const customerIds = customerSelect?.getValue() || [];
 
     const payload = {
       product_id:      productId,
       group_id:        groupId,
-      customer_id:     customerSelect?.getValue() || null,
       description:     document.getElementById('rule-description').value.trim() || null,
       min_qty:         Math.round(minQtyLusin * 12),
       min_amount:      parseFormattedNumber(document.getElementById('rule-min-amount').value) || 0,
@@ -702,12 +710,26 @@
     };
 
     setLoading(btn, true);
-    let error;
+    let error, ruleId = id;
     if (id) {
       ({ error } = await supabase.from('product_discount_rules').update(payload).eq('id', id));
     } else {
-      ({ error } = await supabase.from('product_discount_rules').insert(payload));
+      const { data, error: insErr } = await supabase.from('product_discount_rules').insert(payload).select('id').single();
+      error = insErr;
+      ruleId = data?.id;
     }
+
+    if (!error && ruleId) {
+      // Sinkronkan daftar customer: hapus yang lama, insert yang baru
+      const { error: delErr } = await supabase.from('product_discount_rule_customers').delete().eq('rule_id', ruleId);
+      if (delErr) error = delErr;
+      else if (customerIds.length) {
+        const { error: custErr } = await supabase.from('product_discount_rule_customers')
+          .insert(customerIds.map(cid => ({ rule_id: ruleId, customer_id: cid })));
+        if (custErr) error = custErr;
+      }
+    }
+
     setLoading(btn, false);
 
     if (error) { showToast('Gagal simpan: ' + error.message, 'error'); return; }

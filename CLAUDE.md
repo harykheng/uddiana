@@ -283,7 +283,7 @@ git push -u origin feat/nama-fitur
 - Syarat berlaku: `min_qty` (disimpan dalam pcs, tapi **input & tampilan di UI dalam lusin** — 1 lusin = 12 pcs, dikonversi otomatis) dan/atau `min_amount` (Rp) — 0 = tanpa syarat
 - Tipe diskon: `percent` (%) atau `nominal` (Rp per pcs)
 - Diskon bertingkat opsional (`discount_value2`, migration29) khusus tipe `percent` — contoh "20%+5%", ikut ke-auto-apply ke faktur (tier 1 & 2)
-- **Diskon khusus customer** (`customer_id`, migration30) — opsional, kosong = berlaku semua toko (aturan umum), diisi = cuma berlaku toko itu. Kalau ada aturan umum & khusus toko yang sama-sama cocok, yang khusus toko diprioritaskan (di `invoices.html` & `sales.html`)
+- **Diskon khusus customer** (tabel junction `product_discount_rule_customers`, migration30+31) — opsional, bisa pilih beberapa toko sekaligus per aturan. Kosong = berlaku semua toko (aturan umum), diisi 1+ toko = cuma berlaku toko-toko itu. Kalau ada aturan umum & khusus toko yang sama-sama cocok, yang khusus toko diprioritaskan (di `invoices.html` & `sales.html`)
 - Jika beberapa rule cocok untuk satu produk → prioritas: khusus customer dulu, baru `min_qty` tertinggi
 - Accessible: admin + super_admin (`requireAdmin()`)
 
@@ -341,5 +341,7 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration27.sql` | Tabel `sales_visits` + bucket Storage privat `visit-photos` untuk fitur Absen Kunjungan (foto+GPS+jam) di `sales.html` |
 | `supabase_migration28.sql` | Kolom `item_discount2` di `invoice_items` — diskon bertingkat per item (contoh 20%+5%) di `invoices.html` |
 | `supabase_migration29.sql` | Kolom `discount_value2` di `product_discount_rules` — diskon bertingkat di aturan diskon `discounts.html`, ikut ke-auto-apply ke faktur |
+| `supabase_migration30.sql` | (Digantikan migration31) Kolom `customer_id` tunggal di `product_discount_rules` — diskon khusus 1 customer |
+| `supabase_migration31.sql` | Ganti pendekatan migration30 jadi tabel junction `product_discount_rule_customers` (many-to-many) — 1 aturan diskon bisa berlaku buat beberapa toko sekaligus. Kolom `customer_id` lama di-drop |
 
 
