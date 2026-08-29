@@ -57,14 +57,8 @@
     .pay-sisa-box .sisa-label { color:#92400e; font-weight:600; }
     .pay-sisa-box.lunas .sisa-label { color:#166534; }
 
-    /* ── PRINT SETUP: Epson LQ-310, Continuous Form ──
-       Lebar 8.5in = Letter width, terbukti tidak terpotong di LQ-310.
-       Tinggi 5.43in = 13.8cm, panjang aktual 1 lembar kertas continuous form
-       yang dipakai (diukur dari perforasi ke perforasi, di luar lubang sprocket)
-       supaya batas halaman pas sama titik robek kertas — tidak perlu geser manual.
-       Di driver printer: buat custom paper 8.5in x 5.43in. */
     @page {
-      size: 8.5in 5.43in;
+      size: 8.5in 11.5in;
       margin: 0.3in 0.4in;
     }
     @media print {
