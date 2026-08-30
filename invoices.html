@@ -1362,6 +1362,8 @@
   let editInvoiceItems = [];
   let editTomSelectInstances = {};
   let editInvoiceCustomerId = null;
+  // Salinan daftar produk khusus modal edit: stok LIVE + qty yang sudah dipakai faktur ini.
+  let editProducts = [];
 
   async function openEditInvoice(id) {
     const inv = allInvoices.find(x => x.id === id);
@@ -1386,6 +1388,30 @@
     if (error) { showToast('Gagal memuat item faktur: ' + error.message, 'error'); return; }
 
     editInvoiceItems = data || []; // simpan untuk dipakai di saveEditInvoice
+
+    // Stok yang relevan untuk modal ini = stok LIVE + qty yang sudah dipakai faktur ini.
+    // Tanpa penambahan balik itu, kolom Stok menampilkan sisa SETELAH dipotong faktur ini
+    // sendiri: produk yang stoknya habis terserap faktur ini tampil 0, dan admin mengira
+    // fakturnya tidak akan bisa disimpan. Angka live sengaja diambil ulang dari database,
+    // bukan dari cache `products` yang bisa sudah basi kalau halaman lama dibuka.
+    // sales.html sudah melakukan ini sejak awal; invoices.html belum.
+    const ownedByProduct = {};
+    editInvoiceItems.forEach(it => {
+      if (!it.product_id) return;
+      ownedByProduct[it.product_id] = (ownedByProduct[it.product_id] || 0) + Number(it.quantity);
+    });
+    const ownedIds = Object.keys(ownedByProduct);
+    const liveStockById = {};
+    if (ownedIds.length) {
+      const { data: liveProducts } = await supabase
+        .from('products').select('id,stock_quantity').in('id', ownedIds);
+      (liveProducts || []).forEach(p => { liveStockById[p.id] = p.stock_quantity; });
+    }
+    editProducts = products.map(p => ({
+      ...p,
+      stock_quantity: (liveStockById[p.id] ?? p.stock_quantity) + (ownedByProduct[p.id] || 0),
+    }));
+
     document.getElementById('edit-invoice-items-body').innerHTML = '';
     const sortedForEdit = editInvoiceItems.slice().sort((a, b) => (a.product_name || '').localeCompare(b.product_name || '', 'id'));
     sortedForEdit.forEach(it => addEditItemRow(it));
@@ -1407,10 +1433,10 @@
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
           <option value="">-- Pilih Produk --</option>
-          ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-stock="${p.stock_quantity}"${existingItem && p.id===existingItem.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+          ${editProducts.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-stock="${p.stock_quantity}"${existingItem && p.id===existingItem.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
         </select>
       </td>
-      <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingItem ? (products.find(p=>p.id===existingItem.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingItem ? (editProducts.find(p=>p.id===existingItem.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eqty-${id}" value="${existingItem ? existingItem.quantity : '1'}" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onEditQtyChange('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eprice-${id}" value="${existingItem ? Number(existingItem.price||0).toLocaleString('id-ID') : '0'}" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditInvoiceRow('${id}')"></td>
       <td style="padding:5px 6px">
@@ -1546,22 +1572,28 @@
       } else {
         sub = Math.max(0, Math.ceil((qty * Math.max(0, price - disc)) / 100) * 100);
       }
-      const prod  = products.find(p => p.id === sel.value);
+      const prod  = editProducts.find(p => p.id === sel.value);
       const cost  = prod?.cost || 0;
       const stockEl = tr.querySelector('[id^="estock-"]');
       const stockAvail = parseInt(stockEl?.value || '0');
       const originalQty = parseInt(tr.dataset.originalQty || '0');
+      // Tidak dipakai untuk validasi stok lagi (lihat catatan di bawah), tapi masih
+      // dibutuhkan saveEditInvoice untuk memilih cabang update vs insert item.
       const isSameProduct = tr.dataset.originalProductId === sel.value;
 
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); valid = false; break; }
 
-      // Stok cukup untuk penambahan qty (qty baru - qty lama, hanya untuk produk sama).
-      // Item yang qty-nya persis sama dengan qty asli dilewati total dari pengecekan ini
-      // (bukan cuma qtyDiff=0 lolos "kebetulan") — supaya item yang tidak diubah tidak
-      // pernah bisa ke-block gara-gara stok produk itu sendiri sudah habis dipakai faktur ini.
-      const qtyDiff = isSameProduct ? qty - originalQty : qty;
-      if (qtyDiff !== 0 && qtyDiff > stockAvail) {
-        showToast(`Stok "${prod?.name}" tidak cukup (tersedia: ${stockAvail}, butuh tambahan: ${qtyDiff}, qty asli: ${originalQty} → qty baru: ${qty})`, 'error');
+      // stockAvail di sini sudah memuat qty yang dipakai faktur ini (lihat editProducts di
+      // openEditInvoice), jadi cukup dibandingkan langsung dengan qty barunya.
+      //
+      // Sebelumnya perbandingannya memakai selisih terhadap qty asli dan bergantung pada
+      // penanda isSameProduct. Akibatnya baris yang DIHAPUS lalu DITAMBAHKAN LAGI (atau
+      // ditambahkan lewat scan barcode) kehilangan penanda asalnya, dianggap item baru,
+      // lalu diperiksa terhadap stok yang sudah habis terserap faktur ini sendiri — ditolak
+      // padahal perubahan bersihnya nol. Validasi bersih per produk tetap ada di bawah,
+      // yang ini cuma pengecekan awal supaya pesannya muncul lebih cepat.
+      if (qty > stockAvail) {
+        showToast(`Stok "${prod?.name}" tidak cukup (tersedia untuk faktur ini: ${stockAvail}, diminta: ${qty}${originalQty ? `, qty asli: ${originalQty}` : ''})`, 'error');
         valid = false; break;
       }
 

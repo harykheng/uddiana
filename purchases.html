@@ -590,10 +590,75 @@
 
   async function cancelCurrentPo() {
     if (!currentPo) return;
+    const btn = document.getElementById('btn-cancel-po');
+    if (btn?.disabled) return;
     if (!showConfirm(`Batalkan PO ${currentPo.po.purchase_number}?\nStok yang sudah ditambahkan akan dikurangi kembali.`)) return;
+    setLoading(btn, true);
+
+    // Dulu tombol ini satu-satunya di halaman pembelian yang tidak punya penjagaan sesi
+    // opname, padahal Simpan PO (savePurchase), Hapus PO (deletePurchase) & Edit PO
+    // (saveEditPurchase) semuanya sudah punya.
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa batalkan PO — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      setLoading(btn, false);
+      return;
+    }
+
+    const poId = currentPo.po.id;
+    showFullLoading('Memeriksa stok...');
+
+    // Status live: kalau PO ini baru saja dibatalkan admin lain, trigger sudah jalan.
+    // Membatalkannya lagi tidak akan mengurangi stok dua kali (trigger mensyaratkan
+    // status lama belum 'cancelled'), tapi lebih baik dihentikan dengan pesan jelas.
+    const { data: livePo } = await supabase.from('purchases').select('status').eq('id', poId).single();
+    if (!livePo) { hideFullLoading(); setLoading(btn, false); showToast('PO tidak ditemukan', 'error'); return; }
+    if (livePo.status === 'cancelled') {
+      hideFullLoading(); setLoading(btn, false);
+      showToast('PO ini sudah dibatalkan sebelumnya', 'error');
+      closeModal('modal-view-po'); loadPurchases();
+      return;
+    }
+
+    // VALIDASI SEBELUM MEMBATALKAN — ini inti perbaikannya.
+    // Trigger restore_stock_on_purchase_cancel memakai GREATEST(0, stok - qty), jadi kalau
+    // barang dari PO ini sudah terjual, stok DIPAKSA ke nol dan selisihnya hilang diam-diam.
+    // Migration 21 cuma menambahkan catatan peringatan di stock_movements, tidak mencegahnya.
+    // Anehnya tombol Hapus PO di sebelahnya justru menolak dengan pesan jelas untuk kondisi
+    // yang sama — dua tombol bersebelahan, perilakunya berlawanan. Sekarang disamakan.
+    const { data: items } = await supabase
+      .from('purchase_items').select('product_id, product_name, quantity').eq('purchase_id', poId);
+
+    const needByProduct = {};
+    (items || []).forEach(it => {
+      if (!it.product_id) return;
+      needByProduct[it.product_id] = (needByProduct[it.product_id] || 0) + Number(it.quantity);
+    });
+    const productIds = Object.keys(needByProduct);
+
+    if (productIds.length) {
+      const { data: liveProducts, error: liveErr } = await supabase
+        .from('products').select('id,name,stock_quantity').in('id', productIds);
+      if (liveErr) { hideFullLoading(); setLoading(btn, false); showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); return; }
+
+      const stockById = {};
+      (liveProducts || []).forEach(p => { stockById[p.id] = p; });
+      for (const pid of productIds) {
+        const need  = needByProduct[pid];
+        const p     = stockById[pid];
+        const avail = p ? p.stock_quantity : 0;
+        if (need > avail) {
+          hideFullLoading(); setLoading(btn, false);
+          showToast(`Tidak bisa batalkan — stok "${p?.name || pid}" sudah terpakai (sisa: ${avail}, PO ini nambah: ${need}). Sesuaikan manual dulu lewat halaman Produk.`, 'error');
+          return;
+        }
+      }
+    }
+
     showFullLoading('Membatalkan PO & menyesuaikan stok...');
-    const { error } = await supabase.from('purchases').update({ status: 'cancelled' }).eq('id', currentPo.po.id);
+    const { error } = await supabase.from('purchases').update({ status: 'cancelled' }).eq('id', poId);
     hideFullLoading();
+    setLoading(btn, false);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('PO dibatalkan, stok dikembalikan');
     closeModal('modal-view-po');
