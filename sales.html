@@ -939,7 +939,7 @@
       else if (vstatus === 'approved') vbadge = `<span class="badge badge-success">Disetujui</span>`;
       else if (vstatus === 'rejected') vbadge = `<span class="badge badge-danger">Ditolak</span>`;
 
-      const canEdit = inv.verification_status === 'pending';
+      const canEdit = inv.verification_status === 'pending' && inv.status !== 'cancelled';
       return `<div class="invoice-item" onclick="showDetail('${inv.id}')">
         <div class="invoice-item-top">
           <div>
@@ -1600,6 +1600,13 @@ function recalcTotal() {
       showToast('Faktur ini tidak bisa diedit', 'error');
       return;
     }
+    // Faktur yang sudah dibatalkan admin tidak boleh masuk alur edit — lihat catatan
+    // panjang di saveEditInvoice(). Dicegat sejak awal supaya sales tidak terlanjur
+    // mengisi form lalu ditolak di akhir.
+    if (inv.status === 'cancelled') {
+      showToast('Faktur ini sudah dibatalkan admin, tidak bisa diedit lagi', 'error');
+      return;
+    }
 
     editingInvoiceId = id;
 
@@ -1793,6 +1800,34 @@ function recalcTotal() {
     if (opnameSesi?.length) {
       showToast(`Tidak bisa edit faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
       btn.disabled = false; btn.textContent = '💾 Simpan Perubahan';
+      return;
+    }
+
+    // Status diambil LIVE dari database, bukan dari cache allInvoices yang bisa sudah basi
+    // kalau admin membatalkan faktur ini sesudah halaman sales dimuat.
+    //
+    // Kenapa krusial: langkah 1 di bawah menyetel status ke 'cancelled' supaya trigger
+    // restore_stock_on_cancel mengembalikan stok. Tapi trigger itu cuma bekerja kalau
+    // status LAMA belum 'cancelled'. Untuk faktur yang sudah dibatalkan, stok TIDAK
+    // dikembalikan, sementara langkah 5 tetap memasukkan item baru yang memotong stok
+    // lewat trigger — hasilnya stok berkurang dua kali untuk satu faktur, tanpa peringatan.
+    const { data: liveInv, error: invErr } = await supabase
+      .from('invoices').select('status,verification_status').eq('id', editingInvoiceId).single();
+    if (invErr || !liveInv) {
+      showToast('Gagal cek status faktur terbaru: ' + (invErr?.message || 'faktur tidak ditemukan'), 'error');
+      btn.disabled = false; btn.textContent = '💾 Simpan Perubahan';
+      return;
+    }
+    if (liveInv.status === 'cancelled') {
+      showToast('Faktur ini sudah dibatalkan admin, tidak bisa diedit lagi', 'error');
+      btn.disabled = false; btn.textContent = '💾 Simpan Perubahan';
+      closeEditModal(); await loadHistory();
+      return;
+    }
+    if (liveInv.verification_status !== 'pending') {
+      showToast('Faktur ini sudah diproses admin, tidak bisa diedit lagi', 'error');
+      btn.disabled = false; btn.textContent = '💾 Simpan Perubahan';
+      closeEditModal(); await loadHistory();
       return;
     }
 
