@@ -372,6 +372,11 @@
         <p style="font-size:13px;color:var(--text-muted)">Kolom: <code>nama, sku <span style="font-weight:400">(opsional)</span>, kategori, satuan, harga_biasa, harga_shopee, harga_modal, stok, min_stok, deskripsi</code></p>
         <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()">📄 Download Template</button>
       </div>
+      <div style="padding:9px 12px;background:#eff6ff;border-radius:7px;font-size:12px;color:#1e40af;margin-bottom:12px">
+        ℹ️ Kolom <strong>stok</strong> hanya dipakai untuk produk <strong>baru</strong>. Produk dengan SKU yang sudah ada
+        akan diperbarui nama, kategori &amp; harganya saja — <strong>stoknya tidak ikut diubah</strong>.
+        Untuk mengubah stok, pakai tombol Sesuaikan Stok agar tercatat di riwayat.
+      </div>
       <div class="import-drop" id="import-drop" onclick="document.getElementById('import-file').click()"
            ondragover="event.preventDefault();this.classList.add('dragover')"
            ondragleave="this.classList.remove('dragover')"
@@ -1347,6 +1352,16 @@
     btn.disabled = true;
     btn.textContent = 'Menyiapkan data...';
 
+    // Import bisa menambah produk baru berikut stok awalnya — satu-satunya jalur stok di
+    // halaman ini yang dulu belum punya penjagaan sesi opname, padahal Simpan Produk &
+    // Sesuaikan Stok sudah punya.
+    const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+    if (opnameSesi?.length) {
+      showToast(`Tidak bisa import — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+      btn.disabled = false; btn.textContent = '⬆️ Import Sekarang';
+      return;
+    }
+
     let added = 0, updated = 0, errors = [];
     const CHUNK = 100; // batch size
 
@@ -1363,14 +1378,37 @@
       }
     }
 
-    // ── 2. Prepare semua payload + deduplikasi SKU ────────
+    // ── 2. Prepare payload, pisahkan UPDATE (SKU sudah ada) vs INSERT (produk baru) ──
+    // Dulu semuanya dijadikan satu lalu di-upsert. Dua masalah serius di pendekatan itu:
+    //
+    //   1. `usedSkus` diisi SELURUH produk yang sudah ada di database, lalu setiap SKU yang
+    //      cocok dianggap "sudah dipakai" dan diganti UDD-xxxx baru. Jadi baris CSV yang
+    //      seharusnya memperbarui produk lama justru masuk sebagai PRODUK BARU — satu barang
+    //      fisik jadi dua catatan, dan stoknya pecah di antara keduanya. Layar pratinjau
+    //      sendiri sudah menghitungnya sebagai "Update", jadi tidak ada tanda bahaya.
+    //
+    //   2. Payload selalu menyertakan stock_quantity, sehingga produk lama stoknya DITIMPA
+    //      angka dari file (kolom kosong → 0) tanpa satupun baris stock_movements. Stok
+    //      berubah tanpa jejak dan tidak muncul di Kartu Stok maupun Laporan Stok.
+    //
+    // Sekarang: SKU yang cocok benar-benar memperbarui produk lama dan stoknya TIDAK
+    // disentuh sama sekali (stok cuma boleh berubah lewat transaksi atau menu Sesuaikan
+    // Stok yang mencatat riwayat). Stok dari file hanya dipakai sebagai stok awal produk
+    // yang memang baru, dan itupun dicatat ke stock_movements.
     let skuCounter = 0;
     for (const p of allProducts) {
       const m = (p.sku || '').match(/^UDD-(\d+)$/i);
       if (m) skuCounter = Math.max(skuCounter, parseInt(m[1]));
     }
-    const usedSkus = new Set(allProducts.map(p => (p.sku || '').toLowerCase()));
-    const allPayloads = [];
+    // Peta SKU produk yang sudah ada — dipakai untuk MENGENALI update, bukan untuk menghindarinya.
+    const existingBySku = new Map();
+    for (const p of allProducts) {
+      if (p.sku) existingBySku.set(p.sku.toLowerCase(), p);
+    }
+    // Hanya untuk mencegah SKU kembar SESAMA baris di dalam file yang sama.
+    const seenInFile = new Set();
+    const updatePayloads = [];
+    const insertPayloads = [];
 
     for (const row of importRows) {
       try {
@@ -1384,50 +1422,88 @@
           sku = `UDD-${String(skuCounter).padStart(4, '0')}`;
         }
 
-        // Kalau SKU sudah dipakai dalam batch ini → generate baru
-        if (usedSkus.has(sku.toLowerCase())) {
+        // SKU yang sama muncul dua kali DI DALAM FILE INI → yang kedua diberi SKU baru.
+        // (Produk yang sudah ada di database sengaja TIDAK ikut dicek di sini.)
+        if (seenInFile.has(sku.toLowerCase())) {
           skuCounter++;
           sku = `UDD-${String(skuCounter).padStart(4, '0')}`;
         }
-        usedSkus.add(sku.toLowerCase());
+        seenInFile.add(sku.toLowerCase());
 
         const catId = row.kategori ? (catMap[row.kategori.toLowerCase().trim()] || null) : null;
-        allPayloads.push({
-          name:           nama,
+        const base = {
+          name:         nama,
           sku,
-          category_id:    catId,
-          unit:           row.satuan || 'pcs',
-          price:          parseFloat(row.harga_biasa)  || 0,
-          price_shopee:   parseFloat(row.harga_shopee) || 0,
-          cost:           parseFloat(row.harga_modal)  || 0,
-          stock_quantity: parseInt(row.stok)            || 0,
-          min_stock:      parseInt(row.min_stok)        || 0,
-          description:    row.deskripsi || null,
-          is_active:      true,
-        });
+          category_id:  catId,
+          unit:         row.satuan || 'pcs',
+          price:        parseFloat(row.harga_biasa)  || 0,
+          price_shopee: parseFloat(row.harga_shopee) || 0,
+          cost:         parseFloat(row.harga_modal)  || 0,
+          min_stock:    parseInt(row.min_stok)       || 0,
+          description:  row.deskripsi || null,
+        };
+
+        if (existingBySku.has(sku.toLowerCase())) {
+          // Produk lama: perbarui data katalognya saja. stock_quantity & is_active sengaja
+          // tidak dikirim supaya stok dan status arsip produk tidak ikut tertimpa.
+          updatePayloads.push(base);
+        } else {
+          insertPayloads.push({ ...base, stock_quantity: parseInt(row.stok) || 0, is_active: true });
+        }
       } catch(err) {
         errors.push({ nama: row.nama || '?', sku: row.sku || '—', reason: err.message });
       }
     }
 
-    // ── 3. Batch upsert semua (insert baru / update yg sudah ada) ──
-    const totalChunks = Math.ceil(allPayloads.length / CHUNK);
-    for (let c = 0; c < totalChunks; c++) {
-      const chunk = allPayloads.slice(c * CHUNK, (c + 1) * CHUNK);
-      btn.textContent = `Mengimpor ${Math.min((c+1)*CHUNK, allPayloads.length)}/${allPayloads.length}...`;
-      const { data: upserted, error } = await supabase
-        .from('products')
-        .upsert(chunk, { onConflict: 'sku', ignoreDuplicates: false })
-        .select('id');
+    // ── 3a. Perbarui produk lama (tanpa menyentuh stok) ──
+    const updChunks = Math.ceil(updatePayloads.length / CHUNK);
+    for (let c = 0; c < updChunks; c++) {
+      const chunk = updatePayloads.slice(c * CHUNK, (c + 1) * CHUNK);
+      btn.textContent = `Memperbarui ${Math.min((c+1)*CHUNK, updatePayloads.length)}/${updatePayloads.length}...`;
+      const { error } = await supabase.from('products').upsert(chunk, { onConflict: 'sku' });
       if (error) {
-        // Fallback satu per satu untuk isolasi error
         for (const p of chunk) {
           const { error: e2 } = await supabase.from('products').upsert([p], { onConflict: 'sku' });
           if (e2) errors.push({ nama: p.name, sku: p.sku, reason: e2.message });
-          else added++;
+          else updated++;
         }
       } else {
-        added += (upserted || chunk).length;
+        updated += chunk.length;
+      }
+    }
+
+    // ── 3b. Tambah produk baru, lalu catat stok awalnya ke stock_movements ──
+    const insChunks = Math.ceil(insertPayloads.length / CHUNK);
+    for (let c = 0; c < insChunks; c++) {
+      const chunk = insertPayloads.slice(c * CHUNK, (c + 1) * CHUNK);
+      btn.textContent = `Menambah ${Math.min((c+1)*CHUNK, insertPayloads.length)}/${insertPayloads.length}...`;
+      let inserted = null;
+      const { data, error } = await supabase.from('products').insert(chunk).select('id,name,stock_quantity');
+      if (error) {
+        // Fallback satu per satu untuk isolasi error
+        inserted = [];
+        for (const p of chunk) {
+          const { data: one, error: e2 } = await supabase.from('products').insert([p]).select('id,name,stock_quantity');
+          if (e2) errors.push({ nama: p.name, sku: p.sku, reason: e2.message });
+          else { added++; if (one?.[0]) inserted.push(one[0]); }
+        }
+      } else {
+        inserted = data || [];
+        added += inserted.length;
+      }
+
+      // Stok awal produk baru tetap butuh jejak, supaya saldo di Kartu Stok nyambung
+      // dari baris pertama dan tidak muncul entah dari mana saat rekonsiliasi.
+      const openingRows = (inserted || [])
+        .filter(p => Number(p.stock_quantity) > 0)
+        .map(p => ({
+          product_id: p.id, product_name: p.name, type: 'in',
+          quantity: p.stock_quantity, quantity_before: 0, quantity_after: p.stock_quantity,
+          reference_type: 'import', notes: 'Stok awal dari import produk',
+        }));
+      if (openingRows.length) {
+        const { error: movErr } = await supabase.from('stock_movements').insert(openingRows);
+        if (movErr) errors.push({ nama: '—', sku: '—', reason: 'Produk tersimpan, tapi stok awal gagal dicatat ke riwayat: ' + movErr.message });
       }
     }
 
