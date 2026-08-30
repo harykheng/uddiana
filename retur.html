@@ -566,7 +566,7 @@ create table if not exists return_items (
     }
 
     selectedInvoice = data;
-    renderFoundInvoice(data);
+    await renderFoundInvoice(data);
   }
 
   function resetInvoiceList() {
@@ -721,10 +721,45 @@ create table if not exists return_items (
     }
 
     selectedInvoice = data;
-    renderFoundInvoice(data);
+    await renderFoundInvoice(data);
   }
 
-  function renderFoundInvoice(inv) {
+  // Hitung berapa banyak tiap produk SUDAH diretur dari sebuah faktur.
+  // Retur berstatus 'pending' ikut dihitung — kalau tidak, dua retur bisa diajukan
+  // untuk barang yang sama lalu dua-duanya disetujui, dan stok naik dua kali lipat.
+  // `excludeReturnId` dipakai saat MENGEDIT retur, supaya jatah retur itu sendiri
+  // tidak ikut mengurangi sisanya.
+  async function fetchReturnedQtyByProduct(invoiceId, excludeReturnId = null) {
+    const { data, error } = await supabase
+      .from('returns')
+      .select('id,status,return_items(product_id,quantity)')
+      .eq('invoice_id', invoiceId)
+      .in('status', ['pending', 'approved']);
+    if (error) throw new Error('Gagal cek retur sebelumnya: ' + error.message);
+
+    const map = {};
+    (data || []).forEach(r => {
+      if (excludeReturnId && r.id === excludeReturnId) return;
+      (r.return_items || []).forEach(ri => {
+        if (!ri.product_id) return;
+        map[ri.product_id] = (map[ri.product_id] || 0) + Number(ri.quantity || 0);
+      });
+    });
+    return map;
+  }
+
+  // Total qty terjual per produk di sebuah faktur (produk yang sama bisa muncul
+  // di lebih dari satu baris, jadi digabung dulu).
+  function soldQtyByProduct(inv) {
+    const map = {};
+    (inv.invoice_items || []).forEach(it => {
+      if (!it.product_id) return;
+      map[it.product_id] = (map[it.product_id] || 0) + Number(it.quantity || 0);
+    });
+    return map;
+  }
+
+  async function renderFoundInvoice(inv) {
     document.getElementById('inv-found-no').textContent = inv.invoice_number;
     document.getElementById('inv-found-meta').innerHTML =
       `Customer: <strong>${escapeHtml(inv.customer_name||'')}</strong> &nbsp;|&nbsp;
@@ -737,19 +772,52 @@ create table if not exists return_items (
     // Build items table
     const tbody = document.getElementById('inv-items-tbody');
     const items = inv.invoice_items || [];
+
+    // Batas retur = qty terjual DIKURANGI yang sudah pernah diretur dari faktur ini.
+    // Sebelumnya batasnya cuma qty di faktur, tanpa melihat retur sebelumnya — jadi
+    // faktur berisi 10 pcs bisa diretur 10, lalu diretur 10 lagi lewat retur kedua,
+    // dan stok naik 20 padahal yang terjual cuma 10.
+    let returnedMap = {};
+    try {
+      returnedMap = await fetchReturnedQtyByProduct(inv.id);
+    } catch (err) {
+      showToast(err.message, 'error');
+      return;
+    }
+    const soldMap = soldQtyByProduct(inv);
+    // Sisa dihitung per PRODUK, lalu dibagikan ke baris-barisnya sesuai urutan —
+    // penting kalau produk yang sama muncul di lebih dari satu baris faktur.
+    const remainingByProduct = {};
+    Object.keys(soldMap).forEach(pid => {
+      remainingByProduct[pid] = Math.max(0, soldMap[pid] - (returnedMap[pid] || 0));
+    });
+    const budget = { ...remainingByProduct };
+
     tbody.innerHTML = items.map((it, i) => {
       const prodName = it.products?.name || it.product_name || '-';
       const sku      = it.products?.sku  || it.sku || '-';
       const qty      = it.quantity || 0;
       const price    = Number(it.unit_price || it.price || 0);
-      return `<tr>
-        <td><input type="checkbox" id="chk-${i}" data-idx="${i}" onchange="recalcTotal()"></td>
+      const pid      = it.product_id || '';
+      // Jatah baris ini: tidak melebihi qty barisnya sendiri, dan tidak melebihi
+      // sisa jatah produk yang belum terpakai baris sebelumnya.
+      const maxQty   = pid ? Math.min(qty, budget[pid] ?? 0) : qty;
+      if (pid) budget[pid] = Math.max(0, (budget[pid] ?? 0) - maxQty);
+      const sudah    = pid ? (returnedMap[pid] || 0) : 0;
+      const habis    = maxQty <= 0;
+
+      return `<tr${habis ? ' style="opacity:.55"' : ''}>
+        <td><input type="checkbox" id="chk-${i}" data-idx="${i}" onchange="recalcTotal()"${habis ? ' disabled title="Semua qty produk ini sudah diretur"' : ''}></td>
         <td>${escapeHtml(prodName)}</td>
         <td style="color:var(--text-muted);font-size:12px;">${escapeHtml(sku)}</td>
-        <td style="text-align:center;">${qty}</td>
         <td style="text-align:center;">
-          <input type="number" id="qty-retur-${i}" min="1" max="${qty}" value="1"
-            data-max="${qty}" data-price="${price}" data-product-id="${it.product_id||''}"
+          ${qty}
+          ${sudah > 0 ? `<div style="font-size:11px;color:#d97706;font-weight:600">sudah diretur ${sudah}</div>` : ''}
+          ${habis ? `<div style="font-size:11px;color:#dc2626;font-weight:600">tidak bisa diretur lagi</div>` : ''}
+        </td>
+        <td style="text-align:center;">
+          <input type="number" id="qty-retur-${i}" min="1" max="${maxQty}" value="${habis ? 0 : 1}"
+            data-max="${maxQty}" data-price="${price}" data-product-id="${pid}"
             data-product-name="${escapeHtml(prodName)}" data-sku="${escapeHtml(sku)}"
             oninput="clampQty(this); recalcTotal()" disabled>
         </td>
@@ -775,6 +843,8 @@ create table if not exists return_items (
 
   function clampQty(input) {
     const max = parseInt(input.dataset.max);
+    // max bisa 0 kalau seluruh qty produk ini sudah pernah diretur — jangan dipaksa ke 1.
+    if (!Number.isFinite(max) || max <= 0) { input.value = 0; return; }
     if (parseInt(input.value) > max) input.value = max;
     if (parseInt(input.value) < 1 || !input.value) input.value = 1;
   }
@@ -836,6 +906,34 @@ create table if not exists return_items (
 
     const btn = document.getElementById('btn-submit-retur');
     setLoading(btn, true);
+
+    // Periksa ulang langsung ke database sebelum menyimpan. Batas yang dipasang di layar
+    // dihitung saat faktur dibuka, jadi bisa sudah basi kalau admin lain mengajukan retur
+    // untuk faktur yang sama di sela-sela itu. Ini penjagaan yang menentukan.
+    try {
+      const returnedMap = await fetchReturnedQtyByProduct(selectedInvoice.id);
+      const soldMap     = soldQtyByProduct(selectedInvoice);
+      const wantByProduct = {};
+      selectedItems.forEach(it => {
+        if (!it.product_id) return;
+        wantByProduct[it.product_id] = (wantByProduct[it.product_id] || 0) + Number(it.quantity);
+      });
+      for (const pid of Object.keys(wantByProduct)) {
+        const sisa = Math.max(0, (soldMap[pid] || 0) - (returnedMap[pid] || 0));
+        if (wantByProduct[pid] > sisa) {
+          const nama = selectedItems.find(x => x.product_id === pid)?.product_name || pid;
+          showToast(
+            `Qty retur "${nama}" melebihi sisa yang boleh diretur (diminta: ${wantByProduct[pid]}, sisa: ${sisa}). ` +
+            `Faktur ini kemungkinan sudah pernah diretur sebagian.`, 'error');
+          setLoading(btn, false);
+          return;
+        }
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+      setLoading(btn, false);
+      return;
+    }
 
     // return_number di-generate otomatis oleh trigger DB (atomik, anti collision) — tidak dikirim dari sini
     const { data: retData, error: retErr } = await supabase.from('returns').insert({
@@ -954,15 +1052,27 @@ create table if not exists return_items (
     const btn = document.querySelector('#modal-reject .btn-danger');
     setLoading(btn, true);
 
-    const { error } = await supabase.from('returns').update({
+    // Klaim status 'rejected' secara atomik — hanya berhasil kalau statusnya masih
+    // 'pending'. Tanpa ini, dua tab admin yang terbuka bersamaan bisa membuat satu
+    // menyetujui (stok naik) dan satu menolak: retur berakhir berstatus 'ditolak'
+    // padahal stoknya sudah terlanjur naik, dan tidak ada yang menurunkannya kembali.
+    // Tombolnya memang cuma muncul untuk retur pending, tapi itu penjagaan di layar,
+    // bukan di database. approveRetur() sudah memakai pola ini sejak awal.
+    const { data: claimed, error } = await supabase.from('returns').update({
       status:     'rejected',
       notes:      ((allReturns.find(r=>r.id===rejectTargetId)?.notes)||'') + `\n[Ditolak: ${reason}]`,
       handled_by: currentUser?.profile?.name || 'Admin'
-    }).eq('id', rejectTargetId);
+    }).eq('id', rejectTargetId).eq('status', 'pending').select('id');
 
     setLoading(btn, false);
 
     if (error) { showToast('Gagal menolak retur: ' + error.message, 'error'); return; }
+    if (!claimed?.length) {
+      showToast('Retur ini sudah diproses sebelumnya', 'error');
+      closeModal('modal-reject');
+      await loadReturns();
+      return;
+    }
 
     closeModal('modal-reject');
     showToast('Retur ditolak', 'success');
@@ -1141,6 +1251,43 @@ create table if not exists return_items (
       if (ret.status === 'approved' && newQty !== oldQty) {
         // + = lebih banyak diretur (tambah stok), - = kurang (kurangi stok)
         deltaByProduct[it.product_id] = (deltaByProduct[it.product_id] || 0) + (newQty - oldQty);
+      }
+    }
+
+    // Batas qty juga ditegakkan di sini. Kalau cuma dijaga saat pembuatan, admin bisa
+    // mengajukan retur kecil lalu menaikkan qty-nya lewat edit tanpa batas — lubangnya
+    // tetap terbuka, cuma pindah pintu. Jatah retur INI dikecualikan dari perhitungan
+    // (excludeReturnId) supaya qty lamanya tidak ikut menghabiskan sisa.
+    if (ret.invoice_id) {
+      try {
+        const [invRes, returnedMap] = await Promise.all([
+          supabase.from('invoice_items').select('product_id,quantity').eq('invoice_id', ret.invoice_id),
+          fetchReturnedQtyByProduct(ret.invoice_id, editReturId),
+        ]);
+        if (invRes.error) throw new Error('Gagal cek isi faktur: ' + invRes.error.message);
+
+        const soldMap = {};
+        (invRes.data || []).forEach(x => {
+          if (!x.product_id) return;
+          soldMap[x.product_id] = (soldMap[x.product_id] || 0) + Number(x.quantity || 0);
+        });
+        const wantByProduct = {};
+        rowsData.forEach(({ it, newQty }) => {
+          if (!it.product_id) return;
+          wantByProduct[it.product_id] = (wantByProduct[it.product_id] || 0) + newQty;
+        });
+        for (const pid of Object.keys(wantByProduct)) {
+          const sisa = Math.max(0, (soldMap[pid] || 0) - (returnedMap[pid] || 0));
+          if (wantByProduct[pid] > sisa) {
+            const nama = rowsData.find(r => r.it.product_id === pid)?.it.product_name || pid;
+            showToast(
+              `Qty retur "${nama}" melebihi sisa yang boleh diretur (diminta: ${wantByProduct[pid]}, sisa: ${sisa}).`, 'error');
+            setLoading(btn, false); hideFullLoading(); return;
+          }
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+        setLoading(btn, false); hideFullLoading(); return;
       }
     }
 
