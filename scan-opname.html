@@ -646,8 +646,16 @@
     document.getElementById('search-input').value = '';
     scanning = false;
 
-    const prod = allProducts.find(p => p.id === productId);
-    if (!prod) return;
+    const cached = allProducts.find(p => p.id === productId);
+    if (!cached) return;
+
+    // Ambil stok fresh dari DB — allProducts cuma di-load sekali saat halaman
+    // dibuka, jadi stock_quantity di dalamnya bisa basi kalau ada transaksi lain
+    // (faktur/pembelian/keluar barang) jalan di antara load halaman dan scan ini.
+    // Basi -> selisih yang dihitung & disimpan ke opname_items jadi salah walau
+    // stok akhir produk sendiri tetap benar.
+    const { data: fresh } = await supabase.from('products').select('id,name,sku,stock_quantity,unit').eq('id', productId).single();
+    const prod = fresh || cached;
     currentProduct = prod;
     hideAllCards();
 

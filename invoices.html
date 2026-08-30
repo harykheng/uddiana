@@ -1704,15 +1704,22 @@
             await supabase.from('invoice_items').delete().eq('id', item.itemId);
           }
         }
-        await supabase.from('invoice_items').insert(payload);
-        if (prod) {
-          await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.product_id);
-          const { error: movErr4 } = await supabase.from('stock_movements').insert({
-            product_id: item.product_id, product_name: item.product_name, type: 'adjustment',
-            quantity: item.quantity, quantity_before: prod.stock_quantity, quantity_after: newStock,
-            notes: `Edit faktur: item baru/ganti produk`,
-          });
-          if (movErr4) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr4.message, 'error');
+        // Insert ini memicu trigger decrease_stock_on_invoice_item, yang SUDAH memotong
+        // stok secara atomik sekaligus mencatat stock_movements-nya sendiri.
+        // Sebelumnya di bawah sini stok masih dipotong SEKALI LAGI secara manual pakai
+        // nilai absolut hasil pembacaan sebelum insert. Tiga akibatnya:
+        //   1. riwayat tercatat dobel (satu dari trigger, satu dari sini) — rekap dari
+        //      stock_movements jadi 2x lipat dari potongan yang sebenarnya;
+        //   2. penulisan absolut itu menimpa perubahan stok transaksi lain yang menyelip
+        //      antara pembacaan dan penulisan (faktur lain, PO, scan opname);
+        //   3. errornya tidak pernah ditangkap, jadi kalau trigger menolak karena stok
+        //      kurang, stok tetap dikurangi manual padahal itemnya batal tersimpan.
+        // Cukup andalkan trigger, dan hentikan proses kalau insert-nya gagal.
+        const { error: insErr } = await supabase.from('invoice_items').insert(payload);
+        if (insErr) {
+          showToast(`Gagal simpan item "${item.product_name}": ${insErr.message}`, 'error');
+          setLoading(btn, false);
+          return;
         }
       }
     }

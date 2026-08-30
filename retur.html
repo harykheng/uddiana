@@ -916,10 +916,19 @@ create table if not exists return_items (
         const { error: movErr } = await supabase.from('stock_movements').insert({
           product_id:      it.product_id,
           product_name:    it.product_name,
-          type:            'return_in',
+          // WAJIB 'in', bukan 'return_in'. Constraint stock_movements_type_check di
+          // supabase_schema.sql cuma mengizinkan 'in' | 'out' | 'adjustment', jadi
+          // 'return_in' SELALU ditolak database — akibatnya stok naik tapi riwayatnya
+          // tidak pernah tercatat sama sekali, dan retur hilang dari rekonsiliasi stok.
+          // Asal-usulnya tetap bisa ditelusuri lewat reference_type di bawah, dan dengan
+          // 'in' retur akhirnya ikut terhitung di Total Masuk pada Kartu Stok (products.html)
+          // & Laporan Stok (reports.html) — keduanya memfilter berdasarkan 'in'/'out'.
+          type:            'in',
           quantity:        it.quantity,
           quantity_before: prod.stock_quantity,
           quantity_after:  newStock,
+          reference_type:  'return_approve',
+          reference_id:    returId,
           notes:           `Retur disetujui: ${ret.return_number || returId}`,
         });
         if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat untuk: ' + it.product_name, 'error');
