@@ -285,7 +285,9 @@
 
     await checkActiveSession();
     if (activeSession) {
-      const isMobile = window.matchMedia('(pointer: coarse)').matches;
+      // Kamera cuma buat HP (layar sempit). iPad & desktop pakai search bar saja,
+      // walau iPad juga punya pointer coarse (layar sentuh) makanya dicek lebar layar juga.
+      const isMobile = window.matchMedia('(pointer: coarse)').matches && window.innerWidth < 768;
       if (isMobile) {
         startScanner();
       } else {
