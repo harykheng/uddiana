@@ -711,3 +711,25 @@ textarea { resize: vertical; min-height: 80px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ---- TOMSELECT DROPDOWN (global, dipakai semua halaman) ---- */
+/* Tinggi ikut ruang layar biar list produk kelihatan banyak, bukan cuma 5-6 baris.
+   Nilai final di-set ulang lewat JS (positionDropdown patch di utils.js). */
+.ts-dropdown .ts-dropdown-content {
+  max-height: min(52vh, 420px);
+  overscroll-behavior: contain;      /* scroll di dalam list nggak nyeret modal/halaman */
+  -webkit-overflow-scrolling: touch; /* momentum scroll di mobile */
+  scroll-behavior: auto;             /* navigasi panah nggak ketinggalan animasi smooth */
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+}
+/* Scrollbar dropdown dibikin lebih tebal dari scrollbar global (6px) biar gampang di-drag */
+.ts-dropdown .ts-dropdown-content::-webkit-scrollbar { width: 10px; }
+.ts-dropdown .ts-dropdown-content::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 0 8px 8px 0; }
+.ts-dropdown .ts-dropdown-content::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 6px; border: 2px solid #f1f5f9; }
+.ts-dropdown .ts-dropdown-content::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Baris opsi: target sentuh lebih lega di layar kecil */
+@media (max-width: 768px) {
+  .ts-dropdown .option { padding: 11px 12px; }
+}

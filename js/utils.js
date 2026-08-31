@@ -146,3 +146,85 @@ async function fetchAll(queryFn, pageSize = 1000) {
   }
   return { data: all, error: null };
 }
+
+// ── TOMSELECT DROPDOWN: tinggi adaptif + auto-flip ke atas ────
+// Patch global — berlaku ke semua instance TomSelect di semua halaman,
+// tidak perlu ubah kode init di masing-masing halaman.
+// Masalah yang dibenahi: dropdown fixed 220px (cuma ~6 baris) dan kalau
+// baris item ada di bawah layar, list-nya kepotong viewport jadi susah discroll.
+(function patchTomSelectDropdown() {
+  if (typeof TomSelect === 'undefined') return;
+
+  const MIN_H = 180;  // minimal tinggi list sebelum memutuskan flip ke atas
+  const MAX_H = 420;  // batas atas biar nggak makan seluruh layar
+  const GAP   = 12;   // jarak aman ke tepi viewport
+
+  function fit(ts) {
+    const dd = ts.dropdown;
+    if (!dd || !ts.isOpen) return;
+    const content = ts.dropdown_content || dd.querySelector('.ts-dropdown-content');
+    if (!content) return;
+
+    const rect  = ts.control.getBoundingClientRect();
+    const below = window.innerHeight - rect.bottom - GAP;
+    const above = rect.top - GAP;
+    const flip  = below < MIN_H && above > below;
+    const avail = flip ? above : below;
+
+    // Clamp terakhir ke tinggi viewport supaya di layar pendek pun tidak meluber
+    const h = Math.min(MAX_H, Math.max(MIN_H, avail), window.innerHeight - 2 * GAP);
+    content.style.maxHeight = h + 'px';
+
+    if (ts.settings.dropdownParent === 'body') {
+      // TomSelect sudah menaruhnya tepat di bawah control; kalau flip, geser ke atas
+      if (flip) dd.style.top = (rect.top + window.scrollY - dd.offsetHeight - 2) + 'px';
+    } else {
+      // Dropdown absolute di dalam .ts-wrapper
+      dd.style.top    = flip ? 'auto' : '';
+      dd.style.bottom = flip ? '100%' : '';
+    }
+  }
+
+  const _position = TomSelect.prototype.positionDropdown;
+  TomSelect.prototype.positionDropdown = function () {
+    const r = _position.apply(this, arguments);
+    fit(this);
+    return r;
+  };
+
+  // Jumlah opsi berubah tiap ketik → tinggi & posisi dihitung ulang
+  const _refresh = TomSelect.prototype.refreshOptions;
+  TomSelect.prototype.refreshOptions = function () {
+    const r = _refresh.apply(this, arguments);
+    if (this.isOpen) this.positionDropdown();
+    return r;
+  };
+
+  // Dropdown dengan dropdownParent:'body' tidak ikut scroll container-nya.
+  // Reposisi selama terbuka supaya tidak "lepas" dari input saat modal discroll.
+  let openTS = null;
+  const reposition = () => { if (openTS && openTS.isOpen) openTS.positionDropdown(); };
+
+  const _open = TomSelect.prototype.open;
+  TomSelect.prototype.open = function () {
+    const r = _open.apply(this, arguments);
+    if (this.isOpen) {
+      openTS = this;
+      this.positionDropdown();
+      window.addEventListener('scroll', reposition, true);
+      window.addEventListener('resize', reposition);
+    }
+    return r;
+  };
+
+  const _close = TomSelect.prototype.close;
+  TomSelect.prototype.close = function () {
+    const r = _close.apply(this, arguments);
+    if (openTS === this) {
+      openTS = null;
+      window.removeEventListener('scroll', reposition, true);
+      window.removeEventListener('resize', reposition);
+    }
+    return r;
+  };
+})();
