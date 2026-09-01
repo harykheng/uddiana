@@ -1015,11 +1015,20 @@
     openModal('modal-product');
   }
 
-  function generateSKU() {
+  // Nomor SKU otomatis harus dilihat dari SELURUH produk di database, bukan dari
+  // allProducts. allProducts cuma berisi produk is_active=true dan ikut terpotong filter
+  // kategori yang sedang aktif, jadi SKU milik produk yang sudah dihapus (hapus produk =
+  // soft delete, barangnya masih ada dengan SKU-nya) atau produk di kategori lain tidak
+  // kelihatan — nomornya dipakai ulang dan insert ditolak unique constraint sku.
+  async function generateSKU() {
+    const { data, error } = await fetchAll(() =>
+      supabase.from('products').select('sku').ilike('sku', 'UDD-%').order('sku')
+    );
+    if (error) throw new Error('Gagal ambil nomor SKU terakhir: ' + error.message);
     let max = 0;
-    for (const p of allProducts) {
+    for (const p of (data || [])) {
       const m = (p.sku || '').match(/^UDD-(\d+)$/i);
-      if (m) max = Math.max(max, parseInt(m[1]));
+      if (m) max = Math.max(max, parseInt(m[1], 10));
     }
     return `UDD-${String(max + 1).padStart(4, '0')}`;
   }
@@ -1029,11 +1038,17 @@
     if (btn.disabled) return;
     const id = document.getElementById('product-id').value;
     const name = document.getElementById('product-name').value.trim();
-    const sku  = document.getElementById('product-sku').value.trim() || generateSKU();
+    let sku = document.getElementById('product-sku').value.trim();
+    const skuAuto = !sku;   // dipakai lagi di bawah: cuma SKU hasil generate yang boleh diulang otomatis
     const price = parseFormattedNumber(document.getElementById('product-price').value);
     if (!name) { showToast('Nama produk wajib diisi', 'error'); return; }
     if (price <= 0) { showToast('Harga jual harus lebih dari 0', 'error'); return; }
     setLoading(btn, true);
+
+    if (skuAuto) {
+      try { sku = await generateSKU(); }
+      catch (e) { showToast(e.message, 'error'); setLoading(btn, false); return; }
+    }
 
     const payload = {
       name, sku,
@@ -1087,12 +1102,40 @@
         if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
       }
     } else {
-      ({ error } = await supabase.from('products').insert(payload));
+      let created;
+      ({ data: created, error } = await supabase.from('products').insert(payload).select('id').single());
+
+      // Balapan: admin lain menyimpan produk baru di antara generateSKU() dan insert ini.
+      // Diulang sekali HANYA kalau SKU-nya hasil generate — SKU yang diketik manual tidak
+      // boleh diam-diam diganti, itu harus dilaporkan apa adanya ke user.
+      if (error?.code === '23505' && skuAuto) {
+        try {
+          payload.sku = await generateSKU();
+          ({ data: created, error } = await supabase.from('products').insert(payload).select('id').single());
+        } catch (_) { /* biarkan error insert yang asli yang dilaporkan */ }
+      }
+
+      // Stok awal produk baru dicatat ke Kartu Stok. Sebelumnya cuma jalur edit yang
+      // menulis stock_movements, jadi produk yang dibuat langsung dengan stok > 0
+      // (termasuk lewat tombol Duplikat) stoknya muncul entah dari mana di laporan.
+      if (!error && created && payload.stock_quantity > 0) {
+        const { error: movErr } = await supabase.from('stock_movements').insert({
+          product_id: created.id, product_name: name, type: 'adjustment',
+          quantity: payload.stock_quantity, quantity_before: 0, quantity_after: payload.stock_quantity,
+          notes: 'Stok awal produk baru',
+        });
+        if (movErr) showToast('Produk tersimpan, tapi riwayat stok awal gagal dicatat: ' + movErr.message, 'error');
+      }
     }
 
     setLoading(btn, false);
     hideFullLoading();
-    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    if (error) {
+      showToast(error.code === '23505'
+        ? `SKU "${payload.sku}" sudah dipakai produk lain (termasuk produk yang sudah dihapus) — ganti SKU-nya`
+        : 'Gagal: ' + error.message, 'error');
+      return;
+    }
     showToast(id ? 'Produk diperbarui' : 'Produk ditambahkan');
     closeModal('modal-product');
     loadProducts();
