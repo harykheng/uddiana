@@ -21,7 +21,25 @@
     .badge-disc-pct  { background:#ede9fe; color:#6d28d9; }
     .badge-disc-nom  { background:#dcfce7; color:#166534; }
     .badge-group     { background:#fef3c7; color:#92400e; }
-    .member-chip { display:inline-block; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:20px; padding:2px 10px; font-size:11.5px; color:#475569; margin:2px 2px 2px 0; }
+    /* Chip anggota grup — dulu inline-block tanpa nowrap di kolom max-width 320px,
+       sementara nama produknya lebih panjang dari kolom itu sendiri, jadi tiap chip
+       jatuh ke barisnya sendiri dan satu baris tabel bisa setinggi 1000px. */
+    .member-chips { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+    .member-chip {
+      background:#f1f5f9; border:1px solid #e2e8f0; border-radius:20px;
+      padding:2px 9px; font-size:11.5px; color:#475569;
+      white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis;
+    }
+    /* Anggota ke-7 dst disembunyikan sampai tombol "+N lainnya" ditekan */
+    .member-chips:not([data-expanded="true"]) .chip-extra { display:none; }
+    .chip-toggle {
+      background:none; border:none; padding:2px 4px; cursor:pointer;
+      font-size:11.5px; font-weight:700; color:var(--primary);
+    }
+    .chip-toggle:hover { text-decoration:underline; }
+    .chip-prefix { font-size:11px; color:var(--text-muted); margin-bottom:4px; }
+    .group-count { font-size:11px; color:var(--text-muted); margin-top:2px; }
+    #groups-table td:first-child strong { display:block; line-height:1.3; }
   </style>
 </head>
 <body>
@@ -93,10 +111,10 @@
           <table>
             <thead>
               <tr>
-                <th>Nama Grup</th>
-                <th>Deskripsi</th>
+                <th style="width:180px;min-width:160px">Nama Grup</th>
+                <th style="width:140px;min-width:120px">Deskripsi</th>
                 <th>Produk Anggota</th>
-                <th>Aksi</th>
+                <th style="width:170px;white-space:nowrap">Aksi</th>
               </tr>
             </thead>
             <tbody id="groups-table">
@@ -404,16 +422,31 @@
       return;
     }
 
+    const TAMPIL_AWAL = 6;   // sisanya disembunyikan di balik tombol "+N lainnya"
+
     tbody.innerHTML = allGroups.map(g => {
       const members = g.discount_group_members || [];
-      const chips   = members.map(m => `<span class="member-chip">${escapeHtml(m.products?.name || '?')}</span>`).join('');
+      const names   = members.map(m => m.products?.name || '?');
+      const awalan  = awalanBersama(names);
+      const chips = names.map((nama, i) => {
+        const label = awalan ? nama.slice(awalan.length) : nama;
+        return `<span class="member-chip${i >= TAMPIL_AWAL ? ' chip-extra' : ''}" title="${escapeHtml(nama)}">${escapeHtml(label)}</span>`;
+      }).join('');
+      const sisa = names.length - TAMPIL_AWAL;
+
       return `
         <tr>
-          <td><strong>${escapeHtml(g.name)}</strong></td>
+          <td>
+            <strong>${escapeHtml(g.name)}</strong>
+            <div class="group-count">${members.length} produk</div>
+          </td>
           <td>${g.description ? escapeHtml(g.description) : '<span class="text-muted">—</span>'}</td>
-          <td style="max-width:320px">
-            ${chips || '<span class="text-muted">—</span>'}
-            <span class="badge badge-info" style="margin-left:4px">${members.length} produk</span>
+          <td>
+            ${awalan ? `<div class="chip-prefix">Awalan nama: <strong>${escapeHtml(awalan.trim())}</strong></div>` : ''}
+            <div class="member-chips" data-expanded="false">
+              ${chips || '<span class="text-muted">—</span>'}
+              ${sisa > 0 ? `<button class="chip-toggle" onclick="toggleAnggotaGrup(this)" data-sisa="${sisa}">+${sisa} lainnya</button>` : ''}
+            </div>
           </td>
           <td>
             <div class="table-actions">
@@ -423,6 +456,32 @@
           </td>
         </tr>`;
     }).join('');
+  }
+
+  // Varian biasanya berbagi awalan panjang ("Hanasui Mattedorable Lip Cream 06 Ritz").
+  // Awalannya dipotong dari chip dan ditulis sekali di atas, supaya yang tersisa justru
+  // bagian yang membedakan ("06 Ritz") — bukan malah bagian itu yang kena ellipsis.
+  function awalanBersama(names) {
+    if (names.length < 2) return '';
+    let p = names[0];
+    for (const n of names.slice(1)) {
+      let i = 0;
+      while (i < p.length && i < n.length && p[i] === n[i]) i++;
+      p = p.slice(0, i);
+      if (!p) return '';
+    }
+    const batas = p.lastIndexOf(' ');          // potong di batas kata, jangan tengah kata
+    p = batas > 0 ? p.slice(0, batas + 1) : '';
+    if (p.trim().length < 10) return '';        // terlalu pendek, tidak sepadan
+    // Batal kalau ada nama yang jadi kosong setelah dipotong
+    return names.every(n => n.slice(p.length).trim()) ? p : '';
+  }
+
+  function toggleAnggotaGrup(btn) {
+    const wrap = btn.closest('.member-chips');
+    const buka = wrap.dataset.expanded !== 'true';
+    wrap.dataset.expanded = buka ? 'true' : 'false';
+    btn.textContent = buka ? '− sembunyikan' : `+${btn.dataset.sisa} lainnya`;
   }
 
   function openAddGroup() {
