@@ -731,23 +731,52 @@
   }
 
   let discountRulesByProduct = {};
+  let discountRulesByGroup   = {};   // { group_id: [rule] }
+  let discountGroupMembers   = [];   // [{ group_id, product_id }]
 
   async function loadDiscountRules() {
-    // Cuma aturan per-produk (bukan grup) yang ditampilkan di sini — biar simpel,
-    // karena diskon grup baru relevan setelah tahu kombinasi produk di keranjang.
-    const { data } = await supabase
-      .from('product_discount_rules')
-      .select('product_id, description, min_qty, min_amount, discount_type, discount_value, discount_value2, product_discount_rule_customers(customer_id)')
-      .eq('is_active', true)
-      .is('group_id', null);
+    // Aturan grup varian ikut diambil. Sebelumnya di-filter .is('group_id', null),
+    // jadi diskon grup tidak pernah berlaku di halaman sales sama sekali — padahal
+    // invoices.html sudah menerapkannya. Syarat grup dihitung dari TOTAL qty semua
+    // varian anggota grup yang ada di keranjang, jadi baru bisa dievaluasi setelah
+    // isi keranjang diketahui (lihat computeEffectivePrice).
+    const [{ data }, { data: members }] = await Promise.all([
+      supabase.from('product_discount_rules')
+        .select('product_id, group_id, description, min_qty, min_amount, discount_type, discount_value, discount_value2, product_discount_rule_customers(customer_id)')
+        .eq('is_active', true),
+      supabase.from('discount_group_members').select('group_id, product_id'),
+    ]);
 
+    discountGroupMembers = members || [];
     discountRulesByProduct = {};
+    discountRulesByGroup   = {};
     (data || []).forEach(raw => {
       const r = { ...raw, customer_ids: (raw.product_discount_rule_customers || []).map(x => x.customer_id) };
-      if (!discountRulesByProduct[r.product_id]) discountRulesByProduct[r.product_id] = [];
-      discountRulesByProduct[r.product_id].push(r);
+      if (r.group_id) {
+        (discountRulesByGroup[r.group_id] = discountRulesByGroup[r.group_id] || []).push(r);
+      } else {
+        (discountRulesByProduct[r.product_id] = discountRulesByProduct[r.product_id] || []).push(r);
+      }
     });
-    Object.values(discountRulesByProduct).forEach(rules => rules.sort((a, b) => (a.min_qty || 0) - (b.min_qty || 0)));
+    const byQty = (a, b) => (a.min_qty || 0) - (b.min_qty || 0);
+    Object.values(discountRulesByProduct).forEach(rules => rules.sort(byQty));
+    Object.values(discountRulesByGroup).forEach(rules => rules.sort(byQty));
+  }
+
+  // Grup yang memuat produk ini
+  function groupIdsOfProduct(productId) {
+    return discountGroupMembers.filter(m => m.product_id === productId).map(m => m.group_id);
+  }
+
+  // Isi keranjang saat ini — dipakai menghitung total qty/nilai per grup.
+  // Pakai basePrice (harga katalog), bukan harga di input yang sudah kena diskon,
+  // supaya syarat min_amount tidak berubah-ubah mengikuti diskonnya sendiri.
+  function cartRows(scopeSel) {
+    return [...document.querySelectorAll(`${scopeSel} .item-row`)].map(row => ({
+      productId: row.dataset.productId || null,
+      qty:       parseFloat(row.querySelector('.item-qty-input')?.value) || 0,
+      basePrice: Number(row.dataset.basePrice) || 0,
+    })).filter(r => r.productId);
   }
 
   function formatDiscountLabel(rule) {
@@ -771,20 +800,60 @@
     return !!(r.customer_ids && r.customer_ids.length && customerId && r.customer_ids.includes(customerId));
   }
 
-  function computeEffectivePrice(productId, basePrice, qty, customerId) {
-    const rules = (discountRulesByProduct[productId] || [])
-      .filter(r => ruleAppliesToCustomer(r, customerId));
-    const eligible = rules.filter(r => {
-      const meetsQty = !r.min_qty || qty >= r.min_qty;
-      const meetsAmt = !r.min_amount || (qty * basePrice) >= Number(r.min_amount);
-      return meetsQty && meetsAmt;
-    }).sort((a, b) => {
+  // Khusus dulu (toko ini) baru min_qty tertinggi — dipakai aturan produk & grup
+  function sortRulesByCustomerThenQty(rules, customerId) {
+    return rules.slice().sort((a, b) => {
       const aCust = ruleIsSpecificToCustomer(a, customerId) ? 1 : 0;
       const bCust = ruleIsSpecificToCustomer(b, customerId) ? 1 : 0;
       if (aCust !== bCust) return bCust - aCust;
       return (Number(b.min_qty) || 0) - (Number(a.min_qty) || 0);
     });
-    const rule = eligible[0] || null;
+  }
+
+  // rows = isi keranjang, dibutuhkan aturan grup. Kalau tidak diberikan, aturan grup
+  // dilewati (perilaku lama) — bukan error.
+  function computeEffectivePrice(productId, basePrice, qty, customerId, rows) {
+    // 1. Aturan produk tunggal
+    const productEligible = sortRulesByCustomerThenQty(
+      (discountRulesByProduct[productId] || [])
+        .filter(r => ruleAppliesToCustomer(r, customerId))
+        .filter(r => {
+          const meetsQty = !r.min_qty || qty >= r.min_qty;
+          const meetsAmt = !r.min_amount || (qty * basePrice) >= Number(r.min_amount);
+          return meetsQty && meetsAmt;
+        }), customerId);
+
+    // 2. Aturan grup varian — syaratnya dihitung dari TOTAL semua anggota grup di keranjang
+    let groupBest = null;
+    if (rows) {
+      groupIdsOfProduct(productId).forEach(groupId => {
+        const anggota = discountGroupMembers.filter(m => m.group_id === groupId).map(m => m.product_id);
+        const isiGrup = rows.filter(r => anggota.includes(r.productId));
+        const groupQty = isiGrup.reduce((s, r) => s + r.qty, 0);
+        const groupAmt = isiGrup.reduce((s, r) => s + r.qty * r.basePrice, 0);
+
+        const eligible = sortRulesByCustomerThenQty(
+          (discountRulesByGroup[groupId] || [])
+            .filter(r => ruleAppliesToCustomer(r, customerId))
+            .filter(r => {
+              const meetsQty = !r.min_qty || groupQty >= r.min_qty;
+              const meetsAmt = !r.min_amount || groupAmt >= Number(r.min_amount);
+              return meetsQty && meetsAmt;
+            }), customerId);
+
+        if (eligible.length) {
+          const curCust = ruleIsSpecificToCustomer(groupBest || {}, customerId);
+          const newCust = ruleIsSpecificToCustomer(eligible[0], customerId);
+          if (!groupBest || (newCust && !curCust) ||
+              (newCust === curCust && Number(eligible[0].min_qty) > Number(groupBest.min_qty))) {
+            groupBest = eligible[0];
+          }
+        }
+      });
+    }
+
+    // Prioritas: aturan produk > aturan grup (sama seperti invoices.html)
+    const rule = productEligible[0] || groupBest;
     if (!rule) return { price: basePrice, rule: null };
     const price = rule.discount_type === 'percent'
       ? Math.round(basePrice * (1 - rule.discount_value / 100) * (1 - (rule.discount_value2 || 0) / 100))
@@ -796,8 +865,8 @@
   // terpenuhi), badge diskon (highlight yang lagi aktif), dan simpan detail diskon
   // yang dipakai di dataset baris — dibaca lagi saat submit biar tercatat terpisah
   // dari harga katalog (bukan cuma "harga baru" tanpa jejak diskon).
-  function applyItemDiscount(row, productId, basePrice, qty, customerId) {
-    const { price, rule } = computeEffectivePrice(productId, basePrice, qty, customerId);
+  function applyItemDiscount(row, productId, basePrice, qty, customerId, rows) {
+    const { price, rule } = computeEffectivePrice(productId, basePrice, qty, customerId, rows);
     const priceInput = row.querySelector('.item-price-input');
     if (priceInput) priceInput.value = price.toLocaleString('id-ID');
 
@@ -809,11 +878,21 @@
 
     const badgesEl = row.querySelector('.item-disc-badges');
     if (badgesEl) {
-      // Cuma tampilin aturan yang relevan buat customer ini (umum + khusus toko ini)
-      const rules = (discountRulesByProduct[productId] || []).filter(r => ruleAppliesToCustomer(r, customerId));
-      badgesEl.innerHTML = rules.map(r => {
+      // Aturan yang relevan buat customer ini (umum + khusus toko ini), produk & grup.
+      // Aturan grup diberi awalan 📦 supaya sales tahu syaratnya dihitung dari total
+      // semua varian di keranjang, bukan dari qty baris itu saja.
+      const rulesProduk = (discountRulesByProduct[productId] || [])
+        .filter(r => ruleAppliesToCustomer(r, customerId))
+        .map(r => ({ r, grup: false }));
+      const rulesGrup = groupIdsOfProduct(productId)
+        .flatMap(gid => (discountRulesByGroup[gid] || []))
+        .filter(r => ruleAppliesToCustomer(r, customerId))
+        .map(r => ({ r, grup: true }));
+      badgesEl.innerHTML = [...rulesProduk, ...rulesGrup].map(({ r, grup }) => {
         const active = rule && r === rule;
-        const label = ruleIsSpecificToCustomer(r, customerId) ? `🏪 ${formatDiscountLabel(r)}` : formatDiscountLabel(r);
+        let label = formatDiscountLabel(r);
+        if (grup) label = `📦 total grup ${label}`;
+        if (ruleIsSpecificToCustomer(r, customerId)) label = `🏪 ${label}`;
         return `<span style="display:inline-block;background:${active ? '#dcfce7' : '#fef3c7'};color:${active ? '#166534' : '#92400e'};font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px;">${active ? '✅' : '🏷️'} ${label}</span>`;
       }).join('');
     }
@@ -843,7 +922,7 @@
       onChange: function(value) {
         checkUnpaidInvoices(value);
         // Customer ini mungkin punya aturan diskon khusus — evaluasi ulang baris yang ada
-        document.querySelectorAll('#items-list .item-row').forEach(row => recalcItem(row.id.replace('item-', '')));
+        recalcItem();   // sudah mengevaluasi ulang semua baris sekaligus
       },
       render: {
         option_create: function(data, escape) {
@@ -1430,33 +1509,48 @@
     recalcItem(id);
   }
 
-  function recalcItem(id) {
-    const row = document.getElementById('item-' + id);
-    if (!row) return;
+  // Satu baris: diskon, peringatan stok, subtotal. Tidak memanggil recalcTotal —
+  // pemanggilnya yang menutup, supaya total cuma dihitung sekali per putaran.
+  function _recalcOneRow(row, subPrefix, customerId, rows) {
     const qtyInput = row.querySelector('.item-qty-input');
-    const qty   = parseFloat(qtyInput.value) || 0;
-    const max   = parseInt(qtyInput.max) || 0;
+    if (!qtyInput) return;
+    const qty = parseFloat(qtyInput.value) || 0;
+    const max = parseInt(qtyInput.max) || 0;
 
     const productId = row.dataset.productId;
     const basePrice = Number(row.dataset.basePrice) || 0;
-    if (productId && basePrice > 0) applyItemDiscount(row, productId, basePrice, qty, customerTS?.getValue() || null);
-
-    const price = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
+    if (productId && basePrice > 0) applyItemDiscount(row, productId, basePrice, qty, customerId, rows);
 
     const errEl = row.querySelector('.qty-error');
-
-    const hasProduct = qtyInput.max !== '';
-    if (hasProduct && qty > max) {
-      errEl.textContent = max === 0 ? '⚠️ Stok habis' : `⚠️ Melebihi stok (maks ${max})`;
-      qtyInput.style.borderColor = '#dc2626';
-    } else {
-      errEl.textContent = '';
-      qtyInput.style.borderColor = '';
+    if (errEl) {
+      if (qtyInput.max !== '' && qty > max) {
+        errEl.textContent = max === 0 ? '⚠️ Stok habis' : `⚠️ Melebihi stok (maks ${max})`;
+        qtyInput.style.borderColor = '#dc2626';
+      } else {
+        errEl.textContent = '';
+        qtyInput.style.borderColor = '';
+      }
     }
 
-    const sub = Math.ceil((qty * price) / 100) * 100;
-    const subInput = document.getElementById('sub-' + id);
+    // Subtotal diturunkan dari harga KATALOG + diskon lewat formula bersama di
+    // js/utils.js, bukan dari harga satuan yang tampil (harga itu sudah dibulatkan
+    // ke rupiah untuk ditampilkan). Kalau diturunkan dari sana ada dua pembulatan
+    // dan hasilnya beda Rp 100 dari invoices.html pada ~14% kombinasi.
+    const hargaKatalog = basePrice || parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
+    const sub = hitungSubtotalBaris(qty, hargaKatalog, row.dataset.discType || 'percent',
+                                    Number(row.dataset.disc) || 0, Number(row.dataset.disc2) || 0);
+    const subInput = document.getElementById(subPrefix + row.id.replace(/^(edit-)?item-/, ''));
     if (subInput) subInput.value = Number(sub).toLocaleString('id-ID');
+  }
+
+  // Ubah qty satu baris bisa mengubah diskon baris LAIN — syarat aturan grup dihitung
+  // dari total semua varian di keranjang. Jadi semua baris dievaluasi ulang, bukan
+  // cuma baris yang diubah.
+  function recalcItem(id) {
+    const customerId = customerTS?.getValue() || null;
+    const rows = cartRows('#items-list');
+    document.querySelectorAll('#items-list .item-row')
+      .forEach(row => _recalcOneRow(row, 'sub-', customerId, rows));
     recalcTotal();
   }
 
@@ -1643,7 +1737,7 @@ function recalcTotal() {
       })),
       onChange: function() {
         // Customer ini mungkin punya aturan diskon khusus — evaluasi ulang baris yang ada
-        document.querySelectorAll('#edit-items-list .item-row').forEach(row => recalcEditItem(row.id.replace('edit-item-', '')));
+        recalcEditItem();   // sudah mengevaluasi ulang semua baris sekaligus
       }
     });
     if (inv.customer_id) editCustomerTS.setValue(inv.customer_id);
@@ -1753,28 +1847,10 @@ function recalcTotal() {
   }
 
   function recalcEditItem(id) {
-    const row = document.getElementById('edit-item-' + id);
-    if (!row) return;
-    const qtyInput = row.querySelector('.item-qty-input');
-    const qty   = parseFloat(qtyInput.value) || 0;
-    const max   = parseInt(qtyInput.max) || 0;
-
-    const productId = row.dataset.productId;
-    const basePrice = Number(row.dataset.basePrice) || 0;
-    if (productId && basePrice > 0) applyItemDiscount(row, productId, basePrice, qty, editCustomerTS?.getValue() || null);
-
-    const price = parseFormattedNumber(row.querySelector('.item-price-input').value) || 0;
-    const errEl = row.querySelector('.qty-error');
-    if (qtyInput.max !== '' && qty > max) {
-      errEl.textContent = max === 0 ? '⚠️ Stok habis' : `⚠️ Melebihi stok (maks ${max})`;
-      qtyInput.style.borderColor = '#dc2626';
-    } else {
-      errEl.textContent = '';
-      qtyInput.style.borderColor = '';
-    }
-    const sub = Math.ceil((qty * price) / 100) * 100;
-    const subInput = document.getElementById('edit-sub-' + id);
-    if (subInput) subInput.value = Number(sub).toLocaleString('id-ID');
+    const customerId = editCustomerTS?.getValue() || null;
+    const rows = cartRows('#edit-items-list');
+    document.querySelectorAll('#edit-items-list .item-row')
+      .forEach(row => _recalcOneRow(row, 'edit-sub-', customerId, rows));
     recalcEditTotal();
   }
 

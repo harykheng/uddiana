@@ -433,7 +433,7 @@
     const status = document.getElementById('filter-status').value;
     let query = supabase
       .from('invoices')
-      .select('id,invoice_number,invoice_date,store_name,sales_name,total,status,verification_status,reject_reason,notes,payment_term,price_mode,created_by_id,invoice_items(id,product_id,quantity,price,subtotal,cost_price,products(name,sku))')
+      .select('id,invoice_number,invoice_date,store_name,sales_name,total,status,verification_status,reject_reason,notes,payment_term,price_mode,created_by_id,invoice_items(id,product_id,quantity,price,subtotal,cost_price,item_discount,item_discount2,discount_type,products(name,sku))')
       .order('created_at', { ascending: false });
 
     if (status) query = query.eq('verification_status', status);
@@ -693,7 +693,7 @@
       </div>
       <div id="edit-items-list" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
         ${items.map((it, idx) => `
-          <div class="edit-item-row" data-item-id="${it.id}" data-original-qty="${it.quantity}" data-original-product-id="${it.product_id}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:4px">
+          <div class="edit-item-row" data-item-id="${it.id}" data-original-qty="${it.quantity}" data-original-product-id="${it.product_id}" data-disc="${Number(it.item_discount)||0}" data-disc2="${Number(it.item_discount2)||0}" data-disc-type="${it.discount_type || 'percent'}" data-disc-awal="${Number(it.item_discount)||0}" data-disc2-awal="${Number(it.item_discount2)||0}" data-disc-type-awal="${it.discount_type || 'percent'}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:4px">
             <div class="edit-item-grid">
               <div>
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Produk</label>
@@ -709,6 +709,7 @@
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga Jual</label>
                 <input type="text" inputmode="numeric" data-number class="edit-price" value="${Number(it.price||0).toLocaleString('id-ID')}" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
                 <span class="edit-lusin" style="font-size:10px;color:#64748b;font-weight:600;display:block;margin-top:3px">${formatCurrency(hargaLusin(it.price))}/lsn</span>
+                <span class="edit-disc-label" style="font-size:10px;color:#dc2626;font-weight:700;display:block;margin-top:2px">${labelDiskonItem(it)}</span>
                 ${(() => {
                   const pr = allProducts.find(x => x.id === it.product_id);
                   const vAt = pr?.price_verified_at;
@@ -747,10 +748,32 @@
     openModal('modal-edit');
   }
 
+  // Modal ini tidak punya input diskon — diskonnya dibawa apa adanya dari faktur.
+  // Ditampilkan supaya admin tahu baris ini berdiskon sebelum mengubah apa pun.
+  function labelDiskonItem(src) {
+    const d1 = Number(src.item_discount ?? src.disc) || 0;
+    const d2 = Number(src.item_discount2 ?? src.disc2) || 0;
+    const t  = src.discount_type || src.discType || 'percent';
+    if (d1 <= 0) return '';
+    return t === 'nominal'
+      ? `Diskon ${formatCurrency(d1)}/pcs`
+      : `Diskon ${d1}%${d2 > 0 ? '+' + d2 + '%' : ''}`;
+  }
+
   function updateEditProduct(sel, idx) {
     const row = sel.closest('.edit-item-row');
     const opt = sel.options[sel.selectedIndex];
     row.querySelector('.edit-price').value = Number(opt.dataset.price || 0).toLocaleString('id-ID');
+    // Produknya diganti — diskon milik produk lama tidak berlaku lagi
+    if (sel.value !== row.dataset.originalProductId) {
+      row.dataset.disc = '0'; row.dataset.disc2 = '0'; row.dataset.discType = 'percent';
+    } else {
+      row.dataset.disc     = row.dataset.discAwal  ?? row.dataset.disc;
+      row.dataset.disc2    = row.dataset.disc2Awal ?? row.dataset.disc2;
+      row.dataset.discType = row.dataset.discTypeAwal ?? row.dataset.discType;
+    }
+    const lbl = row.querySelector('.edit-disc-label');
+    if (lbl) lbl.textContent = labelDiskonItem(row.dataset);
     recalcEditRow(row.querySelector('.edit-qty'));
   }
 
@@ -758,7 +781,10 @@
     const row = input.closest('.edit-item-row');
     const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
     const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
-    const sub = Math.ceil((qty * price) / 100) * 100;
+    // Sebelumnya diskon tidak ikut dihitung sama sekali, jadi menyimpan lewat modal ini
+    // menaikkan subtotal ke harga penuh padahal item_discount tetap tercatat di database.
+    const sub = hitungSubtotalBaris(qty, price, row.dataset.discType || 'percent',
+                                    Number(row.dataset.disc) || 0, Number(row.dataset.disc2) || 0);
     row.querySelector('.edit-sub').value = sub.toLocaleString('id-ID');
     const lsn = row.querySelector('.edit-lusin');
     if (lsn) lsn.textContent = `${formatCurrency(hargaLusin(price))}/lsn`;
@@ -770,7 +796,8 @@
     document.querySelectorAll('.edit-item-row').forEach(row => {
       const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
       const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
-      total += Math.ceil((qty * price) / 100) * 100;
+      total += hitungSubtotalBaris(qty, price, row.dataset.discType || 'percent',
+                                   Number(row.dataset.disc) || 0, Number(row.dataset.disc2) || 0);
     });
     document.getElementById('edit-total').textContent = formatCurrency(total);
   }
@@ -803,7 +830,10 @@
       const productId = row.querySelector('.edit-product-sel').value;
       const qty = parseFloat(row.querySelector('.edit-qty').value) || 0;
       const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
-      const sub = Math.ceil((qty * price) / 100) * 100;
+      const discType = row.dataset.discType || 'percent';
+      const disc     = Number(row.dataset.disc)  || 0;
+      const disc2    = Number(row.dataset.disc2) || 0;
+      const sub = hitungSubtotalBaris(qty, price, discType, disc, disc2);
       const opt = row.querySelector('.edit-product-sel').options[row.querySelector('.edit-product-sel').selectedIndex];
       const costEl = row.querySelector('.edit-cost');
       const cost = costEl ? parseFormattedNumber(costEl.value || '0') : null; // null = field disembunyikan (bukan super_admin), jangan sentuh cost_price
@@ -811,7 +841,7 @@
 
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); setLoading(btn, false); return; }
 
-      parsedRows.push({ itemId, originalQty, originalProductId, productId, qty, price, sub, cost, productName });
+      parsedRows.push({ itemId, originalQty, originalProductId, productId, qty, price, sub, cost, productName, discType, disc, disc2 });
     }
 
     // Hitung delta stok BERSIH per produk (gabungan semua baris — kalau produk yang sama
@@ -859,7 +889,8 @@
       }
     }
     for (const r of parsedRows) {
-      const itemPayload = { product_id: r.productId, product_name: r.productName, quantity: r.qty, price: r.price, subtotal: r.sub };
+      const itemPayload = { product_id: r.productId, product_name: r.productName, quantity: r.qty, price: r.price, subtotal: r.sub,
+                            item_discount: r.disc, item_discount2: r.disc2, discount_type: r.discType };
       if (r.cost !== null) itemPayload.cost_price = r.cost;
       await supabase.from('invoice_items').update(itemPayload).eq('id', r.itemId);
       total += r.sub;

@@ -286,3 +286,27 @@ async function fetchReturnDetail(invoiceId) {
   });
   return out;
 }
+
+// ── SUBTOTAL BARIS FAKTUR ─────────────────────────────────────
+// Satu formula dipakai SEMUA halaman (invoices, sales, verify-invoices) supaya
+// faktur yang dibuat sales dan yang dibuat admin menghasilkan angka yang sama.
+//
+// Dulu sales.html menurunkan subtotal dari harga satuan yang sudah dibulatkan ke
+// rupiah (karena kolom Harga Satuan di sana menampilkan harga setelah diskon),
+// jadi ada DUA pembulatan: round() harga satuan lalu ceil() ke kelipatan 100.
+// invoices.html cuma satu. Hasilnya beda Rp 100 pada ~14% kombinasi harga/qty/diskon.
+// Sekarang subtotal selalu diturunkan dari harga katalog + diskon, sekali pembulatan.
+//
+// Diskon persen bertingkat/compound, bukan dijumlah: 20%+5% != 25%.
+// Diskon nominal itu per-pcs: dikurangi dari harga satuan dulu, baru dikali qty.
+function hitungSubtotalBaris(qty, price, discType, disc, disc2) {
+  const q  = Number(qty)   || 0;
+  const p  = Number(price) || 0;
+  const d1 = Math.max(0, Number(disc)  || 0);
+  const d2 = Math.max(0, Number(disc2) || 0);
+  if (discType === 'nominal') {
+    return Math.max(0, Math.ceil((q * Math.max(0, p - d1)) / 100) * 100);
+  }
+  const a = Math.min(d1, 100), b = Math.min(d2, 100);
+  return Math.max(0, Math.ceil((q * p * (1 - a / 100) * (1 - b / 100)) / 100) * 100);
+}
