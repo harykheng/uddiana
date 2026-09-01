@@ -234,3 +234,55 @@ async function fetchAll(queryFn, pageSize = 1000) {
     return r;
   };
 })();
+
+// ── RETUR vs FAKTUR ───────────────────────────────────────────
+// Retur TIDAK mengubah invoices.total — nilai faktur asli harus tetap utuh untuk
+// audit & cetak ulang. Konsekuensinya setiap halaman yang menghitung tagihan,
+// piutang, atau omzet wajib mengurangkan nilai retur sendiri lewat helper ini.
+//
+// Hanya retur 'approved' yang mengurangi tagihan:
+//   pending  = belum tentu diterima, stoknya juga belum dikembalikan
+//   rejected = jelas tidak mengurangi apa pun
+// (Tabel returns tidak punya status 'cancelled'. Filter lama .neq('status','cancelled')
+//  lolos semua, jadi retur yang DITOLAK pun ikut memotong tagihan.)
+
+// Map { invoice_id: total_nilai_retur } untuk sekumpulan faktur.
+async function fetchReturnTotals(invoiceIds) {
+  const map = {};
+  const ids = (invoiceIds || []).filter(Boolean);
+  if (!ids.length) return map;
+  const CHUNK = 200;   // jaga panjang URL query .in()
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data, error } = await supabase.from('returns')
+      .select('invoice_id,total_return_value')
+      .in('invoice_id', ids.slice(i, i + CHUNK))
+      .eq('status', 'approved');
+    if (error) { console.error('fetchReturnTotals:', error.message); return map; }
+    (data || []).forEach(r => {
+      if (!r.invoice_id) return;
+      map[r.invoice_id] = (map[r.invoice_id] || 0) + Number(r.total_return_value || 0);
+    });
+  }
+  return map;
+}
+
+// Rincian retur satu faktur: total, qty per produk, dan daftar returnya.
+async function fetchReturnDetail(invoiceId) {
+  const kosong = { total: 0, qtyByProduct: {}, list: [] };
+  if (!invoiceId) return kosong;
+  const { data, error } = await supabase.from('returns')
+    .select('id,return_number,return_date,total_return_value,return_items(product_id,product_name,quantity,unit_price,subtotal)')
+    .eq('invoice_id', invoiceId)
+    .eq('status', 'approved');
+  if (error) { console.error('fetchReturnDetail:', error.message); return kosong; }
+
+  const out = { total: 0, qtyByProduct: {}, list: data || [] };
+  (data || []).forEach(r => {
+    out.total += Number(r.total_return_value || 0);
+    (r.return_items || []).forEach(it => {
+      if (!it.product_id) return;
+      out.qtyByProduct[it.product_id] = (out.qtyByProduct[it.product_id] || 0) + Number(it.quantity || 0);
+    });
+  });
+  return out;
+}

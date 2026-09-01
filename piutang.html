@@ -279,11 +279,17 @@
       .order('invoice_date', { ascending: true });
 
     if (error) { showToast('Gagal memuat: ' + error.message, 'error'); return; }
+
+    // Retur tidak mengubah invoices.total, jadi tanpa ini piutang kelebihan sebesar
+    // nilai barang yang sudah dikembalikan toko.
+    const returByInv = await fetchReturnTotals((data || []).map(i => i.id));
+
     allInvoices = (data || []).map(inv => ({
       ...inv,
       _daysOverdue: daysOverdue(inv),
       _dueDate: dueDate(inv).toISOString().split('T')[0],
-      _sisa: Math.max(0, Number(inv.total || 0) - Number(inv.paid_amount || 0)),
+      _retur: Number(returByInv[inv.id] || 0),
+      _sisa: Math.max(0, Number(inv.total || 0) - Number(returByInv[inv.id] || 0) - Number(inv.paid_amount || 0)),
     }));
 
     // Populate customer filter
@@ -364,7 +370,7 @@
         <td class="text-muted">${formatDate(inv.invoice_date)}</td>
         <td class="${inv._daysOverdue > 0 ? 'font-bold' : 'text-muted'}" style="${inv._daysOverdue > 30 ? 'color:var(--danger)' : ''}">${formatDate(inv._dueDate)}</td>
         <td>${terminMap[inv.payment_term]||inv.payment_term||'—'}</td>
-        <td class="text-right font-bold">${formatCurrency(inv._sisa)}${Number(inv.paid_amount||0) > 0 ? `<br><small class="text-muted" style="font-weight:400">dari ${formatCurrency(inv.total)}</small>` : ''}</td>
+        <td class="text-right font-bold">${formatCurrency(inv._sisa)}${Number(inv.paid_amount||0) > 0 || inv._retur > 0 ? `<br><small class="text-muted" style="font-weight:400">dari ${formatCurrency(inv.total)}${inv._retur > 0 ? ` · retur -${formatCurrency(inv._retur)}` : ''}</small>` : ''}</td>
         <td>${agingBadge(inv._daysOverdue)}</td>
         <td>
           <button class="btn btn-success btn-sm" onclick="openPay('${inv.id}')">💳 Lunasi</button>
