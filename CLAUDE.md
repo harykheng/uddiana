@@ -343,5 +343,6 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration29.sql` | Kolom `discount_value2` di `product_discount_rules` — diskon bertingkat di aturan diskon `discounts.html`, ikut ke-auto-apply ke faktur |
 | `supabase_migration30.sql` | (Digantikan migration31) Kolom `customer_id` tunggal di `product_discount_rules` — diskon khusus 1 customer |
 | `supabase_migration31.sql` | Ganti pendekatan migration30 jadi tabel junction `product_discount_rule_customers` (many-to-many) — 1 aturan diskon bisa berlaku buat beberapa toko sekaligus. Kolom `customer_id` lama di-drop |
+| `supabase_migration34.sql` | **Wajib untuk Edit PO.** Fungsi `edit_purchase()` — seluruh rangkaian edit pembelian jadi satu transaksi (sebelumnya 4 panggilan terpisah dari browser: koneksi putus di tengah = stok berkurang + item PO hilang). Sekaligus `increase_stock_on_purchase()` cuma menulis `products.cost` kalau PO itu memang pembelian terbaru untuk produk tsb — sebelumnya edit PO lama menarik mundur harga modal |
 
 
