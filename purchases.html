@@ -839,6 +839,9 @@
     const tbody = document.getElementById('edit-po-items-body');
     const tr   = document.createElement('tr');
     tr.id      = id;
+    // id purchase_items lama — dipakai edit_purchase() untuk membawa serta batch_number
+    // & expired_date milik baris ini (form edit tidak punya input untuk keduanya).
+    tr.dataset.itemId = existing?.id || '';
     tr.innerHTML = `
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
@@ -913,7 +916,7 @@
       const prod = products.find(p => p.id === sel.value);
       const sub  = qty * cost;
       totalCost += sub;
-      newItems.push({ product_id: sel.value, product_name: prod?.name || '', quantity: qty, cost_price: cost, subtotal: sub });
+      newItems.push({ item_id: tr.dataset.itemId || null, product_id: sel.value, product_name: prod?.name || '', quantity: qty, cost_price: cost, subtotal: sub });
     });
 
     if (!valid) { setLoading(btn, false); return; }
@@ -921,77 +924,32 @@
 
     showFullLoading('Menyimpan perubahan pembelian & menyesuaikan stok...');
 
-    // 1. Ambil item lama, hitung total qty per produk yang akan "dilepas" (digabung
-    //    dulu kalau ada produk yang sama di beberapa baris), lalu VALIDASI SEMUA dulu
-    //    pakai stok live SEBELUM ada tulisan apapun ke DB. Kalau divalidasi sambil jalan
-    //    di dalam loop yang sama dengan penulisan (seperti sebelumnya), produk yang lolos
-    //    duluan sudah kadung dikurangi permanen walau produk belakangan gagal — dan kalau
-    //    PO ini diedit ulang, stok yang sama bisa ke-potong dua kali dari histori yang sama.
-    const { data: oldItems } = await supabase
-      .from('purchase_items').select('product_id, quantity').eq('purchase_id', currentEditPoId);
-
-    const releaseByProduct = {};
-    (oldItems || []).forEach(old => {
-      releaseByProduct[old.product_id] = (releaseByProduct[old.product_id] || 0) + Number(old.quantity);
+    // Seluruh rangkaian (lepas stok item lama → hapus item → pasang item baru →
+    // update header) dijalankan fungsi Postgres edit_purchase() sebagai SATU transaksi.
+    // Sebelumnya keempat langkah itu panggilan terpisah dari browser: kalau koneksi
+    // putus di tengah, stok sudah telanjur berkurang DAN item PO sudah hilang, tanpa
+    // cara mengembalikannya. Sekarang kegagalan apa pun membatalkan semuanya.
+    const { error } = await supabase.rpc('edit_purchase', {
+      p_purchase_id: currentEditPoId,
+      p_supplier:    document.getElementById('edit-po-supplier').value.trim() || null,
+      p_date:        document.getElementById('edit-po-date').value,
+      p_notes:       document.getElementById('edit-po-notes').value.trim() || null,
+      p_total:       totalCost,
+      p_items:       newItems,
     });
-    const oldProductIds = Object.keys(releaseByProduct);
-
-    const finalStock = {};
-    const liveStockById = {};
-    const productNameById = {};
-    if (oldProductIds.length) {
-      const { data: liveProducts, error: liveErr } = await supabase
-        .from('products').select('id,name,stock_quantity').in('id', oldProductIds);
-      if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); setLoading(btn, false); hideFullLoading(); return; }
-
-      for (const p of (liveProducts || [])) {
-        const newStock = p.stock_quantity - releaseByProduct[p.id];
-        if (newStock < 0) {
-          showToast(`Tidak bisa edit — stok "${p.name}" sudah terpakai (sisa: ${p.stock_quantity}, PO ini: ${releaseByProduct[p.id]}). Sesuaikan manual dulu lewat halaman Produk.`, 'error');
-          setLoading(btn, false); hideFullLoading(); return;
-        }
-        finalStock[p.id] = newStock;
-        liveStockById[p.id] = p.stock_quantity;
-        productNameById[p.id] = p.name;
-      }
-    }
-
-    // 2. Semua tervalidasi aman — baru mulai tulis: kurangi stok per produk (satu kali per produk)
-    for (const productId of Object.keys(finalStock)) {
-      await supabase.from('products').update({ stock_quantity: finalStock[productId] }).eq('id', productId);
-      const { error: movErr } = await supabase.from('stock_movements').insert({
-        product_id: productId, product_name: productNameById[productId], type: 'adjustment',
-        quantity: Math.abs(finalStock[productId] - liveStockById[productId]), quantity_before: liveStockById[productId], quantity_after: finalStock[productId],
-        notes: `Edit pembelian: lepas stok item lama`,
-      });
-      if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
-    }
-
-    // 3. Hapus item lama
-    await supabase.from('purchase_items').delete().eq('purchase_id', currentEditPoId);
-
-    // 4. Insert item baru — trigger otomatis tambah stok + update cost
-    const { error: itemsErr } = await supabase.from('purchase_items').insert(
-      newItems.map(i => ({ ...i, purchase_id: currentEditPoId }))
-    );
-    if (itemsErr) {
-      showToast('Gagal simpan item: ' + itemsErr.message, 'error');
-      setLoading(btn, false);
-      hideFullLoading();
-      return;
-    }
-
-    // 4. Update header PO
-    const { error } = await supabase.from('purchases').update({
-      supplier_name: document.getElementById('edit-po-supplier').value.trim() || null,
-      purchase_date: document.getElementById('edit-po-date').value,
-      notes:         document.getElementById('edit-po-notes').value.trim() || null,
-      total_cost:    totalCost,
-    }).eq('id', currentEditPoId);
 
     setLoading(btn, false);
     hideFullLoading();
-    if (error) { showToast('Gagal update PO: ' + error.message, 'error'); return; }
+
+    if (error) {
+      // PGRST202/42883 = fungsinya belum ada di database (migration 34 belum dijalankan)
+      const belumAda = error.code === 'PGRST202' || error.code === '42883'
+                    || /edit_purchase.*does not exist|Could not find the function/i.test(error.message || '');
+      showToast(belumAda
+        ? 'Fitur ini butuh supabase_migration34.sql dijalankan dulu di Supabase SQL Editor'
+        : (error.message || 'Gagal menyimpan perubahan pembelian'), 'error');
+      return;
+    }
 
     showToast('Pembelian berhasil diperbarui, stok disesuaikan');
     closeModal('modal-edit-po');
