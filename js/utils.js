@@ -17,6 +17,12 @@ function formatCurrency(amount) {
   }).format(amount || 0);
 }
 
+// Harga per lusin (1 lusin = 12 pcs), dibulatkan ke kelipatan 100.
+// Formula sama dengan yang dipakai di products.html & sales.html.
+function hargaLusin(price) {
+  return Math.round((Number(price || 0) * 12) / 100) * 100;
+}
+
 function formatDate(dateStr) {
   if (!dateStr) return '-';
   return new Intl.DateTimeFormat('id-ID', {

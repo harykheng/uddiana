@@ -559,7 +559,7 @@
           ${items.map(it => `<tr style="border-bottom:1px solid #f1f5f9">
             <td style="padding:8px 6px">${escapeHtml(it.products?.name || '—')}<br><small class="text-muted">${escapeHtml(it.products?.sku || '')}</small></td>
             <td style="padding:8px 6px;text-align:right">${it.quantity}</td>
-            <td style="padding:8px 6px;text-align:right">${formatCurrency(it.price)}</td>
+            <td style="padding:8px 6px;text-align:right">${formatCurrency(it.price)}<br><small class="text-muted" style="font-size:11px;font-weight:400">${formatCurrency(hargaLusin(it.price))}/lsn</small></td>
             <td style="padding:8px 6px;text-align:right;color:#64748b">${formatCurrency(it.cost_price || 0)}</td>
             <td style="padding:8px 6px;text-align:right;font-weight:600">${formatCurrency(it.subtotal)}</td>
           </tr>`).join('')}
@@ -708,6 +708,7 @@
               <div>
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Harga Jual</label>
                 <input type="text" inputmode="numeric" data-number class="edit-price" value="${Number(it.price||0).toLocaleString('id-ID')}" oninput="recalcEditRow(this)" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
+                <span class="edit-lusin" style="font-size:10px;color:#64748b;font-weight:600;display:block;margin-top:3px">${formatCurrency(hargaLusin(it.price))}/lsn</span>
                 ${(() => {
                   const pr = allProducts.find(x => x.id === it.product_id);
                   const vAt = pr?.price_verified_at;
@@ -759,6 +760,8 @@
     const price = parseFormattedNumber(row.querySelector('.edit-price').value || '0');
     const sub = Math.ceil((qty * price) / 100) * 100;
     row.querySelector('.edit-sub').value = sub.toLocaleString('id-ID');
+    const lsn = row.querySelector('.edit-lusin');
+    if (lsn) lsn.textContent = `${formatCurrency(hargaLusin(price))}/lsn`;
     recalcEditTotal();
   }
 
