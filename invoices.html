@@ -546,6 +546,8 @@
       (data||[]).map(u => `<option value="${u.id}" data-name="${escapeHtml(u.name)}">${escapeHtml(u.name)}</option>`).join('');
   }
 
+  let returTotalByInvoice = {};   // { invoice_id: nilai retur disetujui }
+
   async function loadInvoices() {
     invPage = 1;
     const status   = document.getElementById('filter-status').value;
@@ -561,6 +563,10 @@
     const { data, error } = await q;
     if (error) { showToast('Gagal memuat faktur', 'error'); return; }
     allInvoices = data || [];
+
+    // Retur tidak mengubah invoices.total, jadi nilainya diambil terpisah lalu
+    // dikurangkan sendiri saat menampilkan tagihan & sisa.
+    returTotalByInvoice = await fetchReturnTotals(allInvoices.map(i => i.id));
 
     // Populasi dropdown filter sales dari data yang ada
     const salesNames = [...new Set(allInvoices.map(i => i.sales_name).filter(Boolean))].sort();
@@ -645,7 +651,13 @@
       const termin  = terminMap[inv.payment_term] || inv.payment_term || '—';
       const faded   = inv.status === 'cancelled' ? 'style="opacity:.55"' : '';
       const paidAmt = Number(inv.paid_amount || 0);
-      const sisa    = Number(inv.total) - paidAmt;
+      const returAmt = Number(returTotalByInvoice[inv.id] || 0);
+      const tagihan  = Number(inv.total) - returAmt;
+      const sisa     = tagihan - paidAmt;
+      const returHtml = returAmt > 0
+        ? `<div style="font-size:11px;margin-top:3px;color:#16a34a;">↩️ retur -${formatCurrency(returAmt)}</div>
+           <div style="font-size:11px;font-weight:700;color:#0f172a;">tagihan ${formatCurrency(tagihan)}</div>`
+        : '';
       const sisaHtml = inv.status === 'pending' && paidAmt > 0
         ? `<div style="font-size:11px;margin-top:3px;">
              <span style="color:#16a34a;">✓ ${formatCurrency(paidAmt)}</span>
@@ -668,6 +680,7 @@
         <td><span class="badge badge-gray" style="white-space:nowrap">${termin}</span></td>
         <td class="text-right font-bold">
           ${formatCurrency(inv.total)}
+          ${returHtml}
           ${sisaHtml}
         </td>
         <td><span class="badge badge-${color}" style="white-space:nowrap">${label}</span></td>
@@ -1781,12 +1794,10 @@
     const inv = allInvoices.find(x => x.id === id);
     if (!inv) return;
 
-    // Fetch total retur untuk faktur ini
-    const { data: returs } = await supabase.from('returns')
-      .select('total_return_value')
-      .eq('invoice_id', id)
-      .neq('status', 'cancelled');
-    const returTotal = (returs || []).reduce((s, r) => s + Number(r.total_return_value || 0), 0);
+    // Total retur faktur ini. Filter lama .neq('status','cancelled') lolos SEMUA —
+    // tabel returns tidak punya status 'cancelled', jadi retur yang DITOLAK pun ikut
+    // memotong tagihan. Helper di utils.js cuma menghitung yang 'approved'.
+    const returTotal = (await fetchReturnTotals([id]))[id] || 0;
 
     const effectiveTotal = Number(inv.total) - returTotal;
     const remaining      = effectiveTotal - Number(inv.paid_amount || 0);
@@ -1851,7 +1862,9 @@
   async function confirmPayment() {
     const btn    = document.getElementById('btn-confirm-payment');
     const id     = document.getElementById('pay-invoice-id').value;
-    const total  = parseFloat(document.getElementById('pay-invoice-total').value) || 0;
+    // pay-invoice-total berisi SISA tagihan (total - retur - yang sudah dibayar),
+    // bukan nilai faktur penuh — sama seperti yang dipakai fillLunas & onPayAmountChange.
+    const sisaTagihan = parseFloat(document.getElementById('pay-invoice-total').value) || 0;
     const amount = parseFormattedNumber(document.getElementById('pay-amount').value);
     const date   = document.getElementById('pay-date').value;
     const notes  = document.getElementById('pay-notes').value.trim();
@@ -1862,7 +1875,10 @@
     const inv = allInvoices.find(x => x.id === id);
     const alreadyPaid   = Number(inv?.paid_amount || 0);
     const newTotalPaid  = alreadyPaid + amount;
-    const isFullyPaid   = newTotalPaid >= total;
+    // Lunas kalau bayaran KALI INI menutup sisa tagihan. Sebelumnya dibandingkan
+    // newTotalPaid (kumulatif) terhadap sisa — begitu bayaran pertama melewati separuh,
+    // berapapun bayaran kedua langsung menandai faktur Lunas dan sisanya hilang.
+    const isFullyPaid   = amount >= sisaTagihan;
 
     // Akumulasi per metode pembayaran (untuk laporan laba rugi)
     const prevCash     = Number(inv?.cash_paid     || 0);
@@ -1884,7 +1900,7 @@
 
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
 
-    showToast(isFullyPaid ? 'Faktur berhasil dilunasi ✓' : `Pembayaran ${formatCurrency(amount)} tercatat, sisa ${formatCurrency(total - newTotalPaid)}`);
+    showToast(isFullyPaid ? 'Faktur berhasil dilunasi ✓' : `Pembayaran ${formatCurrency(amount)} tercatat, sisa ${formatCurrency(sisaTagihan - amount)}`);
     closeModal('modal-payment');
     loadInvoices();
   }
@@ -1897,6 +1913,7 @@
     openModal('modal-view-invoice');
     const { data: inv }   = await supabase.from('invoices').select('*').eq('id', id).single();
     const { data: rawItems } = await supabase.from('invoice_items').select('*').eq('invoice_id', id);
+    const retur = await fetchReturnDetail(id);   // { total, qtyByProduct, list }
     // Gunakan nama produk terkini dari products array (mengatasi nama lama yang tersimpan di invoice_items)
     const items = (rawItems || []).map(item => {
       const cur = products.find(p => p.id === item.product_id);
@@ -1925,9 +1942,13 @@
           ? `<span style="color:#dc2626;font-size:12px">${disc}%${disc2 > 0 ? '+' + disc2 + '%' : ''}</span>`
           : `<span style="color:#dc2626;font-size:12px">-${formatCurrency(disc)}/pcs</span>`;
       }
+      const returQty = Number(retur.qtyByProduct[item.product_id] || 0);
+      const returTag = returQty > 0
+        ? `<div style="font-size:11px;color:#16a34a;font-weight:700;margin-top:2px">↩️ diretur ${returQty} pcs${returQty >= item.quantity ? ' (semua)' : ''}</div>`
+        : '';
       return `
-        <tr>
-          <td style="padding:8px 10px">${escapeHtml(item.product_name)}</td>
+        <tr${returQty >= item.quantity ? ' style="background:#f0fdf4"' : ''}>
+          <td style="padding:8px 10px">${escapeHtml(item.product_name)}${returTag}</td>
           <td style="padding:8px 10px;text-align:right">${item.quantity}</td>
           <td style="padding:8px 10px;text-align:right">${formatCurrency(item.price)}</td>
           ${hasItemDisc ? `<td style="padding:8px 10px;text-align:right">${discDisplay}</td>` : ''}
@@ -1982,7 +2003,14 @@
         ${Number(inv.discount) > 0 ? `<div class="invoice-summary-row"><span>Diskon</span><span>- ${formatCurrency(inv.discount)}</span></div>` : ''}
         ${(inv.additional_charges||[]).map(c => `<div class="invoice-summary-row" style="color:var(--text-muted)"><span>${escapeHtml(c.name)}${c.type==='percent'?` (${c.value}%)`:''}</span><span>+${formatCurrency(c.amount)}</span></div>`).join('')}
         <div class="invoice-summary-row total"><span>TOTAL</span><span style="color:var(--primary)">${formatCurrency(inv.total)}</span></div>
+        ${retur.total > 0 ? `
+        <div class="invoice-summary-row" style="color:#16a34a"><span>↩️ Retur${retur.list.length > 1 ? ` (${retur.list.length}x)` : ''}</span><span>- ${formatCurrency(retur.total)}</span></div>
+        <div class="invoice-summary-row total"><span>TAGIHAN SETELAH RETUR</span><span style="color:var(--primary)">${formatCurrency(Number(inv.total) - retur.total)}</span></div>` : ''}
       </div>
+      ${retur.total > 0 ? `<div style="margin-top:10px;padding:10px 12px;background:#f0fdf4;border:1px solid #86efac;border-radius:7px;font-size:12px">
+        <div style="font-weight:700;color:#166534;margin-bottom:4px">Retur disetujui</div>
+        ${retur.list.map(r => `<div style="color:#166534">• ${escapeHtml(r.return_number || '—')} · ${formatDate(r.return_date)} · ${formatCurrency(r.total_return_value)}</div>`).join('')}
+      </div>` : ''}
       ${paymentInfo}
       ${inv.notes ? `<div style="margin-top:10px;padding:10px 12px;background:#fffbeb;border-radius:7px;font-size:13px;color:var(--text-muted)">📝 ${escapeHtml(inv.notes)}</div>` : ''}
       ${inv.printed_at ? `<div style="margin-top:8px;font-size:12px;color:#94a3b8">🖨️ Sudah dicetak ${inv.print_count}x · terakhir ${formatDate(inv.printed_at)}</div>` : ''}
@@ -2097,6 +2125,9 @@
   async function printCurrentInvoice() {
     if (!currentInvoice) return;
     const { inv, items } = currentInvoice;
+    // Faktur yang barangnya sebagian diretur harus tercetak dengan tagihan sesudah retur,
+    // bukan nilai faktur asli — kalau tidak, lembar yang dipegang toko beda dengan tagihan.
+    const printRetur = (await fetchReturnTotals([inv.id]))[inv.id] || 0;
 
     const terminMap = {
       cod: 'COD (Bayar di Tempat)',
@@ -2193,7 +2224,10 @@
             ${subtotalRow}
             ${discountRow}
             ${chargesRows}
-            <div class="pi-total-row pi-grand"><span>TOTAL</span><span>${formatCurrency(inv.total)}</span></div>
+            <div class="pi-total-row${printRetur > 0 ? '' : ' pi-grand'}"><span>TOTAL</span><span>${formatCurrency(inv.total)}</span></div>
+            ${printRetur > 0 ? `
+            <div class="pi-total-row"><span>Retur</span><span>- ${formatCurrency(printRetur)}</span></div>
+            <div class="pi-total-row pi-grand"><span>TAGIHAN</span><span>${formatCurrency(Number(inv.total) - printRetur)}</span></div>` : ''}
           </div>
         </div>
 

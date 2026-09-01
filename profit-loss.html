@@ -341,8 +341,29 @@
     };
 
     const invIds = (invoices||[]).map(i => i.id);
+
+    // Retur mengurangi omzet DAN HPP — barangnya kembali ke stok, jadi biayanya batal juga.
+    // Diatribusikan ke tanggal FAKTUR (bukan tanggal retur) supaya omzet & HPP satu faktur
+    // tetap sepasang di periode yang sama. Hanya retur 'approved' yang dihitung.
+    const returByInv = {};
+    const returItems = [];
+    for (let i = 0; i < invIds.length; i += 200) {
+      const { data: rets } = await supabase.from('returns')
+        .select('invoice_id,total_return_value,return_items(product_id,product_name,quantity,subtotal)')
+        .in('invoice_id', invIds.slice(i, i + 200))
+        .eq('status', 'approved');
+      (rets || []).forEach(r => {
+        returByInv[r.invoice_id] = (returByInv[r.invoice_id] || 0) + Number(r.total_return_value || 0);
+        (r.return_items || []).forEach(ri => returItems.push({
+          invoice_id: r.invoice_id, product_id: ri.product_id, product_name: ri.product_name,
+          quantity: Number(ri.quantity || 0), subtotal: Number(ri.subtotal || 0),
+        }));
+      });
+    }
+    const returOf = id => Number(returByInv[id] || 0);
+
     reportData.txnCount      = invIds.length;
-    reportData.revenue       = (invoices||[]).reduce((s,i) => s + Number(i.total), 0);
+    reportData.revenue       = (invoices||[]).reduce((s,i) => s + Number(i.total) - returOf(i.id), 0);
     reportData.cashTotal     = (invoices||[]).reduce((s,i) => s + getCash(i), 0);
     reportData.transferTotal = (invoices||[]).reduce((s,i) => s + getTransfer(i), 0);
 
@@ -351,7 +372,7 @@
     (invoices||[]).forEach(inv => {
       const m = inv.invoice_date.substring(0, 7); // YYYY-MM
       if (!monthlyMap[m]) monthlyMap[m] = { cash:0, transfer:0, other:0, total:0 };
-      monthlyMap[m].total    += Number(inv.total);
+      monthlyMap[m].total    += Number(inv.total) - returOf(inv.id);
       monthlyMap[m].cash     += getCash(inv);
       monthlyMap[m].transfer += getTransfer(inv);
     });
@@ -369,10 +390,16 @@
     // Get invoice items with cost for COGS
     const { data: items } = await supabase
       .from('invoice_items')
-      .select('invoice_id,product_name,quantity,price,subtotal,cost_price')
+      .select('invoice_id,product_id,product_name,quantity,price,subtotal,cost_price')
       .in('invoice_id', invIds);
 
-    reportData.cogs = (items||[]).reduce((s,i) => s + (Number(i.cost_price) * Number(i.quantity)), 0);
+    // HPP satuan per (faktur, produk) — dipakai membatalkan biaya barang yang diretur
+    const costByInvProd = {};
+    (items||[]).forEach(i => { costByInvProd[`${i.invoice_id}|${i.product_id}`] = Number(i.cost_price || 0); });
+    const returCogsOf = ri => (costByInvProd[`${ri.invoice_id}|${ri.product_id}`] || 0) * ri.quantity;
+
+    reportData.cogs = (items||[]).reduce((s,i) => s + (Number(i.cost_price) * Number(i.quantity)), 0)
+                    - returItems.reduce((s,ri) => s + returCogsOf(ri), 0);
     reportData.gross  = reportData.revenue - reportData.cogs;
     reportData.margin = reportData.revenue > 0 ? (reportData.gross / reportData.revenue * 100) : 0;
 
@@ -381,13 +408,18 @@
     (invoices||[]).forEach(inv => {
       const d = inv.invoice_date;
       if (!dailyMap[d]) dailyMap[d] = { revenue:0, cogs:0 };
-      dailyMap[d].revenue += Number(inv.total);
+      dailyMap[d].revenue += Number(inv.total) - returOf(inv.id);
     });
     (items||[]).forEach(item => {
       const inv = (invoices||[]).find(i => i.id === item.invoice_id);
       if (!inv) return;
       const d = inv.invoice_date;
       if (dailyMap[d]) dailyMap[d].cogs += Number(item.cost_price) * Number(item.quantity);
+    });
+    returItems.forEach(ri => {
+      const inv = (invoices||[]).find(i => i.id === ri.invoice_id);
+      if (!inv || !dailyMap[inv.invoice_date]) return;
+      dailyMap[inv.invoice_date].cogs -= returCogsOf(ri);
     });
     reportData.daily = Object.entries(dailyMap)
       .sort((a,b) => a[0].localeCompare(b[0]))
@@ -400,6 +432,13 @@
       prodMap[item.product_name].qty     += Number(item.quantity);
       prodMap[item.product_name].revenue += Number(item.subtotal);
       prodMap[item.product_name].cogs    += Number(item.cost_price) * Number(item.quantity);
+    });
+    returItems.forEach(ri => {
+      const key = ri.product_name;
+      if (!prodMap[key]) return;   // produk ini tidak ada di periode ini — lewati, jangan bikin baris negatif
+      prodMap[key].qty     -= ri.quantity;
+      prodMap[key].revenue -= ri.subtotal;
+      prodMap[key].cogs    -= returCogsOf(ri);
     });
     reportData.products = Object.entries(prodMap).map(([name, v]) => ({
       name, qty: v.qty, revenue: v.revenue, cogs: v.cogs,
