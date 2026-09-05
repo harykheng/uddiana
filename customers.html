@@ -82,6 +82,7 @@
                 <th>Nama</th>
                 <th>Nama Toko</th>
                 <th>Telepon</th>
+                <th>Lokasi</th>
                 <th class="text-right">Total Transaksi</th>
                 <th class="text-right">Total Belanja</th>
                 <th class="text-right">Piutang</th>
@@ -89,7 +90,7 @@
               </tr>
             </thead>
             <tbody id="customers-table">
-              <tr><td colspan="8" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+              <tr><td colspan="9" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
             </tbody>
           </table>
         </div>
@@ -169,6 +170,11 @@
         <label>Alamat</label>
         <textarea id="customer-address" placeholder="Alamat lengkap" style="min-height:70px"></textarea>
       </div>
+      <div class="form-group">
+        <label>Titik Lokasi (GPS)</label>
+        <input type="text" id="customer-coord" placeholder="Contoh: -6.914744, 107.609810 (kosongkan untuk menghapus)">
+        <small class="text-muted" id="customer-coord-hint" style="display:block;margin-top:6px;line-height:1.5"></small>
+      </div>
       <div class="form-group mb-0">
         <label>Catatan</label>
         <textarea id="customer-notes" placeholder="Catatan tambahan (opsional)" style="min-height:60px"></textarea>
@@ -226,7 +232,7 @@
     const tbody = document.getElementById('customers-table');
 
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👥</div><h4>Belum ada customer</h4><p>Tambah customer baru</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">👥</div><h4>Belum ada customer</h4><p>Tambah customer baru</p></div></td></tr>`;
       return;
     }
 
@@ -242,7 +248,7 @@
           ${c.notes ? `<br><small class="text-muted">${escapeHtml(c.notes.substring(0,40))}</small>` : ''}
         </td>
         <td>${c.store_name ? `<span class="badge badge-info">${escapeHtml(c.store_name)}</span>` : '—'}</td>
-        <td>${escapeHtml(c.phone || '—')}</td>
+        <td>${locationCell(c)}</td>
         <td class="text-right text-muted">${st.count > 0 ? st.count + ' faktur' : '—'}</td>
         <td class="text-right font-bold">${st.total > 0 ? formatCurrency(st.total) : '—'}</td>
         <td class="text-right">${st.count > 0 ? piutangChip : '—'}</td>
@@ -257,6 +263,34 @@
     }).join('');
   }
 
+  // Titik GPS ditempel otomatis oleh fitur Absen Kunjungan di sales.html (lihat
+  // supabase_migration35.sql). Kalau belum pernah dikunjungi, Maps cuma bisa nebak
+  // dari teks alamat — sering meleset, makanya dibedakan labelnya.
+  function locationCell(c) {
+    if (c.latitude != null && c.longitude != null) {
+      const src = c.location_source === 'manual' ? '📌 manual' : '📍 dari absen';
+      return `<a href="https://www.google.com/maps?q=${c.latitude},${c.longitude}" target="_blank" rel="noopener" class="badge badge-success" style="text-decoration:none">🗺️ Maps</a>
+        <br><small class="text-muted">${src}</small>`;
+    }
+    if (c.address) {
+      return `<a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}" target="_blank" rel="noopener" class="badge badge-info" style="text-decoration:none">🗺️ Maps</a>
+        <br><small class="text-muted">dari alamat</small>`;
+    }
+    return '<span class="text-muted">—</span>';
+  }
+
+  // Terima "lat, lng" (format yang keluar kalau koordinat di-copy dari Google Maps).
+  // Return: null = kosong (hapus koordinat), false = format salah, {lat,lng} = valid.
+  function parseCoordInput(raw) {
+    const v = (raw || '').trim();
+    if (!v) return null;
+    const m = v.match(/^\s*(-?\d{1,3}(?:\.\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/);
+    if (!m) return false;
+    const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+    if (!(lat >= -90 && lat <= 90) || !(lng >= -180 && lng <= 180)) return false;
+    return { lat, lng };
+  }
+
   function exportXls() {
     if (!allCustomers.length) { showToast('Tidak ada data untuk diekspor', 'error'); return; }
     const rows = allCustomers.map(c => {
@@ -266,6 +300,8 @@
         'Nama Toko':       c.store_name || '',
         'Telepon':         c.phone || '',
         'Alamat':          c.address || '',
+        'Latitude':        c.latitude != null ? c.latitude : '',
+        'Longitude':       c.longitude != null ? c.longitude : '',
         'Jumlah Faktur':   st.count,
         'Total Belanja':   st.total,
         'Piutang':         st.piutang,
@@ -273,7 +309,7 @@
       };
     });
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [22, 20, 16, 30, 12, 16, 16, 30].map(w => ({ wch: w }));
+    ws['!cols'] = [22, 20, 16, 30, 14, 14, 12, 16, 16, 30].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Customers');
     const stamp = new Date().toISOString().split('T')[0].replace(/-/g, '');
@@ -286,6 +322,8 @@
     document.getElementById('customer-store').value = '';
     document.getElementById('customer-phone').value = '';
     document.getElementById('customer-address').value = '';
+    document.getElementById('customer-coord').value = '';
+    document.getElementById('customer-coord-hint').textContent = 'Kosongkan saja — titik GPS akan terisi otomatis saat sales absen kunjungan ke toko ini.';
     document.getElementById('customer-notes').value = '';
     document.getElementById('modal-customer-title').textContent = 'Tambah Customer';
     openModal('modal-customer');
@@ -299,6 +337,14 @@
     document.getElementById('customer-store').value = c.store_name || '';
     document.getElementById('customer-phone').value = c.phone || '';
     document.getElementById('customer-address').value = c.address || '';
+    const hasCoord = c.latitude != null && c.longitude != null;
+    document.getElementById('customer-coord').value = hasCoord ? `${c.latitude}, ${c.longitude}` : '';
+    document.getElementById('customer-coord-hint').innerHTML = hasCoord
+      ? `${c.location_source === 'manual'
+            ? '📌 Dikunci manual — absen sales <b>tidak</b> akan menimpanya.'
+            : '📍 Terisi otomatis dari absen kunjungan' + (c.location_updated_at ? ' (' + formatDate(c.location_updated_at) + ')' : '') + '. Kalau diubah di sini, titiknya jadi terkunci.'}
+         <a href="https://www.google.com/maps?q=${c.latitude},${c.longitude}" target="_blank" rel="noopener">Buka Maps</a>`
+      : 'Belum ada titik GPS. Akan terisi otomatis saat sales absen kunjungan, atau isi manual dengan copy koordinat dari Google Maps.';
     document.getElementById('customer-notes').value = c.notes || '';
     document.getElementById('modal-customer-title').textContent = 'Edit Customer';
     openModal('modal-customer');
@@ -310,6 +356,9 @@
     const name = document.getElementById('customer-name').value.trim();
     if (!name) { showToast('Nama customer wajib diisi', 'error'); return; }
 
+    const coord = parseCoordInput(document.getElementById('customer-coord').value);
+    if (coord === false) { showToast('Format titik lokasi salah. Contoh: -6.914744, 107.609810', 'error'); return; }
+
     const payload = {
       name,
       store_name: document.getElementById('customer-store').value.trim() || null,
@@ -317,6 +366,20 @@
       address: document.getElementById('customer-address').value.trim() || null,
       notes: document.getElementById('customer-notes').value.trim() || null,
     };
+
+    // Koordinat cuma ikut disimpan kalau memang diubah dari nilai yang lagi tampil —
+    // biar edit nama/telepon doang nggak diam-diam mengunci titik hasil absen.
+    const before = id ? allCustomers.find(x => x.id === id) : null;
+    const beforeCoord = before && before.latitude != null && before.longitude != null
+      ? { lat: Number(before.latitude), lng: Number(before.longitude) } : null;
+    const changed = (coord ? `${coord.lat},${coord.lng}` : '') !== (beforeCoord ? `${beforeCoord.lat},${beforeCoord.lng}` : '');
+    if (changed) {
+      payload.latitude = coord ? coord.lat : null;
+      payload.longitude = coord ? coord.lng : null;
+      payload.location_updated_at = coord ? new Date().toISOString() : null;
+      // Diisi tangan oleh admin = dikunci, absen sales nggak boleh menimpanya lagi.
+      payload.location_source = coord ? 'manual' : null;
+    }
 
     setLoading(btn, true);
     const { error } = id
