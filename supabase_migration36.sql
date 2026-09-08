@@ -161,24 +161,124 @@ $$ LANGUAGE plpgsql;
 -- ============================================================
 -- 3b. Tandai perubahan yang datang dari EDIT pembelian
 -- ============================================================
--- edit_purchase() (migration34) nggak perlu ditulis ulang: klausa SET pada
--- ALTER FUNCTION otomatis mengisi GUC ini selama fungsi berjalan dan
--- mengembalikannya begitu selesai. increase_stock_on_purchase() di atas
--- sengaja nggak menimpa nilai yang sudah terisi, jadi item hasil edit tercatat
--- sebagai 'purchase_edit' — inilah perubahan harga modal yang paling sering
--- terjadi tanpa disadari.
-DO $$
+-- edit_purchase() (migration34) ditulis ulang di sini dengan tambahan satu baris
+-- set_config() di awal fungsi. Sisanya identik dengan migration34.
+--
+-- Catatan: cara yang lebih ringkas (ALTER FUNCTION ... SET app.cost_source)
+-- TIDAK dipakai karena parameter custom yang belum terdaftar cuma boleh
+-- disimpan permanen oleh superuser — role postgres di Supabase bukan superuser,
+-- jadi hasilnya "permission denied to set parameter". set_config() saat fungsi
+-- berjalan tidak kena batasan itu (increase_stock_on_purchase juga memakainya).
+--
+-- Kalau migration34 BELUM pernah dijalankan, blok ini yang membuat fungsinya —
+-- tapi tetap jalankan migration34 juga supaya bagian lainnya ikut terpasang.
+CREATE OR REPLACE FUNCTION edit_purchase(
+  p_purchase_id uuid,
+  p_supplier    text,
+  p_date        date,
+  p_notes       text,
+  p_total       numeric,
+  p_items       jsonb
+) RETURNS void AS $$
+DECLARE
+  rel         RECORD;
+  it          jsonb;
+  after_stock integer;
+  avail       integer;
+  prod_name   text;
+  v_old       jsonb;
+  v_key       text;
+  v_batch     varchar(100);
+  v_expired   date;
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'edit_purchase'
-  ) THEN
-    EXECUTE 'ALTER FUNCTION edit_purchase(uuid, text, date, text, numeric, jsonb) '
-         || 'SET app.cost_source = ''purchase_edit''';
-  ELSE
-    RAISE NOTICE 'edit_purchase() belum ada — jalankan supabase_migration34.sql dulu, lalu ulangi bagian ini.';
+  -- Tandai sumber perubahan harga modal untuk trigger log_product_cost_change
+  -- (migration36). 'true' = transaction-local, hilang sendiri begitu selesai.
+  -- increase_stock_on_purchase() sengaja tidak menimpa nilai yang sudah terisi,
+  -- jadi item hasil edit tercatat 'purchase_edit', bukan 'purchase'.
+  PERFORM set_config('app.cost_source', 'purchase_edit', true);
+
+  IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN
+    RAISE EXCEPTION 'Pembelian harus berisi minimal 1 barang.';
   END IF;
-END $$;
+
+  PERFORM 1 FROM purchases WHERE id = p_purchase_id AND status <> 'cancelled';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PO tidak ditemukan atau sudah dibatalkan, jadi tidak bisa diedit.';
+  END IF;
+
+  -- Simpan batch & expired item lama SEBELUM dihapus, dikunci per id item.
+  SELECT COALESCE(jsonb_object_agg(id::text, jsonb_build_object(
+           'product_id', product_id, 'batch_number', batch_number, 'expired_date', expired_date)), '{}'::jsonb)
+  INTO v_old
+  FROM purchase_items WHERE purchase_id = p_purchase_id;
+
+  -- ── Lepas stok item lama, digabung per produk ──
+  -- Cek + kurangi dalam SATU perintah: row lock Postgres menutup celah antara
+  -- pengecekan "stok cukup" dan penulisannya.
+  FOR rel IN
+    SELECT product_id, SUM(quantity)::integer AS qty
+    FROM purchase_items WHERE purchase_id = p_purchase_id GROUP BY product_id
+  LOOP
+    SELECT name INTO prod_name FROM products WHERE id = rel.product_id;
+
+    UPDATE products
+    SET stock_quantity = stock_quantity - rel.qty
+    WHERE id = rel.product_id AND stock_quantity >= rel.qty
+    RETURNING stock_quantity INTO after_stock;
+
+    IF NOT FOUND THEN
+      SELECT stock_quantity INTO avail FROM products WHERE id = rel.product_id;
+      IF prod_name IS NULL THEN
+        RAISE EXCEPTION 'Tidak bisa edit: produk salah satu item sudah tidak ada di daftar produk.';
+      END IF;
+      RAISE EXCEPTION 'Tidak bisa edit — stok "%" sudah terpakai (PO ini menambah %, stok sekarang cuma %). Barang kemungkinan sudah terjual. Sesuaikan stok manual dulu lewat halaman Produk.',
+        prod_name, rel.qty, COALESCE(avail, 0);
+    END IF;
+
+    INSERT INTO stock_movements
+      (product_id, product_name, type, quantity, quantity_before, quantity_after, reference_type, reference_id, notes)
+    VALUES
+      (rel.product_id, prod_name, 'adjustment', rel.qty,
+       after_stock + rel.qty, after_stock, 'purchase_edit', p_purchase_id,
+       'Edit pembelian: lepas stok item lama');
+  END LOOP;
+
+  DELETE FROM purchase_items WHERE purchase_id = p_purchase_id;
+
+  -- ── Pasang item baru — trigger increase_stock_on_purchase yang menambah
+  --    stok kembali sekaligus mencatat pergerakan 'in' ──
+  FOR it IN SELECT * FROM jsonb_array_elements(p_items)
+  LOOP
+    IF (it->>'quantity')::integer <= 0 THEN
+      RAISE EXCEPTION 'Jumlah barang harus lebih dari 0.';
+    END IF;
+
+    -- Bawa serta batch & expired kalau baris ini masih item lama yang produknya tidak diganti
+    v_batch := NULL; v_expired := NULL;
+    v_key := it->>'item_id';
+    IF v_key IS NOT NULL AND v_old ? v_key
+       AND (v_old->v_key->>'product_id') = (it->>'product_id') THEN
+      v_batch   := v_old->v_key->>'batch_number';
+      v_expired := (v_old->v_key->>'expired_date')::date;
+    END IF;
+
+    INSERT INTO purchase_items
+      (purchase_id, product_id, product_name, quantity, cost_price, subtotal, batch_number, expired_date)
+    VALUES
+      (p_purchase_id, (it->>'product_id')::uuid, it->>'product_name',
+       (it->>'quantity')::integer, (it->>'cost_price')::numeric, (it->>'subtotal')::numeric,
+       v_batch, v_expired);
+  END LOOP;
+
+  UPDATE purchases
+  SET supplier_name = p_supplier,
+      purchase_date = p_date,
+      notes         = p_notes,
+      total_cost    = p_total,
+      updated_at    = now()
+  WHERE id = p_purchase_id;
+END;
+$$ LANGUAGE plpgsql;
 
 
 -- ============================================================
@@ -208,7 +308,7 @@ SELECT 'pembelian menandai sumber',
         WHERE n.nspname = 'public' AND p.proname = 'increase_stock_on_purchase')
 UNION ALL
 SELECT 'edit PO menandai sumber',
-       (SELECT (array_to_string(p.proconfig, ',') LIKE '%purchase_edit%')::text
+       (SELECT (pg_get_functiondef(p.oid) LIKE '%purchase_edit%')::text
         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'public' AND p.proname = 'edit_purchase')
 UNION ALL
