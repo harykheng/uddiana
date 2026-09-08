@@ -1606,16 +1606,108 @@
   let _piProductId = null;
   let _piCurrentStock = 0;
   let _piCardLoaded = false;
+  let _piCostLoaded = false;
   let _piAllMovements = [];
   let _piRefMap = {};
 
   function piSwitchTab(tab) {
     _piTab = tab;
-    ['in','out','card'].forEach(t => {
+    ['in','out','card','cost'].forEach(t => {
       document.getElementById(`pi-tab-${t}`).classList.toggle('active', t === tab);
       document.getElementById(`pi-panel-${t}`).style.display = t === tab ? 'block' : 'none';
     });
     if (tab === 'card' && !_piCardLoaded) loadKartuStok();
+    if (tab === 'cost' && !_piCostLoaded) loadCostLog();
+  }
+
+  // ── RIWAYAT HARGA MODAL ──────────────────────────────────────
+  // Isinya ditulis oleh trigger di database (supabase_migration36.sql), bukan
+  // oleh halaman ini — jadi perubahan dari pembelian, import CSV, update massal,
+  // sampai UPDATE manual di SQL Editor semuanya ikut tercatat.
+  const COST_SOURCE_LABEL = {
+    awal:          { text: 'Data awal',      color: '#64748b', bg: '#f1f5f9' },
+    create:        { text: 'Produk baru',    color: '#64748b', bg: '#f1f5f9' },
+    purchase:      { text: 'Dari pembelian', color: '#166534', bg: '#dcfce7' },
+    purchase_edit: { text: 'Edit pembelian', color: '#92400e', bg: '#fef9c3' },
+    manual:        { text: 'Diubah manual',  color: '#9a3412', bg: '#ffedd5' },
+  };
+
+  async function loadCostLog() {
+    const el = document.getElementById('pi-panel-cost');
+    const id = _piProductId;
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Memuat riwayat...</div>';
+
+    const { data: logs, error } = await supabase
+      .from('product_cost_logs')
+      .select('old_cost,new_cost,source,reference_id,changed_by,changed_at')
+      .eq('product_id', id)
+      .order('changed_at', { ascending: false })
+      .limit(200);
+
+    if (error) {
+      el.innerHTML = `<div style="text-align:center;padding:24px;color:var(--danger);font-size:13px">Gagal memuat riwayat: ${escapeHtml(error.message)}<br><small class="text-muted">Sudah jalankan supabase_migration36.sql?</small></div>`;
+      return;
+    }
+    _piCostLoaded = true;
+
+    if (!logs?.length) {
+      el.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px">Belum ada riwayat perubahan harga modal</div>';
+      return;
+    }
+
+    // Nama orang & nomor PO diambil terpisah — kolomnya cuma simpan id-nya saja.
+    const userIds = [...new Set(logs.map(l => l.changed_by).filter(Boolean))];
+    const poIds   = [...new Set(logs.filter(l => l.reference_id).map(l => l.reference_id))];
+    const [{ data: users }, { data: pos }] = await Promise.all([
+      userIds.length ? supabase.from('user_profiles').select('id,name').in('id', userIds) : Promise.resolve({ data: [] }),
+      poIds.length   ? supabase.from('purchases').select('id,purchase_number').in('id', poIds) : Promise.resolve({ data: [] }),
+    ]);
+    const userMap = {}; (users || []).forEach(u => { userMap[u.id] = u.name; });
+    const poMap   = {}; (pos   || []).forEach(o => { poMap[o.id] = o.purchase_number; });
+
+    const changes = logs.filter(l => l.old_cost != null);
+    const first = logs[logs.length - 1], last = logs[0];
+    const netto = Number(last.new_cost) - Number(first.new_cost);
+
+    const ringkas = changes.length
+      ? `<div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.6">
+           <strong>${changes.length}×</strong> berubah sejak ${formatDate(first.changed_at)} ·
+           <strong>${formatCurrency(first.new_cost)}</strong> → <strong>${formatCurrency(last.new_cost)}</strong>
+           <span style="color:${netto > 0 ? '#dc2626' : netto < 0 ? '#16a34a' : 'var(--text-muted)'};font-weight:700">
+             ${netto > 0 ? '▲ naik ' : netto < 0 ? '▼ turun ' : ''}${netto !== 0 ? formatCurrency(Math.abs(netto)) : '(sama)'}
+           </span>
+         </div>`
+      : `<div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12.5px">
+           Harga modal <strong>belum pernah berubah</strong> sejak dicatat (${formatCurrency(last.new_cost)}).
+         </div>`;
+
+    el.innerHTML = ringkas + logs.map(l => {
+      const src = COST_SOURCE_LABEL[l.source] || { text: l.source, color: '#64748b', bg: '#f1f5f9' };
+      const isBaseline = l.old_cost == null;
+      const selisih = isBaseline ? 0 : Number(l.new_cost) - Number(l.old_cost);
+      const warna = selisih > 0 ? '#dc2626' : selisih < 0 ? '#16a34a' : 'var(--text-muted)';
+      const who = l.changed_by ? (userMap[l.changed_by] || 'User lain') : (isBaseline ? '' : 'Langsung dari database');
+      const po = l.reference_id ? poMap[l.reference_id] : null;
+      return `
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid #f1f5f9">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600">${formatDate(l.changed_at)}
+            <span style="font-weight:400;color:var(--text-muted);font-size:11.5px">${new Date(l.changed_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}</span>
+          </div>
+          <div style="margin-top:3px;display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+            <span style="background:${src.bg};color:${src.color};padding:1px 7px;border-radius:10px;font-size:10.5px;font-weight:700">${escapeHtml(src.text)}</span>
+            ${po ? `<span style="font-size:11.5px;color:var(--text-muted);font-family:monospace">${escapeHtml(po)}</span>` : ''}
+            ${who ? `<span style="font-size:11.5px;color:var(--text-muted)">${escapeHtml(who)}</span>` : ''}
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:13px;font-weight:700">${formatCurrency(l.new_cost)}</div>
+          ${isBaseline
+            ? '<div style="font-size:11px;color:var(--text-muted);margin-top:1px">titik awal</div>'
+            : `<div style="font-size:11px;color:${warna};margin-top:1px">dari ${formatCurrency(l.old_cost)} · ${selisih > 0 ? '▲' : selisih < 0 ? '▼' : ''} ${formatCurrency(Math.abs(selisih))}</div>`}
+        </div>
+      </div>`;
+    }).join('');
   }
 
   async function openProductInfo(id) {
@@ -1624,6 +1716,7 @@
     _piProductId = id;
     _piCurrentStock = p.stock_quantity;
     _piCardLoaded = false;
+    _piCostLoaded = false;
     _piAllMovements = [];
     _piRefMap = {};
     document.getElementById('pi-name').textContent = p.name;
@@ -1632,6 +1725,9 @@
     document.getElementById('pi-panel-in').innerHTML  = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Memuat...</div>';
     document.getElementById('pi-panel-out').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Memuat...</div>';
     document.getElementById('pi-panel-card').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Klik tab untuk memuat...</div>';
+    document.getElementById('pi-panel-cost').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted)">Klik tab untuk memuat...</div>';
+    // Harga modal cuma boleh dilihat super_admin — sama seperti kolom Modal di tabel.
+    document.getElementById('pi-tab-cost').style.display = isSuperAdmin ? '' : 'none';
     _piTab = 'in';
     piSwitchTab('in');
     openModal('modal-product-info');
@@ -1871,10 +1967,12 @@
         <button id="pi-tab-in"   onclick="piSwitchTab('in')"   class="active" style="flex:1;padding:10px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);transition:all .15s">📦 Masuk</button>
         <button id="pi-tab-out"  onclick="piSwitchTab('out')"  style="flex:1;padding:10px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);transition:all .15s">📤 Keluar</button>
         <button id="pi-tab-card" onclick="piSwitchTab('card')" style="flex:1;padding:10px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);transition:all .15s">📋 Kartu Stok</button>
+        <button id="pi-tab-cost" onclick="piSwitchTab('cost')" style="flex:1;padding:10px;border:none;background:none;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--text-muted);transition:all .15s;display:none">💰 Harga Modal</button>
       </div>
       <div id="pi-panel-in"   style="max-height:400px;overflow-y:auto"></div>
       <div id="pi-panel-out"  style="max-height:400px;overflow-y:auto;display:none"></div>
       <div id="pi-panel-card" style="display:none"></div>
+      <div id="pi-panel-cost" style="max-height:400px;overflow-y:auto;display:none"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-product-info')">Tutup</button>

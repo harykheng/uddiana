@@ -261,6 +261,7 @@ git push -u origin feat/nama-fitur
 - Import: strip BOM, fallback alias kolom SKU, error detail tabel scrollable + download xlsx
 - Export XLS termasuk harga lusin
 - **Update Harga Massal**: checkbox pilih produk di tabel (desktop only, belum ada di mobile card view) → bar aksi muncul → modal set Harga Modal & Harga Jual sekaligus untuk semua produk terpilih, mode "Set nilai baru" atau "Naik/Turun %/Rp" (dihitung dari harga masing-masing produk saat ini, bukan disamakan)
+- **Riwayat Harga Modal**: tab 💰 di modal Info Produk (ℹ️), **super_admin only** — daftar perubahan `products.cost` dari `product_cost_logs` (migration36) + ringkasan di atas ("3× berubah sejak ... Rp X → Rp Y ▲ naik Rp Z" / "belum pernah berubah"). Label sumber: Data awal / Produk baru / Dari pembelian (+ nomor PO) / Edit pembelian / Diubah manual, plus nama user dari `user_profiles`. Log ditulis trigger database, jadi import CSV, update massal, sampai UPDATE dari SQL Editor ikut tercatat
 - **Edit Nama/SKU Massal**: dari bar aksi yang sama → modal list produk terpilih dengan input nama & SKU per baris (pre-filled), simpan sekaligus. Validasi: nama/SKU wajib diisi, SKU harus unik (dicek terhadap sesama baris terpilih & produk lain di luar seleksi) sebelum submit
 
 ### invoices.html
@@ -350,6 +351,7 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration30.sql` | (Digantikan migration31) Kolom `customer_id` tunggal di `product_discount_rules` — diskon khusus 1 customer |
 | `supabase_migration31.sql` | Ganti pendekatan migration30 jadi tabel junction `product_discount_rule_customers` (many-to-many) — 1 aturan diskon bisa berlaku buat beberapa toko sekaligus. Kolom `customer_id` lama di-drop |
 | `supabase_migration35.sql` | Kolom `latitude`/`longitude`/`location_updated_at`/`location_source` di `customers` + fungsi `set_customer_location_from_visit()` — titik GPS toko ditempel otomatis dari Absen Kunjungan, dipakai link "Buka Maps" di `sales.html` & `customers.html` |
+| `supabase_migration36.sql` | Tabel `product_cost_logs` + trigger `log_product_cost_change` di `products` — catat tiap perubahan `products.cost` (lama→baru, sumber, siapa, kapan). Sumber ditandai lewat GUC transaction-local `app.cost_source` (`increase_stock_on_purchase` → `purchase`, `ALTER FUNCTION edit_purchase SET` → `purchase_edit`, sisanya `manual`). Termasuk backfill 1 baris awal per produk. **Butuh migration34 dulu** biar label edit PO ikut kepasang |
 | `supabase_migration34.sql` | **Wajib untuk Edit PO.** Fungsi `edit_purchase()` — seluruh rangkaian edit pembelian jadi satu transaksi (sebelumnya 4 panggilan terpisah dari browser: koneksi putus di tengah = stok berkurang + item PO hilang). Sekaligus `increase_stock_on_purchase()` cuma menulis `products.cost` kalau PO itu memang pembelian terbaru untuk produk tsb — sebelumnya edit PO lama menarik mundur harga modal |
 
 
