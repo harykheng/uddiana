@@ -270,7 +270,9 @@ git push -u origin feat/nama-fitur
   - `item_discount`: nilai diskon tier pertama (angka % atau Rp per pcs)
   - `discount_type`: `'percent'` | `'nominal'` (migration8)
   - `item_discount2`: diskon tier kedua opsional, cuma berlaku kalau `discount_type = 'percent'` (migration28) — contoh "20%+5%". Dihitung **bertingkat/compound**, bukan dijumlah: `harga * (1 - d1/100) * (1 - d2/100)`. Field tier 2 otomatis disembunyikan kalau tipe diskon nominal.
-  - Auto-apply dari `product_discount_rules` saat pilih produk (cuma isi tier pertama, tier 2 direset ke 0) — aturan khusus customer yang lagi dipilih diprioritaskan di atas aturan umum, dievaluasi ulang tiap ganti customer
+  - Auto-apply dari `product_discount_rules` **dievaluasi ulang tiap qty / harga satuan / customer berubah**, bukan cuma sekali saat produk dipilih (`reapplyAllDiscounts()` di form buat faktur, `reapplyAllDiscountsEdit()` di modal edit). Aturan khusus customer diprioritaskan di atas aturan umum; aturan produk menang atas aturan grup — semua lewat satu fungsi bersama `findBestDiscountRule()`
+  - **Kunci manual**: begitu kolom diskon (tipe/tier1/tier2) disentuh tangan, baris itu ditandai `tr.dataset.discAuto = '0'` dan berhenti ikut evaluasi otomatis. Ganti produk di baris itu = balik ke auto
+  - Di modal edit, baris item yang sudah tersimpan default-nya terkunci. `seedEditAutoFlags()` melepas kunci cuma untuk baris yang diskon tersimpannya **sama persis** dengan hasil aturan pada qty & harga tersimpannya — jadi angka yang diketik tangan waktu faktur dibuat tidak ketimpa, tapi diskon yang memang datang dari aturan tetap ikut update kalau qty diubah
   - Tampil di detail view & print jika ada item ber-diskon (format `20%+5%` kalau ada tier kedua)
 - **Biaya tambahan**: nama bebas, tipe nominal atau persentase, disimpan ke `additional_charges` JSONB
 - **Edit faktur**: admin bisa ubah termin pembayaran
