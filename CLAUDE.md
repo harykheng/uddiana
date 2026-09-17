@@ -294,6 +294,7 @@ git push -u origin feat/nama-fitur
 - Kolom **Lokasi**: link Buka Maps per customer — pakai koordinat GPS kalau ada (label `📍 dari absen` / `📌 manual`), fallback pencarian teks alamat kalau belum ada
 - Field **Titik Lokasi (GPS)** di modal edit: paste `lat, lng` dari Google Maps. Diisi tangan = `location_source = 'manual'` (dikunci, absen sales tidak menimpanya); dikosongkan = koordinat dihapus dan boleh diisi absen lagi. Koordinat cuma ikut tersimpan kalau memang diubah, jadi edit nama/telepon tidak diam-diam mengunci titik hasil absen
 - Export XLS termasuk kolom Latitude & Longitude
+- Tombol **🔗 Link** per baris: salin link katalog toko ke clipboard. Link = `app_settings.catalog_base_url` + `/t/` + `customers.catalog_token` — dua-duanya dari database, tidak ada domain atau token yang di-hardcode. Token dibuat otomatis untuk customer baru lewat trigger (migration38); kalau domain atau token belum ada, tombolnya memberi tahu apa yang kurang, bukan menyalin link rusak. Fallback `document.execCommand('copy')` dipakai kalau ERP dibuka lewat http biasa (`navigator.clipboard` cuma jalan di HTTPS)
 
 ### sales.html
 - Desain mobile-first dengan top nav (bukan sidebar)
