@@ -193,16 +193,20 @@
 <script>
   let allCustomers = [];
   let invoiceStats = {}; // { customer_id: { count, total, piutang } }
+  let catalogBaseUrl = ''; // domain katalog, dari app_settings — tidak di-hardcode
   const handleSearch = debounce(() => renderCustomers(), 350);
 
   async function loadCustomers() {
-    const [{ data: customers, error }, { data: invoices }] = await Promise.all([
+    const [{ data: customers, error }, { data: invoices }, { data: baseUrl }] = await Promise.all([
       fetchAll(() => supabase.from('customers').select('*').order('name')),
       fetchAll(() => supabase.from('invoices')
         .select('customer_id,total,status,verification_status')
         .or('verification_status.is.null,verification_status.eq.approved')
-        .neq('status', 'cancelled'))
+        .neq('status', 'cancelled')),
+      supabase.from('app_settings').select('value').eq('key', 'catalog_base_url').maybeSingle()
     ]);
+    // Garis miring di akhir dibuang supaya link tidak jadi "domain//t/token"
+    catalogBaseUrl = (baseUrl?.value || '').trim().replace(/\/+$/, '');
     if (error) { showToast('Gagal memuat customers: ' + error.message, 'error'); return; }
     allCustomers = customers || [];
 
@@ -254,6 +258,7 @@
         <td class="text-right">${st.count > 0 ? piutangChip : '—'}</td>
         <td>
           <div class="table-actions">
+            <button class="btn btn-ghost btn-sm" onclick="copyCatalogLink('${c.id}')" title="Salin link katalog toko ini">🔗 Link</button>
             <button class="btn btn-ghost btn-sm" onclick="openHistory('${c.id}')">📋 Riwayat</button>
             <button class="btn btn-ghost btn-sm" onclick="openEditCustomer('${c.id}')">✏️ Edit</button>
             <button class="btn btn-danger btn-sm" onclick="deleteCustomer('${c.id}','${escapeHtml(c.name)}')">🗑</button>
@@ -261,6 +266,62 @@
         </td>
       </tr>`;
     }).join('');
+  }
+
+  // ══════════════════════════════════════════════════
+  // LINK KATALOG PER TOKO
+  // Link = <app_settings.catalog_base_url>/t/<customers.catalog_token>.
+  // Keduanya dari database, jadi domain katalog bisa berubah (atau dipakai untuk
+  // klien lain) tanpa menyentuh file ini. Token dibuat otomatis untuk setiap
+  // customer baru oleh trigger di supabase_migration38.
+  // ══════════════════════════════════════════════════
+  async function copyCatalogLink(id) {
+    const c = allCustomers.find(x => x.id === id);
+    if (!c) return;
+
+    if (!catalogBaseUrl) {
+      showToast('Domain katalog belum diatur (app_settings.catalog_base_url)', 'error');
+      return;
+    }
+    if (!c.catalog_token) {
+      showToast(`"${c.store_name || c.name}" belum punya token katalog — jalankan catalog_ensure_tokens() di SQL Editor`, 'error');
+      return;
+    }
+
+    const link = `${catalogBaseUrl}/t/${c.catalog_token}`;
+    if (await copyToClipboard(link)) {
+      showToast(`Link katalog "${c.store_name || c.name}" disalin`);
+    } else {
+      // Kalau penyalinan gagal, linknya tetap harus bisa diambil manual —
+      // jangan sampai admin buntu tanpa tahu link-nya apa.
+      window.prompt('Salin link katalog ini:', link);
+    }
+  }
+
+  // navigator.clipboard cuma tersedia di HTTPS/localhost. Fallback textarea
+  // dipakai kalau ERP dibuka lewat http biasa atau browser lama.
+  async function copyToClipboard(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (_) { /* jatuh ke cara lama di bawah */ }
+
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand('copy');
+      ta.remove();
+      return ok;
+    } catch (_) {
+      return false;
+    }
   }
 
   // Titik GPS ditempel otomatis oleh fitur Absen Kunjungan di sales.html (lihat
