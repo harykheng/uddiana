@@ -196,6 +196,7 @@
         <span style="font-size:13px;font-weight:600;color:#1e3a8a"><span id="bulk-selected-count">0</span> produk dipilih</span>
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Batal</button>
+          <button class="btn btn-ghost btn-sm" onclick="openBulkPhotoModal()">📷 Foto Massal</button>
           <button class="btn btn-ghost btn-sm" onclick="openBulkRenameModal()">✏️ Edit Nama/SKU Massal</button>
           <button class="btn btn-primary btn-sm" onclick="openBulkPriceModal()">💰 Update Harga Massal</button>
         </div>
@@ -545,6 +546,7 @@
       if (e.target === e.currentTarget) closeMobileAction();
     });
     document.getElementById('photo-file')?.addEventListener('change', onPilihFoto);
+    document.getElementById('bulk-photo-files')?.addEventListener('change', onPilihFotoMassal);
     // Sembunyikan th & form field harga modal untuk admin biasa
     if (!isSuperAdmin) {
       document.querySelectorAll('.col-harga-modal').forEach(el => el.style.display = 'none');
@@ -2113,6 +2115,212 @@
     renderProducts();
   }
 
+  // ══════════════════════════════════════════════════
+  // FOTO MASSAL
+  // Dibatasi 20 produk per batch: 20 produk = 40 file (thumb + large), dan
+  // mengompres puluhan foto berurutan di browser sudah cukup berat untuk
+  // laptop/HP kelas menengah. Lebih dari itu lebih baik dipecah daripada
+  // tab-nya hang di tengah jalan.
+  // ══════════════════════════════════════════════════
+  const BULK_FOTO_MAX = 20;
+  let _bulkFoto = new Map(); // productId -> { thumb, large, ext, namaFile }
+
+  function openBulkPhotoModal() {
+    if (!selectedProductIds.size) return;
+    if (selectedProductIds.size > BULK_FOTO_MAX) {
+      showToast(`Maksimal ${BULK_FOTO_MAX} produk sekali unggah — sekarang terpilih ${selectedProductIds.size}. Pecah jadi beberapa batch, ya.`, 'error');
+      return;
+    }
+    _bulkFoto = new Map();
+    document.getElementById('bulk-photo-count').textContent =
+      `${selectedProductIds.size} produk terpilih`;
+    document.getElementById('bulk-photo-files').value = '';
+    document.getElementById('bulk-photo-match').textContent = '';
+    document.getElementById('bulk-photo-status').textContent = '';
+    renderBulkPhotoRows();
+    openModal('modal-bulk-photo');
+  }
+
+  function bulkPhotoTargets() {
+    return allProducts.filter(p => selectedProductIds.has(p.id));
+  }
+
+  function renderBulkPhotoRows() {
+    const el = document.getElementById('bulk-photo-rows');
+    el.innerHTML = bulkPhotoTargets().map(p => {
+      const dipilih = _bulkFoto.get(p.id);
+      const adaFotoLama = !!p.photo_thumb_path;
+      const status = dipilih
+        ? `<span style="color:#16a34a;font-weight:600">✓ ${escapeHtml(dipilih.namaFile)} · ${Math.round((dipilih.thumb.size + dipilih.large.size) / 1024)} KB</span>`
+        : adaFotoLama
+          ? '<span style="color:var(--text-muted)">sudah ada foto — pilih file untuk mengganti</span>'
+          : '<span style="color:var(--text-muted)">belum ada foto</span>';
+      return `
+        <div style="display:flex;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border)" data-bulk-row="${p.id}">
+          <div style="width:44px;height:44px;flex:none;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;overflow:hidden;font-weight:700;color:#94a3b8">
+            ${dipilih
+              ? `<img src="${URL.createObjectURL(dipilih.thumb)}" style="width:100%;height:100%;object-fit:cover">`
+              : adaFotoLama
+                ? `<img src="${fotoPublicUrl(p.photo_thumb_path)}" style="width:100%;height:100%;object-fit:cover">`
+                : escapeHtml((p.name || '?').charAt(0).toUpperCase())}
+          </div>
+          <div style="min-width:0;flex:1">
+            <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</div>
+            <div style="font-size:11px;color:var(--text-muted)">${escapeHtml(p.sku)}</div>
+            <div style="font-size:11px;margin-top:2px" data-bulk-status="${p.id}">${status}</div>
+          </div>
+          <input type="file" accept="image/*" data-bulk-pick="${p.id}" style="width:120px;font-size:11px;flex:none">
+        </div>`;
+    }).join('');
+
+    el.querySelectorAll('[data-bulk-pick]').forEach(input => {
+      input.addEventListener('change', async e => {
+        const pid = input.getAttribute('data-bulk-pick');
+        const file = e.target.files?.[0];
+        if (!file) return;
+        await siapkanFotoBulk(pid, file);
+        renderBulkPhotoRows();
+      });
+    });
+  }
+
+  async function siapkanFotoBulk(productId, file) {
+    const baris = document.querySelector(`[data-bulk-status="${productId}"]`);
+    if (baris) baris.innerHTML = '<span style="color:var(--text-muted)">mengecilkan…</span>';
+    try {
+      const sumber = await bacaGambar(file);
+      const thumb = await bikinVersiFoto(sumber, FOTO_UKURAN.thumb.sisi, FOTO_UKURAN.thumb.kualitas);
+      const large = await bikinVersiFoto(sumber, FOTO_UKURAN.large.sisi, FOTO_UKURAN.large.kualitas);
+      sumber.close?.();
+      if (!thumb || !large) throw new Error('gagal diproses');
+      _bulkFoto.set(productId, {
+        thumb, large,
+        ext: thumb.type === 'image/webp' ? 'webp' : 'jpg',
+        namaFile: file.name,
+      });
+    } catch (err) {
+      _bulkFoto.delete(productId);
+      if (baris) baris.innerHTML = `<span style="color:#dc2626">Gagal: ${escapeHtml(err.message)}</span>`;
+    }
+  }
+
+  // Cocokkan nama file dengan SKU. Perbandingan dilakukan setelah semua karakter
+  // selain huruf & angka dibuang, jadi "BD-001.jpg", "bd001 (1).jpeg", dan
+  // "foto_BD 001.png" sama-sama menempel ke SKU BD-001.
+  function normalisasiUntukCocok(teks) {
+    return (teks || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  // Ekstensi dan akhiran " (1)" bawaan browser (muncul kalau file diunduh
+  // berulang) dibuang DULU sebelum dicocokkan. Tanpa ini "BD-001 (1).jpg"
+  // berubah jadi "bd0011" dan salah menempel ke SKU BD-0011 — persis kasus yang
+  // paling sering muncul saat foto diunduh satu per satu.
+  function dasarNamaFile(nama) {
+    return (nama || '')
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/\s*\(\d+\)\s*$/, '')
+      .trim();
+  }
+
+  async function onPilihFotoMassal(e) {
+    const files = [...(e.target.files || [])];
+    const info = document.getElementById('bulk-photo-match');
+    if (!files.length) { info.textContent = ''; return; }
+
+    const targets = bulkPhotoTargets();
+    // SKU terpanjang dicek duluan supaya "BD-0011" tidak keburu diklaim "BD-001".
+    const urut = [...targets].sort((a, b) => (b.sku || '').length - (a.sku || '').length);
+
+    let cocok = 0;
+    const tidakCocok = [];
+    for (const file of files) {
+      const nama = normalisasiUntukCocok(dasarNamaFile(file.name));
+      const produk = urut.find(p => p.sku && nama.includes(normalisasiUntukCocok(p.sku)));
+      if (!produk) { tidakCocok.push(file.name); continue; }
+      info.style.color = 'var(--text-muted)';
+      info.textContent = `Mengecilkan ${cocok + 1}/${files.length}…`;
+      await siapkanFotoBulk(produk.id, file);   // satu per satu, bukan paralel
+      cocok++;
+    }
+
+    info.style.color = cocok ? '#16a34a' : '#dc2626';
+    info.textContent = `${cocok} file menempel otomatis`
+      + (tidakCocok.length ? ` · ${tidakCocok.length} tidak cocok SKU mana pun: ${tidakCocok.slice(0, 3).join(', ')}${tidakCocok.length > 3 ? '…' : ''}` : '');
+    renderBulkPhotoRows();
+    e.target.value = '';
+  }
+
+  async function saveBulkPhotos() {
+    const btn = document.getElementById('btn-save-bulk-photo');
+    if (btn.disabled) return;
+    if (!_bulkFoto.size) { showToast('Belum ada foto yang dipilih', 'error'); return; }
+
+    const status = document.getElementById('bulk-photo-status');
+    setLoading(btn, true);
+    let berhasil = 0;
+    const gagal = [];
+
+    // Berurutan, bukan paralel: 20 produk = 40 unggahan, dan koneksi rumahan
+    // lebih sering gagal kalau dihajar sekaligus. Kalau satu produk gagal,
+    // sisanya tetap jalan — yang sudah berhasil tidak ikut hangus.
+    const daftar = [..._bulkFoto.entries()];
+    for (let i = 0; i < daftar.length; i++) {
+      const [pid, foto] = daftar[i];
+      const p = allProducts.find(x => x.id === pid);
+      if (!p) continue;
+      status.style.color = 'var(--text-muted)';
+      status.textContent = `Mengunggah ${i + 1}/${daftar.length} — ${p.name}`;
+
+      const ts = Date.now();
+      const thumbPath = `${pid}/${ts}-thumb.${foto.ext}`;
+      const largePath = `${pid}/${ts}-large.${foto.ext}`;
+      const opsi = { contentType: foto.thumb.type, cacheControl: '31536000', upsert: false };
+
+      const [u1, u2] = await Promise.all([
+        supabase.storage.from(FOTO_BUCKET).upload(thumbPath, foto.thumb, opsi),
+        supabase.storage.from(FOTO_BUCKET).upload(largePath, foto.large, opsi),
+      ]);
+      if (u1.error || u2.error) {
+        const sisa = [u1.error ? null : thumbPath, u2.error ? null : largePath].filter(Boolean);
+        if (sisa.length) await supabase.storage.from(FOTO_BUCKET).remove(sisa);
+        gagal.push(`${p.sku}: ${(u1.error || u2.error).message}`);
+        continue;
+      }
+
+      const { error } = await supabase.from('products')
+        .update({ photo_thumb_path: thumbPath, photo_large_path: largePath })
+        .eq('id', pid);
+      if (error) {
+        await supabase.storage.from(FOTO_BUCKET).remove([thumbPath, largePath]);
+        gagal.push(`${p.sku}: ${error.message}`);
+        continue;
+      }
+
+      const lama = [p.photo_thumb_path, p.photo_large_path].filter(Boolean);
+      if (lama.length) await supabase.storage.from(FOTO_BUCKET).remove(lama);
+      p.photo_thumb_path = thumbPath;
+      p.photo_large_path = largePath;
+      _bulkFoto.delete(pid);
+      berhasil++;
+    }
+
+    setLoading(btn, false);
+    renderBulkPhotoRows();
+    renderProducts();
+
+    if (gagal.length) {
+      status.style.color = '#dc2626';
+      status.textContent = `${berhasil} berhasil, ${gagal.length} gagal — ${gagal.slice(0, 3).join(' | ')}${gagal.length > 3 ? '…' : ''}`;
+      showToast(`${berhasil} foto terunggah, ${gagal.length} gagal — lihat keterangan di modal`, 'error');
+    } else {
+      status.style.color = '#16a34a';
+      status.textContent = `${berhasil} foto terunggah`;
+      showToast(`${berhasil} foto produk terunggah`);
+      closeModal('modal-bulk-photo');
+      clearSelection();
+    }
+  }
+
   function openMobileAction(id) {
     _mobileActionProduct = id;
     const p = allProducts.find(x => x.id === id);
@@ -2174,6 +2382,36 @@
 </div>
 
 <!-- MOBILE ACTION SHEET -->
+<div class="modal-overlay" id="modal-bulk-photo" data-no-overlay-close>
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <h3>📷 Foto Massal</h3>
+      <button class="modal-close" onclick="closeModal('modal-bulk-photo')">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="bulk-photo-count" style="font-size:13px;font-weight:600;color:#1e3a8a;margin:0 0 10px"></p>
+
+      <div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:14px">
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Pilih banyak file sekaligus</label>
+        <input type="file" id="bulk-photo-files" accept="image/*" multiple>
+        <p style="font-size:12px;color:var(--text-muted);margin:8px 0 0;line-height:1.5">
+          File yang namanya memuat SKU (contoh <code>BD-001.jpg</code>) otomatis
+          menempel ke produknya. Sisanya isi lewat tombol di tiap baris di bawah.
+        </p>
+        <p id="bulk-photo-match" style="font-size:12px;font-weight:600;margin:8px 0 0"></p>
+      </div>
+
+      <div id="bulk-photo-rows" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:10px"></div>
+
+      <p id="bulk-photo-status" style="font-size:12px;font-weight:600;margin:12px 0 0"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bulk-photo')">Tutup</button>
+      <button class="btn btn-primary" id="btn-save-bulk-photo" onclick="saveBulkPhotos()">Unggah Semua</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-photo" data-no-overlay-close>
   <div class="modal">
     <div class="modal-header">
