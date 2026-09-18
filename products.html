@@ -546,7 +546,7 @@
       if (e.target === e.currentTarget) closeMobileAction();
     });
     document.getElementById('photo-file')?.addEventListener('change', onPilihFoto);
-    document.getElementById('bulk-photo-files')?.addEventListener('change', onPilihFotoMassal);
+    document.getElementById('bulk-photo-shared')?.addEventListener('change', onPilihFotoSemua);
     // Sembunyikan th & form field harga modal untuk admin biasa
     if (!isSuperAdmin) {
       document.querySelectorAll('.col-harga-modal').forEach(el => el.style.display = 'none');
@@ -2083,12 +2083,13 @@
 
     // Foto lama baru dihapus SETELAH baris produk menunjuk foto baru — jadi
     // kalau langkah ini gagal, yang tertinggal cuma file tak terpakai, bukan
-    // produk yang fotonya hilang.
-    const lama = [p.photo_thumb_path, p.photo_large_path].filter(Boolean);
-    if (lama.length) await supabase.storage.from(FOTO_BUCKET).remove(lama);
-
+    // produk yang fotonya hilang. Dan hanya kalau tidak ada SKU lain yang
+    // masih memakainya — foto bisa dipakai bersama lewat Foto Massal.
+    const lama = [p.photo_thumb_path, p.photo_large_path];
     p.photo_thumb_path = thumbPath;
     p.photo_large_path = largePath;
+    await hapusFotoKalauSudahYatim(lama);
+
     setLoading(btn, false);
     closeModal('modal-photo');
     showToast('Foto produk disimpan');
@@ -2106,10 +2107,12 @@
       .eq('id', id);
     if (error) { showToast('Gagal hapus foto: ' + error.message, 'error'); return; }
 
-    const lama = [p.photo_thumb_path, p.photo_large_path].filter(Boolean);
-    if (lama.length) await supabase.storage.from(FOTO_BUCKET).remove(lama);
+    const lama = [p.photo_thumb_path, p.photo_large_path];
     p.photo_thumb_path = null;
     p.photo_large_path = null;
+    // File di Storage hanya ikut terhapus kalau tidak ada SKU lain yang masih
+    // memakainya — satu foto bisa dipakai beberapa SKU lewat Foto Massal.
+    await hapusFotoKalauSudahYatim(lama);
     closeModal('modal-photo');
     showToast('Foto produk dihapus');
     renderProducts();
@@ -2123,7 +2126,8 @@
   // tab-nya hang di tengah jalan.
   // ══════════════════════════════════════════════════
   const BULK_FOTO_MAX = 20;
-  let _bulkFoto = new Map(); // productId -> { thumb, large, ext, namaFile }
+  let _bulkFoto = new Map();   // productId -> { thumb, large, ext, namaFile } — foto per produk
+  let _bulkFotoSemua = null;   // { thumb, large, ext, namaFile } — satu foto untuk semua
 
   function openBulkPhotoModal() {
     if (!selectedProductIds.size) return;
@@ -2132,10 +2136,12 @@
       return;
     }
     _bulkFoto = new Map();
+    _bulkFotoSemua = null;
     document.getElementById('bulk-photo-count').textContent =
       `${selectedProductIds.size} produk terpilih`;
-    document.getElementById('bulk-photo-files').value = '';
-    document.getElementById('bulk-photo-match').textContent = '';
+    document.getElementById('bulk-photo-shared').value = '';
+    document.getElementById('bulk-photo-shared-status').textContent = '';
+    document.getElementById('bulk-photo-shared-preview').style.display = 'none';
     document.getElementById('bulk-photo-status').textContent = '';
     renderBulkPhotoRows();
     openModal('modal-bulk-photo');
@@ -2152,17 +2158,21 @@
       const adaFotoLama = !!p.photo_thumb_path;
       const status = dipilih
         ? `<span style="color:#16a34a;font-weight:600">✓ ${escapeHtml(dipilih.namaFile)} · ${Math.round((dipilih.thumb.size + dipilih.large.size) / 1024)} KB</span>`
-        : adaFotoLama
-          ? '<span style="color:var(--text-muted)">sudah ada foto — pilih file untuk mengganti</span>'
-          : '<span style="color:var(--text-muted)">belum ada foto</span>';
+        : _bulkFotoSemua
+          ? '<span style="color:#2563eb;font-weight:600">akan pakai foto bersama</span>'
+          : adaFotoLama
+            ? '<span style="color:var(--text-muted)">sudah ada foto — pilih file untuk mengganti</span>'
+            : '<span style="color:var(--text-muted)">belum ada foto</span>';
       return `
         <div style="display:flex;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border)" data-bulk-row="${p.id}">
           <div style="width:44px;height:44px;flex:none;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;overflow:hidden;font-weight:700;color:#94a3b8">
             ${dipilih
               ? `<img src="${URL.createObjectURL(dipilih.thumb)}" style="width:100%;height:100%;object-fit:cover">`
-              : adaFotoLama
-                ? `<img src="${fotoPublicUrl(p.photo_thumb_path)}" style="width:100%;height:100%;object-fit:cover">`
-                : escapeHtml((p.name || '?').charAt(0).toUpperCase())}
+              : _bulkFotoSemua
+                ? `<img src="${URL.createObjectURL(_bulkFotoSemua.thumb)}" style="width:100%;height:100%;object-fit:cover;opacity:.75">`
+                : adaFotoLama
+                  ? `<img src="${fotoPublicUrl(p.photo_thumb_path)}" style="width:100%;height:100%;object-fit:cover">`
+                  : escapeHtml((p.name || '?').charAt(0).toUpperCase())}
           </div>
           <div style="min-width:0;flex:1">
             <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.name)}</div>
@@ -2204,105 +2214,149 @@
     }
   }
 
-  // Cocokkan nama file dengan SKU. Perbandingan dilakukan setelah semua karakter
-  // selain huruf & angka dibuang, jadi "BD-001.jpg", "bd001 (1).jpeg", dan
-  // "foto_BD 001.png" sama-sama menempel ke SKU BD-001.
-  function normalisasiUntukCocok(teks) {
-    return (teks || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  }
+  // Foto bersama: dipakai semua produk terpilih yang tidak diisi sendiri.
+  async function onPilihFotoSemua(e) {
+    const file = e.target.files?.[0];
+    const info = document.getElementById('bulk-photo-shared-status');
+    const preview = document.getElementById('bulk-photo-shared-preview');
+    _bulkFotoSemua = null;
+    if (!file) { info.textContent = ''; preview.style.display = 'none'; renderBulkPhotoRows(); return; }
 
-  // Ekstensi dan akhiran " (1)" bawaan browser (muncul kalau file diunduh
-  // berulang) dibuang DULU sebelum dicocokkan. Tanpa ini "BD-001 (1).jpg"
-  // berubah jadi "bd0011" dan salah menempel ke SKU BD-0011 — persis kasus yang
-  // paling sering muncul saat foto diunduh satu per satu.
-  function dasarNamaFile(nama) {
-    return (nama || '')
-      .replace(/\.[a-z0-9]+$/i, '')
-      .replace(/\s*\(\d+\)\s*$/, '')
-      .trim();
-  }
+    info.style.color = 'var(--text-muted)';
+    info.textContent = 'Mengecilkan foto…';
+    try {
+      const sumber = await bacaGambar(file);
+      const thumb = await bikinVersiFoto(sumber, FOTO_UKURAN.thumb.sisi, FOTO_UKURAN.thumb.kualitas);
+      const large = await bikinVersiFoto(sumber, FOTO_UKURAN.large.sisi, FOTO_UKURAN.large.kualitas);
+      sumber.close?.();
+      if (!thumb || !large) throw new Error('Browser gagal memproses gambar ini');
 
-  async function onPilihFotoMassal(e) {
-    const files = [...(e.target.files || [])];
-    const info = document.getElementById('bulk-photo-match');
-    if (!files.length) { info.textContent = ''; return; }
+      _bulkFotoSemua = {
+        thumb, large,
+        ext: thumb.type === 'image/webp' ? 'webp' : 'jpg',
+        namaFile: file.name,
+      };
+      preview.innerHTML = `<img src="${URL.createObjectURL(thumb)}" style="width:100%;height:100%;object-fit:cover">`;
+      preview.style.display = '';
 
-    const targets = bulkPhotoTargets();
-    // SKU terpanjang dicek duluan supaya "BD-0011" tidak keburu diklaim "BD-001".
-    const urut = [...targets].sort((a, b) => (b.sku || '').length - (a.sku || '').length);
-
-    let cocok = 0;
-    const tidakCocok = [];
-    for (const file of files) {
-      const nama = normalisasiUntukCocok(dasarNamaFile(file.name));
-      const produk = urut.find(p => p.sku && nama.includes(normalisasiUntukCocok(p.sku)));
-      if (!produk) { tidakCocok.push(file.name); continue; }
-      info.style.color = 'var(--text-muted)';
-      info.textContent = `Mengecilkan ${cocok + 1}/${files.length}…`;
-      await siapkanFotoBulk(produk.id, file);   // satu per satu, bukan paralel
-      cocok++;
+      const kb = b => Math.round(b / 1024).toLocaleString('id-ID');
+      info.style.color = '#16a34a';
+      info.textContent = `${kb(file.size)} KB → kecil ${kb(thumb.size)} KB + besar ${kb(large.size)} KB · akan dipasang ke produk yang tidak diisi sendiri`;
+    } catch (err) {
+      info.style.color = '#dc2626';
+      info.textContent = 'Gagal memproses foto: ' + err.message;
+      preview.style.display = 'none';
     }
-
-    info.style.color = cocok ? '#16a34a' : '#dc2626';
-    info.textContent = `${cocok} file menempel otomatis`
-      + (tidakCocok.length ? ` · ${tidakCocok.length} tidak cocok SKU mana pun: ${tidakCocok.slice(0, 3).join(', ')}${tidakCocok.length > 3 ? '…' : ''}` : '');
     renderBulkPhotoRows();
-    e.target.value = '';
+  }
+
+  // Sejak foto bisa dipakai bersama beberapa SKU, file di Storage TIDAK boleh
+  // dihapus begitu saja saat satu produk melepasnya — SKU lain bisa jadi masih
+  // memakainya, dan fotonya akan mati diam-diam. Dicek dulu ke database, dan
+  // dipanggil SETELAH baris produk diperbarui supaya hitungannya sudah benar.
+  async function hapusFotoKalauSudahYatim(paths) {
+    const yatim = [];
+    for (const path of [...new Set(paths.filter(Boolean))]) {
+      const [a, b] = await Promise.all([
+        supabase.from('products').select('id', { count: 'exact', head: true }).eq('photo_thumb_path', path),
+        supabase.from('products').select('id', { count: 'exact', head: true }).eq('photo_large_path', path),
+      ]);
+      if (a.error || b.error) continue;               // ragu = jangan hapus
+      if ((a.count || 0) + (b.count || 0) === 0) yatim.push(path);
+    }
+    if (yatim.length) await supabase.storage.from(FOTO_BUCKET).remove(yatim);
   }
 
   async function saveBulkPhotos() {
     const btn = document.getElementById('btn-save-bulk-photo');
     if (btn.disabled) return;
-    if (!_bulkFoto.size) { showToast('Belum ada foto yang dipilih', 'error'); return; }
+    if (!_bulkFoto.size && !_bulkFotoSemua) {
+      showToast('Belum ada foto yang dipilih', 'error');
+      return;
+    }
 
     const status = document.getElementById('bulk-photo-status');
     setLoading(btn, true);
     let berhasil = 0;
     const gagal = [];
+    const fotoLamaYangDilepas = [];
 
-    // Berurutan, bukan paralel: 20 produk = 40 unggahan, dan koneksi rumahan
-    // lebih sering gagal kalau dihajar sekaligus. Kalau satu produk gagal,
-    // sisanya tetap jalan — yang sudah berhasil tidak ikut hangus.
-    const daftar = [..._bulkFoto.entries()];
-    for (let i = 0; i < daftar.length; i++) {
-      const [pid, foto] = daftar[i];
-      const p = allProducts.find(x => x.id === pid);
-      if (!p) continue;
+    // Foto bersama diunggah SEKALI lalu path-nya dipakai semua produk yang
+    // tidak diisi sendiri — 10 SKU tetap 1 file, bukan 10 salinan.
+    let pathBersama = null;
+    if (_bulkFotoSemua) {
       status.style.color = 'var(--text-muted)';
-      status.textContent = `Mengunggah ${i + 1}/${daftar.length} — ${p.name}`;
-
-      const ts = Date.now();
-      const thumbPath = `${pid}/${ts}-thumb.${foto.ext}`;
-      const largePath = `${pid}/${ts}-large.${foto.ext}`;
-      const opsi = { contentType: foto.thumb.type, cacheControl: '31536000', upsert: false };
-
+      status.textContent = 'Mengunggah foto bersama…';
+      const kode = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const t = `bersama/${kode}-thumb.${_bulkFotoSemua.ext}`;
+      const l = `bersama/${kode}-large.${_bulkFotoSemua.ext}`;
+      const opsi = { contentType: _bulkFotoSemua.thumb.type, cacheControl: '31536000', upsert: false };
       const [u1, u2] = await Promise.all([
-        supabase.storage.from(FOTO_BUCKET).upload(thumbPath, foto.thumb, opsi),
-        supabase.storage.from(FOTO_BUCKET).upload(largePath, foto.large, opsi),
+        supabase.storage.from(FOTO_BUCKET).upload(t, _bulkFotoSemua.thumb, opsi),
+        supabase.storage.from(FOTO_BUCKET).upload(l, _bulkFotoSemua.large, opsi),
       ]);
       if (u1.error || u2.error) {
-        const sisa = [u1.error ? null : thumbPath, u2.error ? null : largePath].filter(Boolean);
+        const sisa = [u1.error ? null : t, u2.error ? null : l].filter(Boolean);
         if (sisa.length) await supabase.storage.from(FOTO_BUCKET).remove(sisa);
-        gagal.push(`${p.sku}: ${(u1.error || u2.error).message}`);
-        continue;
+        status.style.color = '#dc2626';
+        status.textContent = 'Gagal unggah foto bersama: ' + (u1.error || u2.error).message;
+        setLoading(btn, false);
+        return;
+      }
+      pathBersama = { thumb: t, large: l };
+    }
+
+    // Berurutan, bukan paralel: koneksi rumahan lebih sering gagal kalau
+    // dihajar sekaligus. Kalau satu produk gagal, sisanya tetap jalan —
+    // yang sudah berhasil tidak ikut hangus.
+    const daftar = bulkPhotoTargets().filter(p => _bulkFoto.has(p.id) || pathBersama);
+    for (let i = 0; i < daftar.length; i++) {
+      const p = daftar[i];
+      const sendiri = _bulkFoto.get(p.id);
+      status.style.color = 'var(--text-muted)';
+      status.textContent = `Menyimpan ${i + 1}/${daftar.length} — ${p.name}`;
+
+      let thumbPath, largePath;
+      if (sendiri) {
+        const ts = Date.now();
+        thumbPath = `${p.id}/${ts}-thumb.${sendiri.ext}`;
+        largePath = `${p.id}/${ts}-large.${sendiri.ext}`;
+        const opsi = { contentType: sendiri.thumb.type, cacheControl: '31536000', upsert: false };
+        const [u1, u2] = await Promise.all([
+          supabase.storage.from(FOTO_BUCKET).upload(thumbPath, sendiri.thumb, opsi),
+          supabase.storage.from(FOTO_BUCKET).upload(largePath, sendiri.large, opsi),
+        ]);
+        if (u1.error || u2.error) {
+          const sisa = [u1.error ? null : thumbPath, u2.error ? null : largePath].filter(Boolean);
+          if (sisa.length) await supabase.storage.from(FOTO_BUCKET).remove(sisa);
+          gagal.push(`${p.sku}: ${(u1.error || u2.error).message}`);
+          continue;
+        }
+      } else {
+        thumbPath = pathBersama.thumb;
+        largePath = pathBersama.large;   // tidak diunggah ulang, cuma ditunjuk
       }
 
       const { error } = await supabase.from('products')
         .update({ photo_thumb_path: thumbPath, photo_large_path: largePath })
-        .eq('id', pid);
+        .eq('id', p.id);
       if (error) {
-        await supabase.storage.from(FOTO_BUCKET).remove([thumbPath, largePath]);
+        if (sendiri) await supabase.storage.from(FOTO_BUCKET).remove([thumbPath, largePath]);
         gagal.push(`${p.sku}: ${error.message}`);
         continue;
       }
 
-      const lama = [p.photo_thumb_path, p.photo_large_path].filter(Boolean);
-      if (lama.length) await supabase.storage.from(FOTO_BUCKET).remove(lama);
+      fotoLamaYangDilepas.push(p.photo_thumb_path, p.photo_large_path);
       p.photo_thumb_path = thumbPath;
       p.photo_large_path = largePath;
-      _bulkFoto.delete(pid);
+      _bulkFoto.delete(p.id);
       berhasil++;
     }
+
+    // Baru setelah semua baris menunjuk foto barunya: foto lama dihapus hanya
+    // kalau sudah tidak ada SKU lain yang memakainya.
+    await hapusFotoKalauSudahYatim(fotoLamaYangDilepas);
+    _bulkFotoSemua = null;
 
     setLoading(btn, false);
     renderBulkPhotoRows();
@@ -2392,15 +2446,25 @@
       <p id="bulk-photo-count" style="font-size:13px;font-weight:600;color:#1e3a8a;margin:0 0 10px"></p>
 
       <div style="background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:14px">
-        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">Pilih banyak file sekaligus</label>
-        <input type="file" id="bulk-photo-files" accept="image/*" multiple>
+        <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">
+          1 foto untuk semua produk terpilih
+        </label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div id="bulk-photo-shared-preview" style="width:56px;height:56px;flex:none;border-radius:8px;background:#e2e8f0;display:none;overflow:hidden"></div>
+          <input type="file" id="bulk-photo-shared" accept="image/*" style="flex:1;min-width:0">
+        </div>
         <p style="font-size:12px;color:var(--text-muted);margin:8px 0 0;line-height:1.5">
-          File yang namanya memuat SKU (contoh <code>BD-001.jpg</code>) otomatis
-          menempel ke produknya. Sisanya isi lewat tombol di tiap baris di bawah.
+          Untuk beberapa SKU yang fotonya memang sama. Fotonya diunggah
+          <strong>sekali</strong> lalu dipakai bersama — 10 SKU tetap 1 file di
+          penyimpanan, bukan 10 salinan.
         </p>
-        <p id="bulk-photo-match" style="font-size:12px;font-weight:600;margin:8px 0 0"></p>
+        <p id="bulk-photo-shared-status" style="font-size:12px;font-weight:600;margin:8px 0 0"></p>
       </div>
 
+      <p style="font-size:12px;color:var(--text-muted);margin:0 0 6px">
+        Atau isi sendiri per produk di bawah — baris yang diisi di sini menang
+        atas foto bersama di atas.
+      </p>
       <div id="bulk-photo-rows" style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:10px"></div>
 
       <p id="bulk-photo-status" style="font-size:12px;font-weight:600;margin:12px 0 0"></p>
