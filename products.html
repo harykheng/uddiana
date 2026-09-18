@@ -544,6 +544,7 @@
     document.getElementById('mobile-action-sheet')?.addEventListener('click', e => {
       if (e.target === e.currentTarget) closeMobileAction();
     });
+    document.getElementById('photo-file')?.addEventListener('change', onPilihFoto);
     // Sembunyikan th & form field harga modal untuk admin biasa
     if (!isSuperAdmin) {
       document.querySelectorAll('.col-harga-modal').forEach(el => el.style.display = 'none');
@@ -700,6 +701,7 @@
         <td class="col-hide-mobile" style="font-size:12px;color:var(--text-muted);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(p.description||'')}">${escapeHtml(p.description || '—')}</td>
         <td>
           <div class="table-actions">
+            <button class="btn btn-ghost btn-sm" onclick="openPhotoModal('${p.id}')" title="${p.photo_thumb_path ? 'Ganti foto produk' : 'Tambah foto produk'}">${p.photo_thumb_path ? '🖼️' : '📷'}</button>
             <button class="btn btn-ghost btn-sm" onclick="openProductInfo('${p.id}')" title="Info Produk">ℹ️</button>
             <button class="btn btn-ghost btn-sm" onclick="openAdjustStock('${p.id}')" title="Sesuaikan Stok">📊</button>
             <button class="btn btn-ghost btn-sm" onclick="openEditProduct('${p.id}')" title="Edit">✏️</button>
@@ -1921,6 +1923,196 @@
   // ── MOBILE ACTION SHEET ─────────────────────────────────────
   let _mobileActionProduct = null;
 
+  // ══════════════════════════════════════════════════
+  // FOTO PRODUK (bucket publik 'product-photos', supabase_migration41)
+  //
+  // Foto dikecilkan DI BROWSER INI sebelum diunggah — file asli dari kamera
+  // (2-4 MB) tidak pernah dikirim. Untuk 1.574 SKU selisihnya ~4,7 GB vs
+  // ~160 MB, yaitu jebol vs muat di kuota Supabase gratis. Bucket juga punya
+  // batas 1 MB per file sebagai pengaman kalau kode ini suatu saat lupa
+  // mengompres.
+  //
+  // Path memuat timestamp (<id>/<ts>-thumb.webp), jadi ganti foto = URL baru
+  // dan tidak pernah ada cache CDN yang masih menyajikan foto lama.
+  // ══════════════════════════════════════════════════
+  const FOTO_BUCKET = 'product-photos';
+  const FOTO_UKURAN = { thumb: { sisi: 400, kualitas: 0.75 }, large: { sisi: 900, kualitas: 0.8 } };
+  let _fotoTerpilih = null;  // { thumb: Blob, large: Blob, ext: 'webp'|'jpg' }
+
+  function fotoPublicUrl(path) {
+    if (!path) return null;
+    return supabase.storage.from(FOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+  }
+
+  // Gambar sumber dibaca lewat createImageBitmap supaya rotasi EXIF ikut
+  // diterapkan — tanpa itu foto dari HP sering tampil miring 90°. Kalau browser
+  // tidak mendukung opsi itu, jatuh ke <img> yang juga sudah menerapkan EXIF.
+  async function bacaGambar(file) {
+    try {
+      return await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (_) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        await new Promise((ok, gagal) => { img.onload = ok; img.onerror = gagal; img.src = url; });
+        return img;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+  }
+
+  async function bikinVersiFoto(sumber, maxSisi, kualitas) {
+    const lebarAsli = sumber.width || sumber.naturalWidth;
+    const tinggiAsli = sumber.height || sumber.naturalHeight;
+    const skala = Math.min(1, maxSisi / Math.max(lebarAsli, tinggiAsli));
+    const w = Math.max(1, Math.round(lebarAsli * skala));
+    const h = Math.max(1, Math.round(tinggiAsli * skala));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';           // PNG transparan jadi putih, bukan hitam
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(sumber, 0, 0, w, h);
+
+    let blob = await new Promise(res => canvas.toBlob(res, 'image/webp', kualitas));
+    // Safari lawas tidak bisa MEMBUAT webp dari canvas dan diam-diam
+    // mengembalikan PNG — jadi tipenya dicek, bukan cuma null-nya.
+    if (!blob || blob.type !== 'image/webp') {
+      blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', kualitas));
+    }
+    return blob;
+  }
+
+  async function openPhotoModal(id) {
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    _fotoTerpilih = null;
+    document.getElementById('photo-product-id').value = id;
+    document.getElementById('modal-photo-title').textContent = `Foto — ${p.name}`;
+    document.getElementById('photo-file').value = '';
+    document.getElementById('photo-status').textContent = '';
+
+    const img = document.getElementById('photo-preview');
+    const kosong = document.getElementById('photo-preview-empty');
+    const url = fotoPublicUrl(p.photo_large_path || p.photo_thumb_path);
+    if (url) {
+      img.src = url;
+      img.style.display = '';
+      kosong.style.display = 'none';
+    } else {
+      img.removeAttribute('src');
+      img.style.display = 'none';
+      kosong.style.display = 'flex';
+    }
+    document.getElementById('btn-delete-photo').style.display = p.photo_thumb_path ? '' : 'none';
+    openModal('modal-photo');
+  }
+
+  async function onPilihFoto(e) {
+    const file = e.target.files?.[0];
+    const status = document.getElementById('photo-status');
+    _fotoTerpilih = null;
+    if (!file) { status.textContent = ''; return; }
+
+    status.style.color = 'var(--text-muted)';
+    status.textContent = 'Mengecilkan foto…';
+    try {
+      const sumber = await bacaGambar(file);
+      const thumb = await bikinVersiFoto(sumber, FOTO_UKURAN.thumb.sisi, FOTO_UKURAN.thumb.kualitas);
+      const large = await bikinVersiFoto(sumber, FOTO_UKURAN.large.sisi, FOTO_UKURAN.large.kualitas);
+      sumber.close?.();
+      if (!thumb || !large) throw new Error('Browser gagal memproses gambar ini');
+
+      _fotoTerpilih = { thumb, large, ext: thumb.type === 'image/webp' ? 'webp' : 'jpg' };
+      document.getElementById('photo-preview').src = URL.createObjectURL(large);
+      document.getElementById('photo-preview').style.display = '';
+      document.getElementById('photo-preview-empty').style.display = 'none';
+
+      const kb = b => Math.round(b / 1024).toLocaleString('id-ID');
+      status.style.color = 'var(--success, #16a34a)';
+      status.textContent = `${kb(file.size)} KB → kecil ${kb(thumb.size)} KB + besar ${kb(large.size)} KB`;
+    } catch (err) {
+      status.style.color = 'var(--danger, #dc2626)';
+      status.textContent = 'Gagal memproses foto: ' + err.message;
+    }
+  }
+
+  async function saveProductPhoto() {
+    const btn = document.getElementById('btn-save-photo');
+    if (btn.disabled) return;
+    const id = document.getElementById('photo-product-id').value;
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    if (!_fotoTerpilih) { showToast('Pilih foto dulu', 'error'); return; }
+
+    setLoading(btn, true);
+    const ts = Date.now();
+    const ext = _fotoTerpilih.ext;
+    const thumbPath = `${id}/${ts}-thumb.${ext}`;
+    const largePath = `${id}/${ts}-large.${ext}`;
+    const opsi = { contentType: _fotoTerpilih.thumb.type, cacheControl: '31536000', upsert: false };
+
+    const [u1, u2] = await Promise.all([
+      supabase.storage.from(FOTO_BUCKET).upload(thumbPath, _fotoTerpilih.thumb, opsi),
+      supabase.storage.from(FOTO_BUCKET).upload(largePath, _fotoTerpilih.large, opsi),
+    ]);
+    if (u1.error || u2.error) {
+      // Kalau salah satu gagal, buang yang telanjur naik supaya tidak ada file
+      // yatim yang memakan kuota tanpa pernah dipakai.
+      const sisa = [u1.error ? null : thumbPath, u2.error ? null : largePath].filter(Boolean);
+      if (sisa.length) await supabase.storage.from(FOTO_BUCKET).remove(sisa);
+      showToast('Gagal unggah foto: ' + (u1.error || u2.error).message, 'error');
+      setLoading(btn, false);
+      return;
+    }
+
+    const { error } = await supabase.from('products')
+      .update({ photo_thumb_path: thumbPath, photo_large_path: largePath })
+      .eq('id', id);
+    if (error) {
+      await supabase.storage.from(FOTO_BUCKET).remove([thumbPath, largePath]);
+      showToast('Gagal simpan foto: ' + error.message, 'error');
+      setLoading(btn, false);
+      return;
+    }
+
+    // Foto lama baru dihapus SETELAH baris produk menunjuk foto baru — jadi
+    // kalau langkah ini gagal, yang tertinggal cuma file tak terpakai, bukan
+    // produk yang fotonya hilang.
+    const lama = [p.photo_thumb_path, p.photo_large_path].filter(Boolean);
+    if (lama.length) await supabase.storage.from(FOTO_BUCKET).remove(lama);
+
+    p.photo_thumb_path = thumbPath;
+    p.photo_large_path = largePath;
+    setLoading(btn, false);
+    closeModal('modal-photo');
+    showToast('Foto produk disimpan');
+    renderProducts();
+  }
+
+  async function deleteProductPhoto() {
+    const id = document.getElementById('photo-product-id').value;
+    const p = allProducts.find(x => x.id === id);
+    if (!p || !p.photo_thumb_path) return;
+    if (!confirm(`Hapus foto "${p.name}"?`)) return;
+
+    const { error } = await supabase.from('products')
+      .update({ photo_thumb_path: null, photo_large_path: null })
+      .eq('id', id);
+    if (error) { showToast('Gagal hapus foto: ' + error.message, 'error'); return; }
+
+    const lama = [p.photo_thumb_path, p.photo_large_path].filter(Boolean);
+    if (lama.length) await supabase.storage.from(FOTO_BUCKET).remove(lama);
+    p.photo_thumb_path = null;
+    p.photo_large_path = null;
+    closeModal('modal-photo');
+    showToast('Foto produk dihapus');
+    renderProducts();
+  }
+
   function openMobileAction(id) {
     _mobileActionProduct = id;
     const p = allProducts.find(x => x.id === id);
@@ -1939,7 +2131,8 @@
     closeMobileAction();
     if (!id) return;
     const p = allProducts.find(x => x.id === id);
-    if (fn === 'info')      openProductInfo(id);
+    if (fn === 'photo')     openPhotoModal(id);
+    else if (fn === 'info') openProductInfo(id);
     else if (fn === 'stock')     openAdjustStock(id);
     else if (fn === 'edit') openEditProduct(id);
     else if (fn === 'dup')  openDuplicateProduct(id);
@@ -1981,6 +2174,41 @@
 </div>
 
 <!-- MOBILE ACTION SHEET -->
+<div class="modal-overlay" id="modal-photo" data-no-overlay-close>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-photo-title">Foto Produk</h3>
+      <button class="modal-close" onclick="closeModal('modal-photo')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="photo-product-id">
+      <div id="photo-preview-wrap" style="display:flex;justify-content:center;margin-bottom:14px;">
+        <div id="photo-preview-empty" style="width:180px;height:180px;border:2px dashed var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:13px;text-align:center;padding:12px;">
+          Belum ada foto
+        </div>
+        <img id="photo-preview" alt="" style="display:none;width:180px;height:180px;object-fit:contain;border:1px solid var(--border);border-radius:12px;background:#f8fafc;">
+      </div>
+
+      <div class="form-group">
+        <label>Pilih foto</label>
+        <input type="file" id="photo-file" accept="image/*">
+      </div>
+
+      <p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin:6px 0 0;">
+        Foto otomatis dikecilkan di HP/komputer ini sebelum diunggah — file asli
+        dari kamera tidak ikut terkirim. Dibuat dua ukuran: kecil untuk daftar
+        katalog, besar untuk saat fotonya diketuk toko.
+      </p>
+      <p id="photo-status" style="font-size:12px;font-weight:600;margin:10px 0 0;"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="btn-delete-photo" onclick="deleteProductPhoto()">Hapus Foto</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-photo')">Batal</button>
+      <button class="btn btn-primary" id="btn-save-photo" onclick="saveProductPhoto()">Simpan Foto</button>
+    </div>
+  </div>
+</div>
+
 <div id="mobile-action-sheet" style="
   position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;
   display:none;align-items:flex-end;justify-content:center;">
@@ -1990,6 +2218,7 @@
       <button onclick="closeMobileAction()" style="border:none;background:none;font-size:20px;color:#94a3b8;cursor:pointer;padding:0 0 0 12px;line-height:1;">✕</button>
     </div>
     <div id="mobile-action-name" style="font-size:13px;font-weight:700;color:#374151;margin-bottom:14px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+    <button onclick="mobileAction('photo')" style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">📷 <span>Foto Produk</span></button>
     <button onclick="mobileAction('info')"  style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">ℹ️ <span>Info Produk</span></button>
     <button onclick="mobileAction('stock')" style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">📊 <span>Sesuaikan Stok</span></button>
     <button onclick="mobileAction('edit')"  style="width:100%;text-align:left;padding:13px 16px;border:none;border-radius:10px;background:#f8fafc;font-size:14px;cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px;">✏️ <span>Edit Produk</span></button>
