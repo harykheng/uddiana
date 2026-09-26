@@ -1210,7 +1210,7 @@
           <th style="text-align:right;padding:10px 14px;white-space:nowrap;">Harga / lusin</th>
         </tr></thead>
         <tbody>${pageItems.map(p => {
-          const hargaLusin = Math.round((p.price * 12) / 100) * 100;
+          const hargaLusin = Math.ceil((p.price * 12) / 100) * 100;
           // Cuma aturan umum (bukan khusus toko) yang ditampilkan di list browsing ini —
           // aturan khusus toko baru relevan & muncul setelah customer dipilih di form faktur
           const rules = (discountRulesByProduct[p.id] || []).filter(r => !r.customer_ids || !r.customer_ids.length);

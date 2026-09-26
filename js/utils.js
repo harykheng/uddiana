@@ -17,10 +17,12 @@ function formatCurrency(amount) {
   }).format(amount || 0);
 }
 
-// Harga per lusin (1 lusin = 12 pcs), dibulatkan ke kelipatan 100.
-// Formula sama dengan yang dipakai di products.html & sales.html.
+// Harga per lusin (1 lusin = 12 pcs), dibulatkan NAIK ke kelipatan 100 —
+// sama seperti subtotal faktur (Math.ceil), bukan dibulatkan ke terdekat.
+// Formula sama dengan yang dipakai di products.html & sales.html, dan dengan
+// lusinPrice() di katalog per-toko (repo katalog-diana-kosmetik).
 function hargaLusin(price) {
-  return Math.round((Number(price || 0) * 12) / 100) * 100;
+  return Math.ceil((Number(price || 0) * 12) / 100) * 100;
 }
 
 function formatDate(dateStr) {
