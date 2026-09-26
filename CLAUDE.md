@@ -298,6 +298,8 @@ git push -u origin feat/nama-fitur
 - Field **Titik Lokasi (GPS)** di modal edit: paste `lat, lng` dari Google Maps. Diisi tangan = `location_source = 'manual'` (dikunci, absen sales tidak menimpanya); dikosongkan = koordinat dihapus dan boleh diisi absen lagi. Koordinat cuma ikut tersimpan kalau memang diubah, jadi edit nama/telepon tidak diam-diam mengunci titik hasil absen
 - Export XLS termasuk kolom Latitude & Longitude
 - Tombol **🔗 Link** per baris: salin link katalog toko ke clipboard. Link = `app_settings.catalog_base_url` + `/t/` + `customers.catalog_token` — dua-duanya dari database, tidak ada domain atau token yang di-hardcode. Token dibuat otomatis untuk customer baru lewat trigger (migration38); kalau domain atau token belum ada, tombolnya memberi tahu apa yang kurang, bukan menyalin link rusak. Fallback `document.execCommand('copy')` dipakai kalau ERP dibuka lewat http biasa (`navigator.clipboard` cuma jalan di HTTPS)
+- Tombol **📲 Kirim WA** di sebelah 🔗 Link: buka `wa.me` langsung ke nomor HP toko (`customers.phone`) dengan pesan link katalog sudah terisi — tanpa menyalin/tempel manual. Validasi link-nya sama dengan 🔗 Link (lewat `catalogLinkFor()` bersama), plus cek nomor HP toko sudah terisi. Nomor `08xx...` dikonversi ke format `62xxx` (wa.me tidak terima `0` di depan) lewat `normalizeIndoPhone()`
+- Nama distributor, nomor WA kantor, dan domain katalog (`app_settings.catalog_distributor_name`/`catalog_whatsapp_number`/`catalog_base_url`) diedit lewat tab **🔗 Katalog Toko** di `settings.html` (super_admin) — sebelumnya cuma bisa diubah lewat SQL Editor
 
 ### sales.html
 - Desain mobile-first dengan top nav (bukan sidebar)

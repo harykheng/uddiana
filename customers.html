@@ -259,6 +259,7 @@
         <td>
           <div class="table-actions">
             <button class="btn btn-ghost btn-sm" onclick="copyCatalogLink('${c.id}')" title="Salin link katalog toko ini">🔗 Link</button>
+            <button class="btn btn-ghost btn-sm" onclick="sendCatalogLinkWa('${c.id}')" title="Buka WhatsApp langsung ke nomor toko ini, pesan link katalog sudah terisi">📲 Kirim WA</button>
             <button class="btn btn-ghost btn-sm" onclick="openHistory('${c.id}')">📋 Riwayat</button>
             <button class="btn btn-ghost btn-sm" onclick="openEditCustomer('${c.id}')">✏️ Edit</button>
             <button class="btn btn-danger btn-sm" onclick="deleteCustomer('${c.id}','${escapeHtml(c.name)}')">🗑</button>
@@ -275,20 +276,27 @@
   // klien lain) tanpa menyentuh file ini. Token dibuat otomatis untuk setiap
   // customer baru oleh trigger di supabase_migration38.
   // ══════════════════════════════════════════════════
+
+  /** Link katalog toko ini, atau null (dengan toast alasannya) kalau belum bisa. */
+  function catalogLinkFor(c) {
+    if (!catalogBaseUrl) {
+      showToast('Domain katalog belum diatur (app_settings.catalog_base_url)', 'error');
+      return null;
+    }
+    if (!c.catalog_token) {
+      showToast(`"${c.store_name || c.name}" belum punya token katalog — jalankan catalog_ensure_tokens() di SQL Editor`, 'error');
+      return null;
+    }
+    return `${catalogBaseUrl}/t/${c.catalog_token}`;
+  }
+
   async function copyCatalogLink(id) {
     const c = allCustomers.find(x => x.id === id);
     if (!c) return;
 
-    if (!catalogBaseUrl) {
-      showToast('Domain katalog belum diatur (app_settings.catalog_base_url)', 'error');
-      return;
-    }
-    if (!c.catalog_token) {
-      showToast(`"${c.store_name || c.name}" belum punya token katalog — jalankan catalog_ensure_tokens() di SQL Editor`, 'error');
-      return;
-    }
+    const link = catalogLinkFor(c);
+    if (!link) return;
 
-    const link = `${catalogBaseUrl}/t/${c.catalog_token}`;
     if (await copyToClipboard(link)) {
       showToast(`Link katalog "${c.store_name || c.name}" disalin`);
     } else {
@@ -296,6 +304,34 @@
       // jangan sampai admin buntu tanpa tahu link-nya apa.
       window.prompt('Salin link katalog ini:', link);
     }
+  }
+
+  // Ubah nomor HP toko (biasanya tersimpan "08xx...") jadi format wa.me
+  // (62xxx, tanpa +/spasi/strip). Angka lokal Indonesia — 0 di depan diganti
+  // 62; kalau sudah diawali 62 (atau memang bukan diawali 0) dibiarkan.
+  function normalizeIndoPhone(raw) {
+    const digits = String(raw || '').replace(/\D/g, '');
+    if (!digits) return '';
+    return digits.startsWith('0') ? '62' + digits.slice(1) : digits;
+  }
+
+  /** Buka WhatsApp langsung ke nomor toko ini, pesan link katalog sudah terisi. */
+  function sendCatalogLinkWa(id) {
+    const c = allCustomers.find(x => x.id === id);
+    if (!c) return;
+
+    const link = catalogLinkFor(c);
+    if (!link) return;
+
+    const phone = normalizeIndoPhone(c.phone);
+    if (!phone) {
+      showToast(`"${c.store_name || c.name}" belum punya nomor HP — isi dulu lewat ✏️ Edit`, 'error');
+      return;
+    }
+
+    const nama = c.store_name || c.name;
+    const pesan = `Halo ${nama}, ini link katalog pesanan Anda:\n${link}`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(pesan)}`, '_blank', 'noopener');
   }
 
   // navigator.clipboard cuma tersedia di HTTPS/localhost. Fallback textarea
