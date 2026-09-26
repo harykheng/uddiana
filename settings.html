@@ -60,6 +60,7 @@
         <button class="tab-pill" onclick="switchTab('tab-sales', this)">👥 Akun Sales</button>
         <button class="tab-pill" onclick="switchTab('tab-target', this)">🎯 Target Omzet</button>
         <button class="tab-pill" onclick="switchTab('tab-absen', this)">📍 Absen Kunjungan</button>
+        <button class="tab-pill" onclick="switchTab('tab-katalog', this)">🔗 Katalog Toko</button>
       </div>
 
       <!-- TAB: PROFIL -->
@@ -167,6 +168,41 @@
             <p style="font-size:12px;color:var(--text-muted);margin:0">
               Saat sales kirim absen kunjungan, foto (dengan stempel alamat+jam) otomatis di-attach ke share sheet WhatsApp HP mereka — sales tinggal pilih grup/kontak tujuan sendiri (nggak bisa auto-set ke grup tertentu, cuma bisa untuk nomor pribadi lewat link, jadi ini emang harus dipilih manual tiap kirim).
             </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: KATALOG TOKO -->
+      <div id="tab-katalog" style="display:none">
+        <div class="card" style="max-width:520px">
+          <div class="card-header"><h3>🔗 Pengaturan Katalog Toko</h3></div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--text-muted);margin:0 0 16px">
+              Dipakai di halaman katalog per-toko (link <code>🔗 Link</code> di
+              Customers) — nama distributor & nomor WA tampil di atas katalog,
+              dan nomor WA ini juga yang dituju tombol "Pesan via WA" toko.
+            </p>
+            <div class="form-group">
+              <label>Nama Distributor</label>
+              <input type="text" id="katalog-distributor-name" placeholder="Contoh: DIANA KOSMETIK">
+            </div>
+            <div class="form-group">
+              <label>Nomor WhatsApp Kantor</label>
+              <input type="text" id="katalog-whatsapp-number" placeholder="628xxxxxxxxxx" inputmode="numeric">
+              <p style="font-size:11.5px;color:var(--text-muted);margin:4px 0 0">
+                Format 62xxxxxxxxxx — tanpa tanda +, spasi, atau strip.
+              </p>
+            </div>
+            <div class="form-group mb-0">
+              <label>Domain Katalog</label>
+              <input type="text" id="katalog-base-url" placeholder="https://katalog-diana-kosmetik.vercel.app">
+              <p style="font-size:11.5px;color:var(--text-muted);margin:4px 0 0">
+                Dipakai tombol 🔗 Link di Customers untuk menyusun link toko.
+              </p>
+            </div>
+          </div>
+          <div class="modal-footer" style="border-top:1px solid #e2e8f0;padding:16px 20px">
+            <button class="btn btn-primary" id="btn-save-katalog" onclick="saveKatalogSettings()">Simpan Perubahan</button>
           </div>
         </div>
       </div>
@@ -329,7 +365,7 @@
   }
 
   function switchTab(id, btn) {
-    ['tab-profile','tab-sales','tab-target','tab-absen'].forEach(t => {
+    ['tab-profile','tab-sales','tab-target','tab-absen','tab-katalog'].forEach(t => {
       document.getElementById(t).style.display = 'none';
     });
     document.getElementById(id).style.display = 'block';
@@ -337,6 +373,55 @@
     btn.classList.add('active');
     if (id === 'tab-target') loadTargetTab();
     if (id === 'tab-absen') loadAbsenTabToggle();
+    if (id === 'tab-katalog') loadKatalogTab();
+  }
+
+  // ══════════════════════════════════════════════════
+  // KATALOG TOKO — app_settings.catalog_distributor_name,
+  // catalog_whatsapp_number, catalog_base_url. Sebelumnya cuma bisa diubah
+  // lewat SQL Editor; tab ini biar admin bisa gonta-ganti nomor WA / nama
+  // distributor sendiri tanpa perlu diminta jalankan SQL tiap kali.
+  // ══════════════════════════════════════════════════
+  const KATALOG_KEYS = {
+    'katalog-distributor-name': 'catalog_distributor_name',
+    'katalog-whatsapp-number': 'catalog_whatsapp_number',
+    'katalog-base-url': 'catalog_base_url',
+  };
+
+  async function loadKatalogTab() {
+    const { data } = await supabase.from('app_settings')
+      .select('key,value')
+      .in('key', Object.values(KATALOG_KEYS));
+    const byKey = Object.fromEntries((data || []).map(r => [r.key, r.value || '']));
+    for (const [inputId, key] of Object.entries(KATALOG_KEYS)) {
+      document.getElementById(inputId).value = byKey[key] || '';
+    }
+  }
+
+  async function saveKatalogSettings() {
+    const distributor = document.getElementById('katalog-distributor-name').value.trim();
+    // Sama seperti wa.me di katalog: cuma angka, tanpa +/spasi/strip.
+    const whatsapp = document.getElementById('katalog-whatsapp-number').value.replace(/\D/g, '');
+    const baseUrl = document.getElementById('katalog-base-url').value.trim().replace(/\/+$/, '');
+
+    const btn = document.getElementById('btn-save-katalog');
+    btn.disabled = true;
+    btn.textContent = 'Menyimpan...';
+
+    const rows = [
+      { key: 'catalog_distributor_name', value: distributor, updated_at: new Date().toISOString() },
+      { key: 'catalog_whatsapp_number', value: whatsapp, updated_at: new Date().toISOString() },
+      { key: 'catalog_base_url', value: baseUrl, updated_at: new Date().toISOString() },
+    ];
+    const { error } = await supabase.from('app_settings').upsert(rows, { onConflict: 'key' });
+
+    btn.disabled = false;
+    btn.textContent = 'Simpan Perubahan';
+
+    if (error) { showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
+    document.getElementById('katalog-whatsapp-number').value = whatsapp;
+    document.getElementById('katalog-base-url').value = baseUrl;
+    showToast('Pengaturan katalog disimpan ✅', 'success');
   }
 
   async function loadAbsenTabToggle() {
