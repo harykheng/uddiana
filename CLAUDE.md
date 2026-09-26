@@ -185,8 +185,10 @@ todayISO()                // → "2026-05-14"
 // Subtotal auto-calc — Math.ceil (selalu round UP ke kelipatan 100)
 const sub = Math.ceil((qty * price) / 100) * 100;
 
-// Harga lusin di list produk
-const hargaLusin = Math.round((p.price * 12) / 100) * 100;
+// Harga lusin di list produk — Math.ceil juga (round UP), sama seperti
+// subtotal di atas. Bukan Math.round — jangan diubah sepihak, harus tetap
+// sama dengan lusinPrice() di repo katalog (katalog-diana-kosmetik)
+const hargaLusin = Math.ceil((p.price * 12) / 100) * 100;
 
 // Stok format lusin
 const lusin = Math.floor(qty / 12);
