@@ -237,12 +237,19 @@
   // dari hasil tier1, bukan dijumlah), nominal dipotong langsung per pcs.
   function hargaSetelahDiskon(price, rule) {
     const harga = Number(price) || 0;
+    let hasil;
     if (rule.discount_type === 'nominal') {
-      return Math.max(0, harga - (Number(rule.discount_value) || 0));
+      hasil = Math.max(0, harga - (Number(rule.discount_value) || 0));
+    } else {
+      hasil = harga * (1 - (Number(rule.discount_value) || 0) / 100);
+      if (rule.discount_value2) hasil *= (1 - (Number(rule.discount_value2) || 0) / 100);
     }
-    let hasil = harga * (1 - (Number(rule.discount_value) || 0) / 100);
-    if (rule.discount_value2) hasil *= (1 - (Number(rule.discount_value2) || 0) / 100);
-    return hasil;
+    // Sama seperti aturan pembulatan subtotal & harga lusin di seluruh ERP
+    // ini: Math.ceil ke kelipatan 100 — persentase dikali harga jarang pas
+    // ratusan (mis. 15% dari Rp 52.900 = Rp 44.965), harga lusin di bawahnya
+    // (hargaLusin()) juga dihitung dari harga promo yang SUDAH dibulatkan
+    // ini, bukan dari angka mentah.
+    return Math.ceil(hasil / 100) * 100;
   }
 
   function hargaTerbaikDari(aturan, price) {
