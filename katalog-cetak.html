@@ -52,6 +52,17 @@
       border-radius: 999px; padding: 2px 7px;
       box-shadow: 0 1px 3px rgba(0,0,0,.25);
     }
+    .kt-promo {
+      position: absolute; top: 6px; right: 6px; z-index: 2;
+      background: var(--danger, #dc2626); color: #fff;
+      font-size: 9.5px; font-weight: 800; letter-spacing: .03em;
+      border-radius: 6px; padding: 2px 7px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.25);
+    }
+    .kt-price-coret {
+      text-decoration: line-through; color: var(--text-muted);
+      font-weight: 600; margin-right: 4px;
+    }
     .kt-photo {
       width: 100%; aspect-ratio: 1 / 1; object-fit: cover;
       background: #f1f5f9; display: block;
@@ -204,6 +215,7 @@
 <script src="js/auth.js"></script>
 <script>
   let semuaKandidat = []; // produk yang siap dicetak, sudah diurutkan
+  let diskonByProduct = new Map(); // product_id -> [aturan diskon umum tanpa syarat]
   const FOTO_BUCKET = 'product-photos';
 
   // Dua mode:
@@ -217,6 +229,32 @@
   function fotoPublicUrl(path) {
     if (!path) return null;
     return supabase.storage.from(FOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+  }
+
+  // Sama persis rumus di invoices.html: percent dihitung bertingkat (tier2
+  // dari hasil tier1, bukan dijumlah), nominal dipotong langsung per pcs.
+  function hargaSetelahDiskon(price, rule) {
+    const harga = Number(price) || 0;
+    if (rule.discount_type === 'nominal') {
+      return Math.max(0, harga - (Number(rule.discount_value) || 0));
+    }
+    let hasil = harga * (1 - (Number(rule.discount_value) || 0) / 100);
+    if (rule.discount_value2) hasil *= (1 - (Number(rule.discount_value2) || 0) / 100);
+    return hasil;
+  }
+
+  /** Aturan promo (umum, tanpa syarat) terbaik untuk produk ini, atau null. */
+  function promoUntuk(productId, price) {
+    const aturan = diskonByProduct.get(productId);
+    if (!aturan || !aturan.length) return null;
+    let terbaik = null, hargaTerbaik = Infinity;
+    for (const r of aturan) {
+      const h = hargaSetelahDiskon(price, r);
+      if (h < hargaTerbaik) { hargaTerbaik = h; terbaik = r; }
+    }
+    // Jaga-jaga: aturan dengan discount_value 0 atau aneh tidak usah ditandai promo.
+    if (!terbaik || hargaTerbaik >= Number(price)) return null;
+    return { rule: terbaik, hargaPromo: hargaTerbaik };
   }
 
   async function init() {
@@ -335,6 +373,29 @@
 
     const produkById = new Map((produk || []).map(p => [p.id, p]));
 
+    // Harga coret cuma untuk PROMO — aturan diskon PRODUK (bukan grup varian:
+    // itu dihitung dari total qty satu grup DI SATU FAKTUR, tidak ada artinya
+    // di brosur statis tanpa keranjang), TANPA syarat qty/nominal minimum
+    // (kalau ada syarat, harga sebenarnya baru pasti begitu toko benar-benar
+    // pesan sejumlah itu — mencetak angka pasti di brosur akan menyesatkan),
+    // dan berlaku UMUM (bukan diskon khusus 1-2 customer tertentu — brosur ini
+    // dibagikan ke semua toko, jadi harga khusus tidak boleh ikut ditampilkan
+    // seolah berlaku buat semua orang).
+    const { data: rules } = await supabase
+      .from('product_discount_rules')
+      .select('product_id,discount_type,discount_value,discount_value2,min_qty,min_amount,is_active,group_id,product_discount_rule_customers(customer_id)')
+      .eq('is_active', true)
+      .is('group_id', null)
+      .in('product_id', urutanId);
+
+    diskonByProduct = new Map();
+    for (const r of rules || []) {
+      if (Number(r.min_qty) || Number(r.min_amount)) continue; // ada syarat minimum
+      if ((r.product_discount_rule_customers || []).length) continue; // khusus customer
+      if (!diskonByProduct.has(r.product_id)) diskonByProduct.set(r.product_id, []);
+      diskonByProduct.get(r.product_id).push(r);
+    }
+
     // .in() tidak menjamin urutan hasil sama dengan urutan yang diminta,
     // jadi disusun ulang manual di sini — supaya urutan pilihan admin
     // (atau ranking terlaris) tetap terjaga di brosurnya.
@@ -373,16 +434,30 @@
       const fotoHtml = foto
         ? `<img class="kt-photo" src="${foto}" alt="">`
         : `<div class="kt-photo-placeholder">${escapeHtml((p.name || '?').trim().charAt(0).toUpperCase())}</div>`;
+
+      const promo = promoUntuk(p.id, p.price);
+      const priceHtml = promo
+        ? `<span class="kt-price-coret">${formatCurrency(p.price)}</span> ${formatCurrency(promo.hargaPromo)}`
+        : formatCurrency(p.price);
+
       const lusinHtml = p.unit === 'pcs'
-        ? `<div class="kt-price-lusin">${formatCurrency(hargaLusin(p.price))} / lusin</div>`
+        ? `<div class="kt-price-lusin">${
+            promo
+              ? `<span class="kt-price-coret">${formatCurrency(hargaLusin(p.price))}</span> ${formatCurrency(hargaLusin(promo.hargaPromo))}`
+              : formatCurrency(hargaLusin(p.price))
+          } / lusin</div>`
         : '';
+
+      const promoBadge = promo ? '<span class="kt-promo">PROMO</span>' : '';
+
       return `
         <div class="kt-card">
           <span class="kt-rank">#${i + 1}</span>
+          ${promoBadge}
           ${fotoHtml}
           <div class="kt-body">
             <div class="kt-name">${escapeHtml(p.name)}</div>
-            <div class="kt-price">${formatCurrency(p.price)} / ${escapeHtml(p.unit || 'pcs')}</div>
+            <div class="kt-price">${priceHtml} / ${escapeHtml(p.unit || 'pcs')}</div>
             ${lusinHtml}
             <div class="kt-sku">${escapeHtml(p.sku || '')}</div>
           </div>
