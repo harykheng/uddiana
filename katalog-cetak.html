@@ -9,22 +9,34 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     /* ── Kartu produk brosur ──
-       Sengaja Flexbox + wrap, BUKAN CSS Grid: kalau dipotong halaman waktu
-       print, Grid di Chrome sering memotong baris jadi setengah-kosong
-       walau sudah break-inside:avoid — item yang tidak muat harusnya utuh
-       pindah ke halaman berikutnya, bukan terpotong. Flexbox jauh lebih
-       bisa diandalkan untuk perilaku itu. Lebar kartu diatur lewat --kt-kolom
-       (jumlah kolom), bukan grid-template-columns, supaya breakpoint layar
-       dan override print tidak bisa saling menimpa tanpa disadari. */
-    :root { --kt-kolom: 4; }
+       Tabel HTML biasa, BUKAN Grid atau Flexbox. Sudah dicoba dua-duanya dan
+       dua-duanya kepotong pas baris jatuh di batas halaman waktu print —
+       Grid & Flexbox-wrap punya reputasi buruk yang sama untuk fragmentasi
+       halaman di Chrome, break-inside:avoid tidak selalu dihormati. Tabel
+       (<tr>/<td>) sudah lama dan konsisten ditangani mesin print browser —
+       baris yang tidak muat pindah UTUH ke halaman berikutnya, bukan
+       terpotong. Pola yang sama juga dipakai print faktur (.pi-table) di
+       invoices.html. 4 kolom tetap (tidak ada lagi versi 2 kolom responsif —
+       itu justru sumber bug sebelumnya: breakpoint layar diam-diam menimpa
+       jumlah kolom pas print).
+    */
     .kt-grid {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 14px;
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 14px;
+      table-layout: fixed;
       margin-top: 16px;
     }
+    .kt-grid td {
+      width: 25%;
+      vertical-align: top;
+      padding: 0;
+    }
+    .kt-grid tr {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
     .kt-card {
-      width: calc((100% - (var(--kt-kolom) - 1) * 14px) / var(--kt-kolom));
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
@@ -74,22 +86,13 @@
     }
     .kt-footer strong { color: var(--text); }
 
-    /* ── Cetak ──
-       "screen and" di breakpoint bawah WAJIB ada — tanpa itu, lebar kertas
-       A4 (~794px secara CSS) ikut kena aturan "layar sempit" itu juga saat
-       print, dan diam-diam menimpa --kt-kolom:4 di sini karena urutannya
-       belakangan di file ini. Itu penyebab brosur kemarin cetak 2 kolom
-       padahal maunya 4. */
+    /* ── Cetak ── */
     @page { size: A4 portrait; margin: 10mm; }
     @media print {
       body > .layout > .sidebar, .topbar, .no-print { display: none !important; }
       body > .layout > .main { margin: 0; }
       .page { padding: 0; }
-      :root { --kt-kolom: 4; }
       .kt-card { border: 1px solid #cbd5e1; }
-    }
-    @media screen and (max-width: 900px) {
-      :root { --kt-kolom: 2; }
     }
   </style>
 </head>
@@ -175,7 +178,7 @@
           <div class="kt-date" id="kt-date"></div>
         </div>
 
-        <div class="kt-grid" id="kt-grid"></div>
+        <table class="kt-grid"><tbody id="kt-grid"></tbody></table>
 
         <div class="kt-footer">
           <strong>Harga di atas dapat berubah sewaktu-waktu</strong> — harga yang berlaku
@@ -356,7 +359,9 @@
       : Math.max(4, Math.min(100, Number(document.getElementById('jumlah-produk').value) || 24));
     const dipilih = semuaKandidat.slice(0, n);
 
-    document.getElementById('kt-grid').innerHTML = dipilih.map((p, i) => {
+    const KOLOM = 4;
+
+    function kartuHtml(p, i) {
       const foto = fotoPublicUrl(p.photo_thumb_path || p.photo_large_path);
       const fotoHtml = foto
         ? `<img class="kt-photo" src="${foto}" alt="">`
@@ -375,7 +380,20 @@
             <div class="kt-sku">${escapeHtml(p.sku || '')}</div>
           </div>
         </div>`;
-    }).join('');
+    }
+
+    // Dibagi jadi baris tabel eksplisit (bukan sekadar deretan kartu lepas)
+    // supaya break-inside:avoid di <tr> yang menangani potong halaman —
+    // baris yang tidak muat pindah utuh ke halaman berikutnya.
+    let baris = '';
+    for (let awal = 0; awal < dipilih.length; awal += KOLOM) {
+      const isiBaris = dipilih.slice(awal, awal + KOLOM);
+      const sel = isiBaris.map((p, j) => `<td>${kartuHtml(p, awal + j)}</td>`).join('');
+      // Sel kosong di baris terakhir supaya lebar kolom (25% masing-masing) tetap rata.
+      const selKosong = '<td></td>'.repeat(KOLOM - isiBaris.length);
+      baris += `<tr>${sel}${selKosong}</tr>`;
+    }
+    document.getElementById('kt-grid').innerHTML = baris;
   }
 
   init();
