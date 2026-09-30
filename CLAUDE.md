@@ -269,6 +269,7 @@ git push -u origin feat/nama-fitur
 - **Foto Massal**: dari bar aksi seleksi (checkbox) → modal dengan dua cara isi: (1) **1 foto untuk semua produk terpilih** — untuk beberapa SKU yang fotonya memang sama; fotonya diunggah **sekali** ke `bersama/<kode>-thumb.webp` lalu path-nya dipakai semua produk terpilih, jadi 10 SKU = 1 file bukan 10 salinan; (2) **input file per baris** untuk SKU yang fotonya beda — baris yang diisi sendiri menang atas foto bersama. Batas **20 produk per batch**. Unggah berurutan, bukan paralel; kalau satu produk gagal sisanya tetap jalan dan yang gagal dilaporkan per SKU
 - **PENTING — foto bisa dipakai bersama**: jangan pernah `storage.remove()` foto lama begitu saja. Pakai `hapusFotoKalauSudahYatim(paths)` yang menghitung dulu berapa baris `products` yang masih menunjuk path tsb (kolom thumb + large); file baru dihapus kalau hitungannya 0. Dipanggil **setelah** baris produk diperbarui, supaya hitungannya sudah mencerminkan keadaan baru. Berlaku di unggah satuan, hapus satuan, maupun massal
 - **Edit Nama/SKU Massal**: dari bar aksi yang sama → modal list produk terpilih dengan input nama & SKU per baris (pre-filled), simpan sekaligus. Validasi: nama/SKU wajib diisi, SKU harus unik (dicek terhadap sesama baris terpilih & produk lain di luar seleksi) sebelum submit
+- **Buat PDF**: dari bar aksi yang sama → buka `katalog-cetak.html?ids=<uuid1,uuid2,...>` (produk terpilih via query string, bukan sessionStorage — supaya reload halaman & window.open tanpa opener tetap jalan) di tab baru. Ini mode "manual" dari `katalog-cetak.html`, lihat halaman itu
 
 ### invoices.html
 - Price mode: Regular / Shopee / Custom
@@ -331,12 +332,13 @@ git push -u origin feat/nama-fitur
 - Tool mandiri pecah CSV besar, tidak butuh auth
 
 ### katalog-cetak.html
-- **Brosur PDF (via print browser) untuk toko yang belum terbiasa pakai link katalog online.** Sengaja bukan cara pesan baru — cuma "lihat-lihat", supaya jaminan satuan/jumlah yang benar dari katalog online tidak hilang lagi (toko tetap pesan lewat link pribadinya)
-- Isi: produk **terlaris company-wide** (bukan per toko, satu brosur untuk semua) — diranking dari total `quantity` terjual di `invoice_items` lintas semua faktur (faktur `cancelled`/`verification_status = 'rejected'` tidak ikut dihitung, sama seperti aturan di katalog online). Produk nonaktif atau `stock_quantity <= 0` dilewati
-- Diagregasi di browser (dua `fetchAll()`: `invoices` + `invoice_items`) — **tidak ada fungsi SQL/migration baru**, langsung jalan begitu di-deploy
-- Jumlah produk yang ditampilkan bisa diatur (default 24), foto pakai `photo_thumb_path` dari bucket `product-photos` (fallback kotak inisial kalau belum ada foto)
+- **Brosur PDF (via print browser) untuk toko yang belum terbiasa pakai link katalog online.** Sengaja bukan cara pesan baru — cuma "lihat-lihat", supaya jaminan satuan/jumlah yang benar dari katalog online tidak hilang lagi (toko tetap pesan lewat link pribadinya). Tiap kartu produk tampil **harga satuan DAN harga lusin** (harga lusin cuma kalau `unit = 'pcs'`, sama seperti aturan di `pricing.js`/`hargaLusin()`)
+- **Dua mode**, ditentukan oleh query string `?ids=`:
+  - **Otomatis** (tanpa `?ids=`, diakses dari tombol **🖨️ Cetak Katalog Terlaris** di toolbar `products.html`): produk **terlaris company-wide** (bukan per toko, satu brosur untuk semua) — diranking dari total `quantity` terjual di `invoice_items` lintas semua faktur (faktur `cancelled`/`verification_status = 'rejected'` tidak ikut dihitung, sama seperti aturan di katalog online). Produk nonaktif atau `stock_quantity <= 0` **disaring keluar** — brosur tidak boleh menawarkan yang tidak bisa dibeli. Jumlah produk yang ditampilkan bisa diatur (default 24). Diagregasi di browser (dua `fetchAll()`: `invoices` + `invoice_items`) — **tidak ada fungsi SQL/migration baru**
+  - **Manual** (`?ids=uuid1,uuid2,...`, diakses dari tombol **🖨️ Buat PDF** di bar aksi seleksi `products.html`): persis produk yang dicentang admin, urutan sesuai urutan dicentang. **Tidak disaring** aktif/stok — dicentang tangan berarti memang mau ditampilkan; kalau ada yang tidak ketemu (sudah dihapus), pesan status bilang berapa yang hilang tapi sisanya tetap tampil. Kontrol "Jumlah produk" disembunyikan di mode ini (jumlahnya sudah pasti dari yang dicentang)
+- Foto pakai `photo_thumb_path` dari bucket `product-photos` (fallback kotak inisial kalau belum ada foto)
 - Cetak/simpan PDF pakai `window.print()` bawaan browser (`@page { size: A4 }`) — pola sama dengan print faktur, area di luar `#print-area` (sidebar, topbar, kontrol) otomatis disembunyikan lewat `@media print`
-- Diakses dari tombol **🖨️ Cetak Katalog Terlaris** di toolbar `products.html`, bukan lewat nav sidebar utama
+- Tidak lewat nav sidebar utama di kedua mode
 - `requireAdmin()`
 
 ## Page–Role Matrix

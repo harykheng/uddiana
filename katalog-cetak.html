@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <link rel="icon" href="favicon.ico" type="image/x-icon">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cetak Katalog Terlaris - StokManager</title>
+  <title id="halaman-title">Cetak Katalog - StokManager</title>
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
@@ -113,8 +113,8 @@
   <div class="main">
     <header class="topbar">
       <div class="topbar-title">
-        <h1>Cetak Katalog Terlaris</h1>
-        <p>Brosur PDF buat toko yang belum terbiasa pakai link katalog online</p>
+        <h1 id="halaman-judul">Cetak Katalog Terlaris</h1>
+        <p id="halaman-sub">Brosur PDF buat toko yang belum terbiasa pakai link katalog online</p>
       </div>
       <div class="topbar-right">
         <div class="user-avatar" id="user-avatar-initial">A</div>
@@ -125,7 +125,7 @@
       <!-- KONTROL — tidak ikut tercetak -->
       <div class="card no-print" style="margin-bottom:20px">
         <div class="card-body" style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
-          <div class="form-group mb-0" style="width:180px">
+          <div class="form-group mb-0" style="width:180px" id="kontrol-jumlah">
             <label>Jumlah produk</label>
             <input type="number" id="jumlah-produk" value="24" min="4" max="100" step="4"
                    style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px"
@@ -133,7 +133,7 @@
           </div>
           <button class="btn btn-primary" id="btn-cetak" onclick="window.print()" disabled>🖨️ Cetak / Simpan sebagai PDF</button>
           <button class="btn btn-ghost" onclick="loadData()">🔄 Muat ulang data</button>
-          <p style="font-size:11.5px;color:var(--text-muted);margin:0;max-width:420px">
+          <p id="kontrol-keterangan" style="font-size:11.5px;color:var(--text-muted);margin:0;max-width:420px">
             Diranking dari jumlah terjual (semua toko, semua waktu). Produk nonaktif
             atau stoknya sedang 0 dilewati — sama seperti yang tidak tampil di katalog online.
             Untuk simpan sebagai PDF: pilih "Save as PDF" di kotak dialog cetak.
@@ -155,7 +155,7 @@
         <div class="kt-header">
           <div>
             <div class="kt-brand" id="kt-brand">DIANA KOSMETIK</div>
-            <div class="kt-subtitle">Katalog Produk Terlaris</div>
+            <div class="kt-subtitle" id="kt-subtitle">Katalog Produk Terlaris</div>
           </div>
           <div class="kt-date" id="kt-date"></div>
         </div>
@@ -178,8 +178,16 @@
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
 <script>
-  let semuaKandidat = []; // produk terlaris, sudah diurutkan, sudah difilter aktif+ada stok
+  let semuaKandidat = []; // produk yang siap dicetak, sudah diurutkan
   const FOTO_BUCKET = 'product-photos';
+
+  // Dua mode:
+  //  - otomatis (default): ranking produk terlaris company-wide, lihat loadData()
+  //  - manual (?ids=uuid1,uuid2,...): persis produk yang dicentang admin di
+  //    products.html, apa adanya — dikirim lewat cetakProdukTerpilih() di sana.
+  const paramsUrl = new URLSearchParams(window.location.search);
+  const manualIds = (paramsUrl.get('ids') || '').split(',').map(s => s.trim()).filter(Boolean);
+  const modeManual = manualIds.length > 0;
 
   function fotoPublicUrl(path) {
     if (!path) return null;
@@ -191,6 +199,19 @@
     if (!auth) return;
 
     document.getElementById('kt-date').textContent = 'Dicetak ' + formatDate(todayISO());
+
+    if (modeManual) {
+      document.title = 'Cetak Katalog (Pilihan) - StokManager';
+      document.getElementById('halaman-judul').textContent = 'Cetak Katalog — Produk Pilihan';
+      document.getElementById('halaman-sub').textContent =
+        `Brosur PDF dari ${manualIds.length} produk yang dicentang di halaman Produk`;
+      document.getElementById('kt-subtitle').textContent = 'Katalog Produk Pilihan';
+      document.getElementById('kontrol-jumlah').style.display = 'none';
+      document.getElementById('kontrol-keterangan').textContent =
+        'Persis produk yang dicentang di halaman Produk, termasuk kalau nonaktif ' +
+        'atau stoknya sedang habis — dicentang tangan berarti memang mau ditampilkan. ' +
+        'Untuk simpan sebagai PDF: pilih "Save as PDF" di kotak dialog cetak.';
+    }
 
     const { data: distributor } = await supabase.from('app_settings')
       .select('value').eq('key', 'catalog_distributor_name').maybeSingle();
@@ -206,14 +227,19 @@
   }
 
   /**
-   * "Terlaris" = paling banyak terjual, dihitung dari SELURUH invoice_items
-   * lintas toko sepanjang waktu — bukan per toko (beda dengan "Belum Pernah
-   * Dicoba" di katalog online, yang personalisasi per toko). Faktur batal
-   * atau ditolak tidak ikut dihitung, sama seperti aturan di katalog.
+   * Dua sumber daftar produk:
    *
-   * Diagregasi di browser (bukan lewat fungsi SQL) supaya halaman ini tidak
-   * butuh migration database baru — cukup dua fetchAll() yang sudah ada
-   * polanya di ERP ini.
+   *  - Mode otomatis: "terlaris" = paling banyak terjual, dihitung dari
+   *    SELURUH invoice_items lintas toko sepanjang waktu — bukan per toko
+   *    (beda dengan "Belum Pernah Dicoba" di katalog online, yang
+   *    personalisasi per toko). Faktur batal/ditolak tidak ikut dihitung.
+   *    Produk nonaktif atau stoknya 0 disaring keluar — konsisten dengan
+   *    yang tidak tampil di katalog online. Diagregasi di browser (bukan
+   *    lewat fungsi SQL) supaya halaman ini tidak butuh migration database.
+   *
+   *  - Mode manual (modeManual): persis produk yang dicentang admin di
+   *    products.html, apa adanya — TIDAK disaring aktif/stok, karena itu
+   *    pilihan sadar admin, bukan hasil ranking otomatis.
    */
   async function loadData() {
     const status = document.getElementById('status-msg');
@@ -225,67 +251,82 @@
     status.textContent = '';
     document.getElementById('kt-grid').innerHTML = '';
     overlay.classList.add('show');
-    loadingText.textContent = 'Memuat data faktur…';
 
-    const [{ data: invoices, error: e1 }, { data: items, error: e2 }] = await Promise.all([
-      fetchAll(() => supabase.from('invoices').select('id,status,verification_status')),
-      fetchAll(() => supabase.from('invoice_items').select('invoice_id,product_id,quantity')),
-    ]);
-    if (e1 || e2) {
-      overlay.classList.remove('show');
-      showToast('Gagal memuat data faktur: ' + (e1 || e2).message, 'error');
-      return;
-    }
+    const { data: kategori } = await supabase.from('categories').select('id,name');
+    const namaKategori = new Map((kategori || []).map(c => [c.id, c.name]));
 
-    const invoiceValid = new Set(
-      (invoices || [])
-        .filter(i => i.status !== 'cancelled' && (i.verification_status || '') !== 'rejected')
-        .map(i => i.id)
-    );
+    let urutanId;
+    if (modeManual) {
+      urutanId = manualIds;
+    } else {
+      loadingText.textContent = 'Memuat data faktur…';
+      const [{ data: invoices, error: e1 }, { data: items, error: e2 }] = await Promise.all([
+        fetchAll(() => supabase.from('invoices').select('id,status,verification_status')),
+        fetchAll(() => supabase.from('invoice_items').select('invoice_id,product_id,quantity')),
+      ]);
+      if (e1 || e2) {
+        overlay.classList.remove('show');
+        showToast('Gagal memuat data faktur: ' + (e1 || e2).message, 'error');
+        return;
+      }
 
-    const agregat = new Map(); // product_id -> { qty, orderIds:Set }
-    for (const it of items || []) {
-      if (!it.product_id || !invoiceValid.has(it.invoice_id)) continue;
-      if (!agregat.has(it.product_id)) agregat.set(it.product_id, { qty: 0, orderIds: new Set() });
-      const a = agregat.get(it.product_id);
-      a.qty += Number(it.quantity) || 0;
-      a.orderIds.add(it.invoice_id);
-    }
+      const invoiceValid = new Set(
+        (invoices || [])
+          .filter(i => i.status !== 'cancelled' && (i.verification_status || '') !== 'rejected')
+          .map(i => i.id)
+      );
 
-    const rankingId = [...agregat.entries()]
-      .sort((a, b) => b[1].qty - a[1].qty || b[1].orderIds.size - a[1].orderIds.size)
-      .map(([id]) => id)
-      .slice(0, 200); // pool longgar — sebagian nanti tersaring nonaktif/stok habis
+      const agregat = new Map(); // product_id -> { qty, orderIds:Set }
+      for (const it of items || []) {
+        if (!it.product_id || !invoiceValid.has(it.invoice_id)) continue;
+        if (!agregat.has(it.product_id)) agregat.set(it.product_id, { qty: 0, orderIds: new Set() });
+        const a = agregat.get(it.product_id);
+        a.qty += Number(it.quantity) || 0;
+        a.orderIds.add(it.invoice_id);
+      }
 
-    if (!rankingId.length) {
-      overlay.classList.remove('show');
-      status.textContent = 'Belum ada riwayat faktur untuk dihitung.';
-      return;
+      urutanId = [...agregat.entries()]
+        .sort((a, b) => b[1].qty - a[1].qty || b[1].orderIds.size - a[1].orderIds.size)
+        .map(([id]) => id)
+        .slice(0, 200); // pool longgar — sebagian nanti tersaring nonaktif/stok habis
+
+      if (!urutanId.length) {
+        overlay.classList.remove('show');
+        status.textContent = 'Belum ada riwayat faktur untuk dihitung.';
+        return;
+      }
     }
 
     loadingText.textContent = 'Memuat detail produk…';
     const { data: produk, error: e3 } = await supabase
       .from('products')
       .select('id,name,sku,price,unit,category_id,is_active,stock_quantity,photo_thumb_path,photo_large_path')
-      .in('id', rankingId);
+      .in('id', urutanId);
     if (e3) {
       overlay.classList.remove('show');
       showToast('Gagal memuat produk: ' + e3.message, 'error');
       return;
     }
 
-    const { data: kategori } = await supabase.from('categories').select('id,name');
-    const namaKategori = new Map((kategori || []).map(c => [c.id, c.name]));
     const produkById = new Map((produk || []).map(p => [p.id, p]));
 
-    semuaKandidat = rankingId
+    // .in() tidak menjamin urutan hasil sama dengan urutan yang diminta,
+    // jadi disusun ulang manual di sini — supaya urutan pilihan admin
+    // (atau ranking terlaris) tetap terjaga di brosurnya.
+    semuaKandidat = urutanId
       .map(id => produkById.get(id))
-      .filter(p => p && p.is_active && Number(p.stock_quantity) > 0)
+      .filter(p => p && (modeManual || (p.is_active && Number(p.stock_quantity) > 0)))
       .map(p => ({ ...p, category_name: namaKategori.get(p.category_id) || 'Lainnya' }));
 
+    if (modeManual && semuaKandidat.length < manualIds.length) {
+      status.textContent = `${manualIds.length - semuaKandidat.length} dari produk yang dicentang ` +
+        `tidak ditemukan (mungkin sudah dihapus) — sisanya tetap tampil.`;
+    }
+
     const tanpaFoto = semuaKandidat.filter(p => !p.photo_thumb_path).length;
-    status.textContent = `${semuaKandidat.length} produk siap dicetak` +
+    const ringkasStatus = `${semuaKandidat.length} produk siap dicetak` +
       (tanpaFoto ? ` — ${tanpaFoto} di antaranya belum ada foto (tambahkan lewat halaman Produk biar brosurnya lebih menarik)` : '.');
+    status.textContent = status.textContent ? status.textContent + ' ' + ringkasStatus : ringkasStatus;
 
     renderKatalog();
     overlay.classList.remove('show');
@@ -293,7 +334,11 @@
   }
 
   function renderKatalog() {
-    const n = Math.max(4, Math.min(100, Number(document.getElementById('jumlah-produk').value) || 24));
+    // Mode manual: tampilkan semua yang dicentang, tidak dipotong (kontrol
+    // "Jumlah produk" disembunyikan di mode ini, lihat init()).
+    const n = modeManual
+      ? semuaKandidat.length
+      : Math.max(4, Math.min(100, Number(document.getElementById('jumlah-produk').value) || 24));
     const dipilih = semuaKandidat.slice(0, n);
 
     document.getElementById('kt-grid').innerHTML = dipilih.map((p, i) => {

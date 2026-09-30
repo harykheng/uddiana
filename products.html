@@ -198,6 +198,7 @@
           <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Batal</button>
           <button class="btn btn-ghost btn-sm" onclick="openBulkPhotoModal()">📷 Foto Massal</button>
           <button class="btn btn-ghost btn-sm" onclick="openBulkRenameModal()">✏️ Edit Nama/SKU Massal</button>
+          <button class="btn btn-ghost btn-sm" onclick="cetakProdukTerpilih()" title="Buat brosur PDF cuma dari produk yang dicentang">🖨️ Buat PDF</button>
           <button class="btn btn-primary btn-sm" onclick="openBulkPriceModal()">💰 Update Harga Massal</button>
         </div>
       </div>
@@ -746,6 +747,17 @@
   function clearSelection() {
     selectedProductIds.clear();
     renderProducts();
+  }
+
+  // Produk terpilih dikirim lewat query string ke katalog-cetak.html — halaman
+  // yang sama dengan "Cetak Katalog Terlaris", cuma modenya beda: bukan
+  // ranking otomatis, tapi persis produk yang dicentang di sini apa adanya
+  // (termasuk kalau nonaktif/stok habis — dicentang tangan berarti memang mau
+  // ditampilkan, tidak disaring diam-diam seperti mode terlaris).
+  function cetakProdukTerpilih() {
+    if (!selectedProductIds.size) return;
+    const ids = [...selectedProductIds].join(',');
+    window.open('katalog-cetak.html?ids=' + encodeURIComponent(ids), '_blank', 'noopener');
   }
 
   function updateBulkBar() {
