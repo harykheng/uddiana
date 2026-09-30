@@ -381,12 +381,20 @@
     // dan berlaku UMUM (bukan diskon khusus 1-2 customer tertentu — brosur ini
     // dibagikan ke semua toko, jadi harga khusus tidak boleh ikut ditampilkan
     // seolah berlaku buat semua orang).
-    const { data: rules } = await supabase
+    const { data: rules, error: e4 } = await supabase
       .from('product_discount_rules')
       .select('product_id,discount_type,discount_value,discount_value2,min_qty,min_amount,is_active,group_id,product_discount_rule_customers(customer_id)')
       .eq('is_active', true)
       .is('group_id', null)
       .in('product_id', urutanId);
+    if (e4) {
+      // Sengaja tidak menghentikan halaman (brosur tanpa harga coret masih
+      // lebih berguna daripada tidak ada brosur sama sekali) — tapi jangan
+      // diam-diam gagal juga, sebelumnya begini yang bikin "kok ga ada
+      // diskon yang keluar" tidak kelihatan penyebabnya sama sekali.
+      console.error('Gagal memuat aturan diskon:', e4);
+      showToast('Harga coret tidak dimuat: ' + e4.message, 'error');
+    }
 
     diskonByProduct = new Map();
     for (const r of rules || []) {
