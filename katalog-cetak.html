@@ -215,7 +215,9 @@
 <script src="js/auth.js"></script>
 <script>
   let semuaKandidat = []; // produk yang siap dicetak, sudah diurutkan
-  let diskonByProduct = new Map(); // product_id -> [aturan diskon umum tanpa syarat]
+  let diskonProdukByProductId = new Map(); // product_id -> [aturan diskon produk umum tanpa syarat]
+  let diskonGrupByGroupId = new Map(); // group_id -> [aturan diskon grup umum tanpa syarat]
+  let grupIdByProductId = new Map(); // product_id -> [group_id, ...] (keanggotaan grup varian)
   const FOTO_BUCKET = 'product-photos';
 
   // Dua mode:
@@ -243,10 +245,7 @@
     return hasil;
   }
 
-  /** Aturan promo (umum, tanpa syarat) terbaik untuk produk ini, atau null. */
-  function promoUntuk(productId, price) {
-    const aturan = diskonByProduct.get(productId);
-    if (!aturan || !aturan.length) return null;
+  function hargaTerbaikDari(aturan, price) {
     let terbaik = null, hargaTerbaik = Infinity;
     for (const r of aturan) {
       const h = hargaSetelahDiskon(price, r);
@@ -255,6 +254,22 @@
     // Jaga-jaga: aturan dengan discount_value 0 atau aneh tidak usah ditandai promo.
     if (!terbaik || hargaTerbaik >= Number(price)) return null;
     return { rule: terbaik, hargaPromo: hargaTerbaik };
+  }
+
+  /**
+   * Aturan promo terbaik untuk produk ini, atau null. Aturan PRODUK menang
+   * kalau ada (sama seperti prioritas di findBestDiscountRule() invoices.html)
+   * — grup cuma dipakai kalau produk ini tidak punya aturan produk sendiri.
+   */
+  function promoUntuk(productId, price) {
+    const aturanProduk = diskonProdukByProductId.get(productId);
+    if (aturanProduk && aturanProduk.length) return hargaTerbaikDari(aturanProduk, price);
+
+    const groupIds = grupIdByProductId.get(productId) || [];
+    const aturanGrup = groupIds.flatMap(gid => diskonGrupByGroupId.get(gid) || []);
+    if (aturanGrup.length) return hargaTerbaikDari(aturanGrup, price);
+
+    return null;
   }
 
   async function init() {
@@ -373,35 +388,77 @@
 
     const produkById = new Map((produk || []).map(p => [p.id, p]));
 
-    // Harga coret cuma untuk PROMO — aturan diskon PRODUK (bukan grup varian:
-    // itu dihitung dari total qty satu grup DI SATU FAKTUR, tidak ada artinya
-    // di brosur statis tanpa keranjang), TANPA syarat qty/nominal minimum
-    // (kalau ada syarat, harga sebenarnya baru pasti begitu toko benar-benar
-    // pesan sejumlah itu — mencetak angka pasti di brosur akan menyesatkan),
+    // Harga coret cuma untuk PROMO "pasti" — TANPA syarat qty/nominal minimum
+    // sungguhan (min_qty <= 1 dihitung tanpa syarat juga: 1 pcs adalah jumlah
+    // pesanan terkecil yang memang bisa dipesan, jadi itu bukan syarat nyata)
     // dan berlaku UMUM (bukan diskon khusus 1-2 customer tertentu — brosur ini
     // dibagikan ke semua toko, jadi harga khusus tidak boleh ikut ditampilkan
-    // seolah berlaku buat semua orang).
-    const { data: rules, error: e4 } = await supabase
+    // seolah berlaku buat semua orang). Berlaku baik aturan PRODUK maupun
+    // aturan GRUP VARIAN — grup TIDAK otomatis dilewati: yang jadi masalah di
+    // grup cuma kalau ADA syarat qty/nominal (itu dihitung dari total qty satu
+    // grup DI SATU FAKTUR, tidak ada artinya di brosur statis tanpa keranjang).
+    // Kalau grupnya sendiri tanpa syarat, keanggotaannya tidak relevan lagi —
+    // diskonnya memang pasti berlaku ke tiap produk anggota.
+    function tanpaSyaratSungguhan(r) {
+      const adaSyaratQty = (Number(r.min_qty) || 0) > 1;
+      const adaSyaratNominal = (Number(r.min_amount) || 0) > 0;
+      const khususCustomer = (r.product_discount_rule_customers || []).length > 0;
+      return !adaSyaratQty && !adaSyaratNominal && !khususCustomer;
+    }
+
+    const kolomDiskon = 'discount_type,discount_value,discount_value2,min_qty,min_amount,product_discount_rule_customers(customer_id)';
+
+    const { data: aturanProduk, error: e4 } = await supabase
       .from('product_discount_rules')
-      .select('product_id,discount_type,discount_value,discount_value2,min_qty,min_amount,is_active,group_id,product_discount_rule_customers(customer_id)')
+      .select(`product_id,${kolomDiskon}`)
       .eq('is_active', true)
       .is('group_id', null)
       .in('product_id', urutanId);
-    if (e4) {
+
+    const { data: anggotaGrup, error: e5 } = await supabase
+      .from('discount_group_members')
+      .select('group_id,product_id')
+      .in('product_id', urutanId);
+
+    const idGrupTerkait = [...new Set((anggotaGrup || []).map(m => m.group_id))];
+    let aturanGrup = [];
+    let e6 = null;
+    if (idGrupTerkait.length) {
+      const hasil = await supabase
+        .from('product_discount_rules')
+        .select(`group_id,${kolomDiskon}`)
+        .eq('is_active', true)
+        .in('group_id', idGrupTerkait);
+      aturanGrup = hasil.data || [];
+      e6 = hasil.error;
+    }
+
+    const errDiskon = e4 || e5 || e6;
+    if (errDiskon) {
       // Sengaja tidak menghentikan halaman (brosur tanpa harga coret masih
       // lebih berguna daripada tidak ada brosur sama sekali) — tapi jangan
       // diam-diam gagal juga, sebelumnya begini yang bikin "kok ga ada
       // diskon yang keluar" tidak kelihatan penyebabnya sama sekali.
-      console.error('Gagal memuat aturan diskon:', e4);
-      showToast('Harga coret tidak dimuat: ' + e4.message, 'error');
+      console.error('Gagal memuat aturan diskon:', errDiskon);
+      showToast('Harga coret tidak dimuat: ' + errDiskon.message, 'error');
     }
 
-    diskonByProduct = new Map();
-    for (const r of rules || []) {
-      if (Number(r.min_qty) || Number(r.min_amount)) continue; // ada syarat minimum
-      if ((r.product_discount_rule_customers || []).length) continue; // khusus customer
-      if (!diskonByProduct.has(r.product_id)) diskonByProduct.set(r.product_id, []);
-      diskonByProduct.get(r.product_id).push(r);
+    diskonProdukByProductId = new Map();
+    for (const r of (aturanProduk || []).filter(tanpaSyaratSungguhan)) {
+      if (!diskonProdukByProductId.has(r.product_id)) diskonProdukByProductId.set(r.product_id, []);
+      diskonProdukByProductId.get(r.product_id).push(r);
+    }
+
+    diskonGrupByGroupId = new Map();
+    for (const r of aturanGrup.filter(tanpaSyaratSungguhan)) {
+      if (!diskonGrupByGroupId.has(r.group_id)) diskonGrupByGroupId.set(r.group_id, []);
+      diskonGrupByGroupId.get(r.group_id).push(r);
+    }
+
+    grupIdByProductId = new Map();
+    for (const m of anggotaGrup || []) {
+      if (!grupIdByProductId.has(m.product_id)) grupIdByProductId.set(m.product_id, []);
+      grupIdByProductId.get(m.product_id).push(m.group_id);
     }
 
     // .in() tidak menjamin urutan hasil sama dengan urutan yang diminta,
