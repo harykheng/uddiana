@@ -1,0 +1,301 @@
+﻿<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cetak Katalog Terlaris - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* ── Kartu produk brosur ── */
+    .kt-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px;
+      margin-top: 16px;
+    }
+    .kt-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: #fff;
+      break-inside: avoid;
+      position: relative;
+    }
+    .kt-rank {
+      position: absolute; top: 6px; left: 6px; z-index: 2;
+      background: var(--primary); color: #fff;
+      font-size: 10px; font-weight: 800;
+      border-radius: 999px; padding: 2px 7px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.25);
+    }
+    .kt-photo {
+      width: 100%; aspect-ratio: 1 / 1; object-fit: cover;
+      background: #f1f5f9; display: block;
+    }
+    .kt-photo-placeholder {
+      width: 100%; aspect-ratio: 1 / 1;
+      background: #eef2ff; color: #6366f1;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 30px; font-weight: 800; font-family: Georgia, serif;
+    }
+    .kt-body { padding: 8px 9px 10px; }
+    .kt-name {
+      font-size: 11.5px; font-weight: 700; line-height: 1.25;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; min-height: 2.5em; margin-bottom: 3px;
+    }
+    .kt-price { font-size: 12.5px; font-weight: 800; color: var(--primary); }
+    .kt-price-lusin { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+    .kt-sku { font-size: 9.5px; color: var(--text-muted); margin-top: 2px; }
+
+    .kt-header {
+      display: flex; justify-content: space-between; align-items: flex-end;
+      border-bottom: 2px solid var(--primary); padding-bottom: 10px; margin-bottom: 4px;
+    }
+    .kt-brand { font-size: 20px; font-weight: 800; }
+    .kt-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .kt-date { font-size: 11px; color: var(--text-muted); text-align: right; }
+
+    .kt-footer {
+      margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--border);
+      font-size: 10.5px; color: var(--text-muted); line-height: 1.5;
+    }
+    .kt-footer strong { color: var(--text); }
+
+    /* ── Cetak ── */
+    @page { size: A4 portrait; margin: 10mm; }
+    @media print {
+      body > .layout > .sidebar, .topbar, .no-print { display: none !important; }
+      body > .layout > .main { margin: 0; }
+      .page { padding: 0; }
+      .kt-grid { grid-template-columns: repeat(4, 1fr); }
+      .kt-card { border: 1px solid #cbd5e1; }
+    }
+    @media (max-width: 900px) {
+      .kt-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon"><img src="logo.png" alt="UD.DIANA" style="width:100%;height:auto;object-fit:contain;border-radius:6px;"></div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item">🏠 Dashboard</a>
+      <a href="products.html" class="nav-item">📦 Produk</a>
+      <a href="customers.html" class="nav-item">👥 Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item">🧾 Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item">✅ Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item">🛒 Pembelian Barang</a>
+      <a href="stock-out.html" class="nav-item">📤 Keluar Barang</a>
+      <a href="retur.html" class="nav-item">↩️ Retur Barang</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item" data-super-admin>📊 Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item" data-super-admin>💹 Laba Rugi</a>
+      <a href="piutang.html" class="nav-item" data-super-admin>💰 Piutang</a>
+      <a href="laporan-sales.html" class="nav-item" data-super-admin>👤 Laporan Sales</a>
+      <div class="nav-label">Admin</div>
+      <a href="wishlist.html" class="nav-item">⭐ Wishlist</a>
+      <a href="discounts.html" class="nav-item">🏷️ Diskon Produk</a>
+      <a href="settings.html" class="nav-item" data-super-admin>⚙️ Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Cetak Katalog Terlaris</h1>
+        <p>Brosur PDF buat toko yang belum terbiasa pakai link katalog online</p>
+      </div>
+      <div class="topbar-right">
+        <div class="user-avatar" id="user-avatar-initial">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <!-- KONTROL — tidak ikut tercetak -->
+      <div class="card no-print" style="margin-bottom:20px">
+        <div class="card-body" style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+          <div class="form-group mb-0" style="width:180px">
+            <label>Jumlah produk</label>
+            <input type="number" id="jumlah-produk" value="24" min="4" max="100" step="4"
+                   style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px"
+                   oninput="renderKatalog()">
+          </div>
+          <button class="btn btn-primary" onclick="window.print()">🖨️ Cetak / Simpan sebagai PDF</button>
+          <button class="btn btn-ghost" onclick="loadData()">🔄 Muat ulang data</button>
+          <p style="font-size:11.5px;color:var(--text-muted);margin:0;max-width:420px">
+            Diranking dari jumlah terjual (semua toko, semua waktu). Produk nonaktif
+            atau stoknya sedang 0 dilewati — sama seperti yang tidak tampil di katalog online.
+            Untuk simpan sebagai PDF: pilih "Save as PDF" di kotak dialog cetak.
+          </p>
+          <p id="status-msg" style="font-size:12px;color:var(--text-muted);margin:0"></p>
+        </div>
+      </div>
+
+      <!-- INI YANG TERCETAK -->
+      <div id="print-area">
+        <div class="kt-header">
+          <div>
+            <div class="kt-brand" id="kt-brand">DIANA KOSMETIK</div>
+            <div class="kt-subtitle">Katalog Produk Terlaris</div>
+          </div>
+          <div class="kt-date" id="kt-date"></div>
+        </div>
+
+        <div class="kt-grid" id="kt-grid"></div>
+
+        <div class="kt-footer">
+          <strong>Harga di atas dapat berubah sewaktu-waktu</strong> — harga yang berlaku
+          adalah harga saat faktur dibuat. Untuk stok &amp; harga terkini, atau untuk
+          memesan langsung, hubungi admin/sales Anda atau buka link katalog pribadi
+          toko Anda (dikirim lewat WhatsApp).
+          <span id="kt-wa"></span>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  let semuaKandidat = []; // produk terlaris, sudah diurutkan, sudah difilter aktif+ada stok
+  const FOTO_BUCKET = 'product-photos';
+
+  function fotoPublicUrl(path) {
+    if (!path) return null;
+    return supabase.storage.from(FOTO_BUCKET).getPublicUrl(path).data.publicUrl;
+  }
+
+  async function init() {
+    const auth = await requireAdmin();
+    if (!auth) return;
+
+    document.getElementById('kt-date').textContent = 'Dicetak ' + formatDate(todayISO());
+
+    const { data: distributor } = await supabase.from('app_settings')
+      .select('value').eq('key', 'catalog_distributor_name').maybeSingle();
+    if (distributor?.value) document.getElementById('kt-brand').textContent = distributor.value;
+
+    const { data: wa } = await supabase.from('app_settings')
+      .select('value').eq('key', 'catalog_whatsapp_number').maybeSingle();
+    if (wa?.value) {
+      document.getElementById('kt-wa').textContent = ' WhatsApp: ' + wa.value + '.';
+    }
+
+    await loadData();
+  }
+
+  /**
+   * "Terlaris" = paling banyak terjual, dihitung dari SELURUH invoice_items
+   * lintas toko sepanjang waktu — bukan per toko (beda dengan "Belum Pernah
+   * Dicoba" di katalog online, yang personalisasi per toko). Faktur batal
+   * atau ditolak tidak ikut dihitung, sama seperti aturan di katalog.
+   *
+   * Diagregasi di browser (bukan lewat fungsi SQL) supaya halaman ini tidak
+   * butuh migration database baru — cukup dua fetchAll() yang sudah ada
+   * polanya di ERP ini.
+   */
+  async function loadData() {
+    const status = document.getElementById('status-msg');
+    status.textContent = 'Memuat data faktur…';
+    document.getElementById('kt-grid').innerHTML = '';
+
+    const [{ data: invoices, error: e1 }, { data: items, error: e2 }] = await Promise.all([
+      fetchAll(() => supabase.from('invoices').select('id,status,verification_status')),
+      fetchAll(() => supabase.from('invoice_items').select('invoice_id,product_id,quantity')),
+    ]);
+    if (e1 || e2) {
+      status.textContent = 'Gagal memuat data: ' + (e1 || e2).message;
+      return;
+    }
+
+    const invoiceValid = new Set(
+      (invoices || [])
+        .filter(i => i.status !== 'cancelled' && (i.verification_status || '') !== 'rejected')
+        .map(i => i.id)
+    );
+
+    const agregat = new Map(); // product_id -> { qty, orderIds:Set }
+    for (const it of items || []) {
+      if (!it.product_id || !invoiceValid.has(it.invoice_id)) continue;
+      if (!agregat.has(it.product_id)) agregat.set(it.product_id, { qty: 0, orderIds: new Set() });
+      const a = agregat.get(it.product_id);
+      a.qty += Number(it.quantity) || 0;
+      a.orderIds.add(it.invoice_id);
+    }
+
+    const rankingId = [...agregat.entries()]
+      .sort((a, b) => b[1].qty - a[1].qty || b[1].orderIds.size - a[1].orderIds.size)
+      .map(([id]) => id)
+      .slice(0, 200); // pool longgar — sebagian nanti tersaring nonaktif/stok habis
+
+    if (!rankingId.length) {
+      status.textContent = 'Belum ada riwayat faktur untuk dihitung.';
+      return;
+    }
+
+    status.textContent = 'Memuat detail produk…';
+    const { data: produk, error: e3 } = await supabase
+      .from('products')
+      .select('id,name,sku,price,unit,category_id,is_active,stock_quantity,photo_thumb_path,photo_large_path')
+      .in('id', rankingId);
+    if (e3) { status.textContent = 'Gagal memuat produk: ' + e3.message; return; }
+
+    const { data: kategori } = await supabase.from('categories').select('id,name');
+    const namaKategori = new Map((kategori || []).map(c => [c.id, c.name]));
+    const produkById = new Map((produk || []).map(p => [p.id, p]));
+
+    semuaKandidat = rankingId
+      .map(id => produkById.get(id))
+      .filter(p => p && p.is_active && Number(p.stock_quantity) > 0)
+      .map(p => ({ ...p, category_name: namaKategori.get(p.category_id) || 'Lainnya' }));
+
+    const tanpaFoto = semuaKandidat.filter(p => !p.photo_thumb_path).length;
+    status.textContent = `${semuaKandidat.length} produk siap dicetak` +
+      (tanpaFoto ? ` — ${tanpaFoto} di antaranya belum ada foto (tambahkan lewat halaman Produk biar brosurnya lebih menarik)` : '.');
+
+    renderKatalog();
+  }
+
+  function renderKatalog() {
+    const n = Math.max(4, Math.min(100, Number(document.getElementById('jumlah-produk').value) || 24));
+    const dipilih = semuaKandidat.slice(0, n);
+
+    document.getElementById('kt-grid').innerHTML = dipilih.map((p, i) => {
+      const foto = fotoPublicUrl(p.photo_thumb_path || p.photo_large_path);
+      const fotoHtml = foto
+        ? `<img class="kt-photo" src="${foto}" alt="">`
+        : `<div class="kt-photo-placeholder">${escapeHtml((p.name || '?').trim().charAt(0).toUpperCase())}</div>`;
+      const lusinHtml = p.unit === 'pcs'
+        ? `<div class="kt-price-lusin">${formatCurrency(hargaLusin(p.price))} / lusin</div>`
+        : '';
+      return `
+        <div class="kt-card">
+          <span class="kt-rank">#${i + 1}</span>
+          ${fotoHtml}
+          <div class="kt-body">
+            <div class="kt-name">${escapeHtml(p.name)}</div>
+            <div class="kt-price">${formatCurrency(p.price)} / ${escapeHtml(p.unit || 'pcs')}</div>
+            ${lusinHtml}
+            <div class="kt-sku">${escapeHtml(p.sku || '')}</div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  init();
+</script>
+</body>
+</html>
