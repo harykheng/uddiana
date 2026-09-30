@@ -8,19 +8,29 @@
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    /* ── Kartu produk brosur ── */
+    /* ── Kartu produk brosur ──
+       Sengaja Flexbox + wrap, BUKAN CSS Grid: kalau dipotong halaman waktu
+       print, Grid di Chrome sering memotong baris jadi setengah-kosong
+       walau sudah break-inside:avoid — item yang tidak muat harusnya utuh
+       pindah ke halaman berikutnya, bukan terpotong. Flexbox jauh lebih
+       bisa diandalkan untuk perilaku itu. Lebar kartu diatur lewat --kt-kolom
+       (jumlah kolom), bukan grid-template-columns, supaya breakpoint layar
+       dan override print tidak bisa saling menimpa tanpa disadari. */
+    :root { --kt-kolom: 4; }
     .kt-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      display: flex;
+      flex-wrap: wrap;
       gap: 14px;
       margin-top: 16px;
     }
     .kt-card {
+      width: calc((100% - (var(--kt-kolom) - 1) * 14px) / var(--kt-kolom));
       border: 1px solid var(--border);
       border-radius: 10px;
       overflow: hidden;
       background: #fff;
       break-inside: avoid;
+      page-break-inside: avoid; /* fallback untuk mesin print yang lebih tua */
       position: relative;
     }
     .kt-rank {
@@ -64,17 +74,22 @@
     }
     .kt-footer strong { color: var(--text); }
 
-    /* ── Cetak ── */
+    /* ── Cetak ──
+       "screen and" di breakpoint bawah WAJIB ada — tanpa itu, lebar kertas
+       A4 (~794px secara CSS) ikut kena aturan "layar sempit" itu juga saat
+       print, dan diam-diam menimpa --kt-kolom:4 di sini karena urutannya
+       belakangan di file ini. Itu penyebab brosur kemarin cetak 2 kolom
+       padahal maunya 4. */
     @page { size: A4 portrait; margin: 10mm; }
     @media print {
       body > .layout > .sidebar, .topbar, .no-print { display: none !important; }
       body > .layout > .main { margin: 0; }
       .page { padding: 0; }
-      .kt-grid { grid-template-columns: repeat(4, 1fr); }
+      :root { --kt-kolom: 4; }
       .kt-card { border: 1px solid #cbd5e1; }
     }
-    @media (max-width: 900px) {
-      .kt-grid { grid-template-columns: repeat(2, 1fr); }
+    @media screen and (max-width: 900px) {
+      :root { --kt-kolom: 2; }
     }
   </style>
 </head>
