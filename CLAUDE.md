@@ -38,6 +38,7 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 ├── login.html
 ├── index.html         ← Dashboard
 ├── products.html      ← Kelola produk (admin + super_admin)
+├── katalog-cetak.html ← Brosur PDF produk terlaris (admin + super_admin), buat toko yang belum terbiasa link katalog online
 ├── customers.html
 ├── invoices.html      ← Faktur penjualan (admin + super_admin)
 ├── sales.html         ← Buat faktur (sales role, mobile-first)
@@ -329,13 +330,22 @@ git push -u origin feat/nama-fitur
 ### split-csv.html
 - Tool mandiri pecah CSV besar, tidak butuh auth
 
+### katalog-cetak.html
+- **Brosur PDF (via print browser) untuk toko yang belum terbiasa pakai link katalog online.** Sengaja bukan cara pesan baru — cuma "lihat-lihat", supaya jaminan satuan/jumlah yang benar dari katalog online tidak hilang lagi (toko tetap pesan lewat link pribadinya)
+- Isi: produk **terlaris company-wide** (bukan per toko, satu brosur untuk semua) — diranking dari total `quantity` terjual di `invoice_items` lintas semua faktur (faktur `cancelled`/`verification_status = 'rejected'` tidak ikut dihitung, sama seperti aturan di katalog online). Produk nonaktif atau `stock_quantity <= 0` dilewati
+- Diagregasi di browser (dua `fetchAll()`: `invoices` + `invoice_items`) — **tidak ada fungsi SQL/migration baru**, langsung jalan begitu di-deploy
+- Jumlah produk yang ditampilkan bisa diatur (default 24), foto pakai `photo_thumb_path` dari bucket `product-photos` (fallback kotak inisial kalau belum ada foto)
+- Cetak/simpan PDF pakai `window.print()` bawaan browser (`@page { size: A4 }`) — pola sama dengan print faktur, area di luar `#print-area` (sidebar, topbar, kontrol) otomatis disembunyikan lewat `@media print`
+- Diakses dari tombol **🖨️ Cetak Katalog Terlaris** di toolbar `products.html`, bukan lewat nav sidebar utama
+- `requireAdmin()`
+
 ## Page–Role Matrix
 
 | Halaman | Auth | Role |
 |---|---|---|
 | `login.html`, `setup.html`, `split-csv.html` | — | Public |
 | `sales.html` | `requireSales()` | Semua role |
-| `index.html`, `products.html`, `customers.html`, `invoices.html`, `verify-invoices.html`, `purchases.html`, `stock-out.html`, `retur.html`, `wishlist.html`, `discounts.html` | `requireAdmin()` | admin + super_admin |
+| `index.html`, `products.html`, `customers.html`, `invoices.html`, `verify-invoices.html`, `purchases.html`, `stock-out.html`, `retur.html`, `wishlist.html`, `discounts.html`, `katalog-cetak.html` | `requireAdmin()` | admin + super_admin |
 | `reports.html`, `profit-loss.html`, `piutang.html`, `laporan-sales.html`, `settings.html` | `requireSuperAdmin()` | super_admin only |
 
 ## Print Invoice
