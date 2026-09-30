@@ -90,7 +90,14 @@
     @page { size: A4 portrait; margin: 10mm; }
     @media print {
       body > .layout > .sidebar, .topbar, .no-print { display: none !important; }
-      body > .layout > .main { margin: 0; }
+      /* .layout & .main aslinya display:flex (buat sidebar+konten berdampingan
+         di layar) — flex container TIDAK paginasi dengan benar di Chrome,
+         persis masalah yang sama dengan Grid, cuma sekarang di level paling
+         atas: seluruh halaman kepotong di satu tinggi kertas dan apa pun
+         setelahnya (termasuk footer) hilang begitu saja, bukan cuma satu
+         baris kartu. Dikembalikan ke block murni supaya paginasi normal
+         browser yang menangani, sama seperti print faktur di invoices.html. */
+      body > .layout, body > .layout > .main { display: block !important; margin: 0; }
       .page { padding: 0; }
       .kt-card { border: 1px solid #cbd5e1; }
     }
