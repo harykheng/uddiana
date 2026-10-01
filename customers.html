@@ -12,6 +12,12 @@
     .stat-chip { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:600; }
     .stat-chip.piutang { background:#fef9c3; color:#92400e; }
     .stat-chip.clear   { background:#dcfce7; color:#166534; }
+    /* Sama persis pola sort di products.html */
+    th.sortable { cursor:pointer; user-select:none; white-space:nowrap; }
+    th.sortable .sort-icon { font-size:10px; margin-left:3px; opacity:.4; }
+    th.sortable.asc .sort-icon::after  { content:'▲'; opacity:1; }
+    th.sortable.desc .sort-icon::after { content:'▼'; opacity:1; }
+    th.sortable:not(.asc):not(.desc) .sort-icon::after { content:'↕'; }
   </style>
 </head>
 <body>
@@ -79,12 +85,12 @@
             <thead>
               <tr>
                 <th>#</th>
-                <th>Nama</th>
+                <th class="sortable" id="th-name" onclick="setSort('name')">Nama <span class="sort-icon"></span></th>
                 <th>Nama Toko</th>
                 <th>Telepon</th>
                 <th>Lokasi</th>
-                <th class="text-right">Total Transaksi</th>
-                <th class="text-right">Total Belanja</th>
+                <th class="sortable text-right" id="th-count" onclick="setSort('count')">Total Transaksi <span class="sort-icon"></span></th>
+                <th class="sortable text-right" id="th-total" onclick="setSort('total')">Total Belanja <span class="sort-icon"></span></th>
                 <th class="text-right">Piutang</th>
                 <th>Aksi</th>
               </tr>
@@ -193,6 +199,8 @@
 <script>
   let allCustomers = [];
   let invoiceStats = {}; // { customer_id: { count, total, piutang } }
+  let sortBy = null;  // null = urutan asli (nama, dari query) — 'name' | 'count' | 'total'
+  let sortDir = -1;   // -1 = besar ke kecil dulu; masuk akal buat lihat "paling banyak PO" tanpa klik dua kali
   let catalogBaseUrl = ''; // domain katalog, dari app_settings — tidak di-hardcode
   const handleSearch = debounce(() => renderCustomers(), 350);
 
@@ -223,14 +231,44 @@
     renderCustomers();
   }
 
+  // "PO" di sini = jumlah faktur penjualan toko itu (kolom Total Transaksi) —
+  // bukan purchases.html (itu pembelian KE supplier, beda arah transaksi).
+  function setSort(col) {
+    if (sortBy === col) { sortDir *= -1; }
+    else { sortBy = col; sortDir = (col === 'name') ? 1 : -1; }
+    ['name','count','total'].forEach(c => {
+      const th = document.getElementById('th-' + c);
+      if (!th) return;
+      th.classList.remove('asc','desc');
+      if (c === sortBy) th.classList.add(sortDir === 1 ? 'asc' : 'desc');
+    });
+    renderCustomers();
+  }
+
   function renderCustomers() {
     const search = document.getElementById('search-input').value.toLowerCase();
-    const filtered = allCustomers.filter(c =>
+    let filtered = allCustomers.filter(c =>
       !search ||
       c.name.toLowerCase().includes(search) ||
       (c.store_name || '').toLowerCase().includes(search) ||
       (c.phone || '').includes(search)
     );
+
+    if (sortBy) {
+      filtered = filtered.slice().sort((a, b) => {
+        let va, vb;
+        if (sortBy === 'name') {
+          va = (a.name || '').toLowerCase();
+          vb = (b.name || '').toLowerCase();
+        } else {
+          va = (invoiceStats[a.id] || { count: 0, total: 0 })[sortBy];
+          vb = (invoiceStats[b.id] || { count: 0, total: 0 })[sortBy];
+        }
+        if (va < vb) return -1 * sortDir;
+        if (va > vb) return 1 * sortDir;
+        return 0;
+      });
+    }
 
     document.getElementById('customer-count').textContent = filtered.length;
     const tbody = document.getElementById('customers-table');
