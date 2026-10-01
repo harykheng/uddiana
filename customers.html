@@ -290,6 +290,7 @@
           ${c.notes ? `<br><small class="text-muted">${escapeHtml(c.notes.substring(0,40))}</small>` : ''}
         </td>
         <td>${c.store_name ? `<span class="badge badge-info">${escapeHtml(c.store_name)}</span>` : '—'}</td>
+        <td>${c.phone ? escapeHtml(c.phone) : '—'}</td>
         <td>${locationCell(c)}</td>
         <td class="text-right text-muted">${st.count > 0 ? st.count + ' faktur' : '—'}</td>
         <td class="text-right font-bold">${st.total > 0 ? formatCurrency(st.total) : '—'}</td>
