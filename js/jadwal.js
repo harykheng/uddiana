@@ -6,8 +6,10 @@
 // Index = ISO day of week (1 = Senin ... 7 = Minggu), sama dengan kolom day_of_week
 const HARI = ['', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
 
-// Toko yang sudah PO dalam sekian hari terakhir tidak perlu didatangi minggu ini
-const JADWAL_JEDA_PO_HARI = 7;
+// Toko yang PO-nya kurang dari sekian hari lalu tidak perlu didatangi minggu ini.
+// 10, bukan 7: PO yang masuk di luar hari kunjungan (mis. lewat WA hari Sabtu)
+// baru 9 hari saat jadwal Senin depannya, jadi toko itu belum perlu didatangi.
+const JADWAL_JEDA_PO_HARI = 10;
 // Riwayat faktur yang diambil untuk "PO terakhir" — lebih lama dari ini ditampilkan
 // sebagai "tidak ada PO 90 hari terakhir"
 const JADWAL_RIWAYAT_HARI = 90;
@@ -132,7 +134,7 @@ async function fetchVisitFacts(customerIds, refISO) {
 function computeVisitStatus(schedule, fact, refISO) {
   const f = fact || { lastPo: null, poOnRef: null, overdueSum: 0, overdueCount: 0 };
   const daysSincePo = f.lastPo ? daysBetweenISO(refISO, f.lastPo.invoice_date) : null;
-  const recentPo = daysSincePo != null && daysSincePo <= JADWAL_JEDA_PO_HARI;
+  const recentPo = daysSincePo != null && daysSincePo < JADWAL_JEDA_PO_HARI;
   const overdue = f.overdueSum > 0;
   const wajib = !recentPo || !!schedule.every_week || overdue;
 

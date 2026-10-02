@@ -415,7 +415,7 @@
     title.innerHTML = `${HARI[selDay]} — ${escapeHtml(salesName(selSalesId))} <span class="badge badge-info" style="margin-left:8px">${rows.length} toko</span>`;
     hint.innerHTML = rows.length < target
       ? `⚠️ Kurang dari target ${target} toko/hari. Toko yang sudah PO minggu lalu otomatis dilewati minggu ini, jadi jalur sebaiknya berisi lebih dari ${target} toko.`
-      : `Toko yang sudah PO dalam 7 hari terakhir otomatis dilewati minggu ini di HP sales — kecuali yang dicentang <b>Selalu tiap minggu</b> atau punya tagihan jatuh tempo.`;
+      : `Toko yang PO-nya kurang dari ${JADWAL_JEDA_PO_HARI} hari lalu otomatis dilewati minggu ini di HP sales — kecuali yang dicentang <b>Selalu tiap minggu</b> atau punya tagihan jatuh tempo.`;
 
     if (!rows.length) {
       tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding:40px">Belum ada toko di hari ${HARI[selDay]}. Klik <b>+ Tambah Toko</b>.</td></tr>`;
@@ -446,7 +446,7 @@
     const { error } = await supabase.from('visit_schedules').update({ every_week: cb.checked }).eq('id', id);
     if (error) { cb.checked = !cb.checked; showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
     schedules.find(x => x.id === id).every_week = cb.checked;
-    showToast(cb.checked ? 'Toko ini selalu didatangi tiap minggu' : 'Toko ini ikut aturan PO (dilewati seminggu setelah PO)');
+    showToast(cb.checked ? 'Toko ini selalu didatangi tiap minggu' : `Toko ini ikut aturan PO (dilewati kalau PO kurang dari ${JADWAL_JEDA_PO_HARI} hari lalu)`);
   }
 
   async function moveDay(id, sel) {
