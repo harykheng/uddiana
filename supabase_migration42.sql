@@ -38,3 +38,11 @@ alter table visit_schedules disable row level security;
 insert into app_settings (key, value)
 values ('visit_target_per_day', '12')
 on conflict (key) do nothing;
+
+-- Masa uji coba: tab "Hari Ini" di sales.html cuma tampil untuk akun yang dipilih
+-- di jadwal-kunjungan.html. '' = belum ke siapa pun, <user id> = satu akun (mis.
+-- akun test sales), 'all' = semua sales. Toko baru otomatis masuk jadwal juga
+-- cuma untuk akun yang aktif.
+insert into app_settings (key, value)
+values ('jadwal_tab_visible_for', '')
+on conflict (key) do nothing;

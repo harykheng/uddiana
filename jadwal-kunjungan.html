@@ -106,6 +106,16 @@
         <button class="btn btn-ghost btn-sm" id="btn-unscheduled" onclick="openPicker(true)" style="display:none"></button>
       </div>
 
+      <!-- MODE UJI COBA: tab Hari Ini di sales.html cuma tampil ke akun yang dipilih -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-body" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label for="sel-visible-for" style="font-size:13px;font-weight:600;color:#475569">🧪 Tab "Hari Ini" di HP tampil untuk</label>
+          <select id="sel-visible-for" style="width:auto;min-width:220px"></select>
+          <button class="btn btn-ghost btn-sm" onclick="saveVisibleFor()">Simpan</button>
+          <span id="visible-for-hint" style="font-size:12px;color:var(--text-muted);flex-basis:100%"></span>
+        </div>
+      </div>
+
       <!-- TOKO BARU DARI SALES — PERLU DICEK -->
       <div class="card" id="review-card" style="display:none;border:1.5px solid #fbbf24;margin-bottom:16px">
         <div class="card-header">
@@ -233,6 +243,7 @@
   let schedules = [];       // semua baris visit_schedules (semua sales)
   let facts = {};           // fetchVisitFacts — PO terakhir per customer
   let target = 12;
+  let visibleFor = '';      // app_settings.jadwal_tab_visible_for: '' | user id | 'all'
   let selSalesId = null;
   let selDay = 1;
   let pickerChecked = new Set();
@@ -247,11 +258,12 @@
   }
 
   async function loadAll() {
-    const [uRes, cRes, sRes, tRes] = await Promise.all([
+    const [uRes, cRes, sRes, tRes, vRes] = await Promise.all([
       supabase.from('user_profiles').select('id,name,role,is_active').eq('is_active', true).order('name'),
       fetchAll(() => supabase.from('customers').select('id,name,store_name,phone,address,created_at').order('name')),
       fetchAll(() => supabase.from('visit_schedules').select('*').order('created_at')),
       supabase.from('app_settings').select('value').eq('key', 'visit_target_per_day').maybeSingle(),
+      supabase.from('app_settings').select('value').eq('key', 'jadwal_tab_visible_for').maybeSingle(),
     ]);
     if (sRes.error) {
       document.getElementById('day-table').innerHTML =
@@ -267,8 +279,10 @@
     schedules = (sRes.data || []).filter(s => customerById[s.customer_id]);
     target = parseInt(tRes.data?.value) || 12;
     document.getElementById('target-input').value = target;
+    visibleFor = vRes.data?.value || '';
 
     renderSalesSelect();
+    renderVisibleFor();
 
     try {
       facts = await fetchVisitFacts([...new Set(schedules.map(s => s.customer_id))], localDateISO());
@@ -583,6 +597,32 @@
     document.body.style.overflow = 'hidden';
     renderPicker();
     showToast('Customer baru ditambahkan — tinggal klik Tambahkan');
+  }
+
+  // ── MODE UJI COBA ────────────────────────────────────────
+  // Selama masih dicoba, tab Hari Ini (dan toko baru otomatis masuk jadwal) cuma
+  // aktif untuk satu akun — mis. akun test sales. Sales lain tidak melihat apa pun.
+  function renderVisibleFor() {
+    const opt = (v, label) => `<option value="${v}"${v === visibleFor ? ' selected' : ''}>${label}</option>`;
+    document.getElementById('sel-visible-for').innerHTML =
+      opt('', '— Belum tampil ke siapa pun —') +
+      salesUsers.map(u => opt(u.id, escapeHtml(u.name) + (u.role !== 'sales' ? ' (admin)' : ''))).join('') +
+      opt('all', '✅ Semua sales');
+    const hint = document.getElementById('visible-for-hint');
+    if (visibleFor === 'all') hint.textContent = 'Semua sales melihat tab Hari Ini, dan toko baru yang mereka daftarkan otomatis masuk jadwal.';
+    else if (visibleFor) hint.textContent = `Mode uji coba: hanya ${salesName(visibleFor)} yang melihat tab Hari Ini. Sales lain tidak terpengaruh.`;
+    else hint.textContent = 'Tab Hari Ini belum tampil di HP sales mana pun. Jadwal tetap bisa disiapkan dulu di halaman ini.';
+  }
+
+  async function saveVisibleFor() {
+    const val = document.getElementById('sel-visible-for').value;
+    const { error } = await supabase.from('app_settings')
+      .upsert({ key: 'jadwal_tab_visible_for', value: val, updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) { showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
+    visibleFor = val;
+    renderVisibleFor();
+    showToast(val === 'all' ? 'Tab Hari Ini tampil untuk semua sales ✅'
+      : val ? `Tab Hari Ini hanya tampil untuk ${salesName(val)}` : 'Tab Hari Ini disembunyikan dari semua sales');
   }
 
   // ── TARGET ───────────────────────────────────────────────

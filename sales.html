@@ -328,7 +328,7 @@
 </div>
 
 <div class="tabs">
-  <button class="tab-btn" onclick="switchTab('tab-today')">📅 Hari Ini</button>
+  <button class="tab-btn" id="tab-btn-today" onclick="switchTab('tab-today')" style="display:none">📅 Hari Ini</button>
   <button class="tab-btn active" onclick="switchTab('tab-new')">+ Buat Faktur</button>
   <button class="tab-btn" onclick="switchTab('tab-history')">📋 Riwayat</button>
   <button class="tab-btn" onclick="switchTab('tab-products')">📦 Produk</button>
@@ -673,11 +673,24 @@
     initAbsenSelect();
     await initAbsenTabVisibility();   // tombol 📍 Absen di tab Hari Ini ikut setting ini
 
+    // Jadwal kunjungan masih uji coba: cuma aktif untuk akun yang dipilih di
+    // jadwal-kunjungan.html (app_settings.jadwal_tab_visible_for = user id / 'all').
+    // Akun lain: tab tidak tampil dan toko baru tidak otomatis masuk jadwal.
+    jadwalEnabled = await isJadwalEnabled();
+    if (!jadwalEnabled) return;
+    document.getElementById('tab-btn-today').style.display = '';
+
     // Sales yang sudah punya jadwal langsung dibuka di tab Hari Ini. todayLoaded
     // baru di-set setelahnya supaya switchTab di sini tidak memuat ulang data.
     await loadToday();
     switchTab(mySchedules.length ? 'tab-today' : 'tab-new');
     todayLoaded = true;
+  }
+
+  async function isJadwalEnabled() {
+    const { data } = await supabase.from('app_settings').select('value').eq('key', 'jadwal_tab_visible_for').maybeSingle();
+    const val = data?.value || '';
+    return val === 'all' || val === currentUser.session.user.id;
   }
 
   // Fitur Absen masih tahap testing: default hanya kelihatan buat admin/super_admin
@@ -2082,6 +2095,7 @@ function recalcTotal() {
 
   let mySchedules = [];
   let todayLoaded = false;
+  let jadwalEnabled = false;
   let tvDay = isoDow(new Date());   // hari yang sedang dilihat (1 = Senin)
   let tvTarget = 12;
   let tvLoadSeq = 0;
@@ -2278,7 +2292,7 @@ function recalcTotal() {
   // jadwal-kunjungan.html. Cuma untuk role sales — admin yang tes di halaman ini
   // tidak ikut mengisi jadwal.
   async function autoScheduleNewStore(customerId) {
-    if (currentUser.profile.role !== 'sales') return;
+    if (!jadwalEnabled || currentUser.profile.role !== 'sales') return;
     const uid = currentUser.session.user.id;
     const { data, error } = await supabase.from('visit_schedules').insert({
       customer_id: customerId,
