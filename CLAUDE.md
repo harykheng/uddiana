@@ -22,7 +22,8 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 │   ├── config.js          ← Supabase URL + anon key, inisialisasi client
 │   ├── auth.js            ← requireAdmin(), requireSuperAdmin(), requireSales(),
 │   │                        signOut(), updateSidebarUser(), mobile sidebar (hamburger)
-│   └── utils.js           ← formatCurrency, formatDate, modal, toast, number format, debounce
+│   ├── utils.js           ← formatCurrency, formatDate, modal, toast, number format, debounce
+│   └── jadwal.js          ← helper Jadwal Kunjungan: HARI, localDateISO, fetchVisitFacts, computeVisitStatus
 ├── css/
 │   └── style.css          ← CSS global + mobile responsive + sidebar overlay
 ├── supabase_schema.sql        ← Schema awal
@@ -50,6 +51,7 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 ├── profit-loss.html   ← Laba rugi (super_admin only)
 ├── piutang.html       ← Piutang (super_admin only)
 ├── laporan-sales.html ← Laporan sales (super_admin only)
+├── jadwal-kunjungan.html ← Jadwal kunjungan mingguan per sales (super_admin only)
 ├── wishlist.html      ← Kelola wishlist dari sales (admin + super_admin)
 ├── discounts.html     ← Aturan diskon per produk (admin + super_admin)
 └── settings.html      ← Pengaturan akun & target omzet (super_admin only)
@@ -97,6 +99,7 @@ Menu `data-super-admin` hanya tampil untuk `super_admin` (CSS + `body.is-super-a
       <a href="profit-loss.html" class="nav-item" data-super-admin>💹 Laba Rugi</a>
       <a href="piutang.html" class="nav-item" data-super-admin>💰 Piutang</a>
       <a href="laporan-sales.html" class="nav-item" data-super-admin>👤 Laporan Sales</a>
+      <a href="jadwal-kunjungan.html" class="nav-item" data-super-admin>📅 Jadwal Kunjungan</a>
       <div class="nav-label">Admin</div>
       <a href="wishlist.html" class="nav-item">⭐ Wishlist</a>
       <a href="discounts.html" class="nav-item">🏷️ Diskon Produk</a>
@@ -208,6 +211,7 @@ Saat edit subtotal → back-calc: `Math.round(subtotal / (qty * (1 - disc%)))`
 **Returns:** `returns`, `return_items`  
 **Settings:** `app_settings`, `sales_targets`  
 **Wishlist:** `wishlist_items`  
+**Jadwal Kunjungan:** `visit_schedules` (customer_id, sales_id, day_of_week 1=Senin..7=Minggu, every_week, needs_review, added_by_id) — unik per (customer, sales, hari)  
 **Discounts:** `product_discount_rules` (product_id, min_qty, min_amount, discount_type, discount_value, is_active)  
 
 ### Key invoice columns
@@ -309,7 +313,14 @@ git push -u origin feat/nama-fitur
 
 ### sales.html
 - Desain mobile-first dengan top nav (bukan sidebar)
-- Tab: Buat Faktur, Riwayat, Produk, Customer, Absen, Wishlist
+- Tab: Hari Ini, Buat Faktur, Riwayat, Produk, Customer, Absen, Wishlist
+- **Tab 📅 Hari Ini** *(masih uji coba — cuma tampil untuk akun yang dipilih di `jadwal-kunjungan.html`, key `app_settings.jadwal_tab_visible_for`: `''` = belum ke siapa pun, `<user id>` = satu akun mis. akun test sales, `'all'` = semua sales. Akun lain: tombol tab disembunyikan, data jadwal tidak dimuat, tab default tetap Buat Faktur)* (jadwal kunjungan, dibuka otomatis kalau sales punya jadwal di `visit_schedules`): daftar toko jadwal hari itu untuk sales yang login + pilihan hari lain (intip jadwal berikutnya). Status tiap toko dihitung **di browser** dari faktur lewat `computeVisitStatus()` di `js/jadwal.js`, tidak disimpan:
+  - **Sudah PO dalam 7 hari terakhir** (faktur sebelum hari itu, dari sumber mana pun — sales, admin, WA, katalog; `cancelled` & `rejected` tidak dihitung) → masuk bagian lipat "✔️ Sudah PO – kunjungi minggu depan" berisi tanggal PO, nilai & siapa yang input. Ini yang bikin pola "PO → 2 minggu lagi, tidak PO → minggu depan lagi" jalan sendiri
+  - Pengecualian, tetap **wajib**: `every_week = true` (toko yang harus didatangi tiap minggu) atau toko punya **tagihan jatuh tempo** (sisa > 0 setelah retur approved, jatuh tempo = `invoice_date` + termin, sama seperti `piutang.html`) — datang untuk nagih
+  - Daftar wajib diurutkan: tagihan dulu, lalu yang paling lama tidak PO; yang sudah ✅ diabsen hari ini (`sales_visits`, oleh siapa pun) atau 🧾 PO hari ini turun ke bawah. Ringkasan "Sudah dikunjungi X/Y" + "Kurang N toko dari target" (`app_settings.visit_target_per_day`, default 12)
+  - Tanggal pakai **tanggal lokal** (`localDateISO()`), bukan `todayISO()` yang UTC — sales berangkat sebelum jam 07:00 WIB
+  - Tombol per toko: 🧾 Buat Faktur (pindah tab + pilih customer), 📍 Absen (kalau tab Absen tampil), 🗺️ Maps, 📞
+- **Toko baru dari sales otomatis masuk jadwal**: customer baru yang dibuat **role sales** di halaman ini (dari form faktur maupun tombol "➕ Daftarkan toko baru" di tab Hari Ini) langsung di-insert ke `visit_schedules` untuk sales itu di hari ini dengan `needs_review = true` — **hanya kalau tab Hari Ini aktif untuk akun itu** (lihat `jadwal_tab_visible_for`) — muncul di kartu "🆕 perlu dicek" `jadwal-kunjungan.html`. Admin/super_admin yang membuka sales.html tidak ikut mengisi jadwal. Gagal masuk jadwal tidak membatalkan customer yang sudah tersimpan
 - Subtotal readonly (auto-round `Math.ceil` ke kelipatan 100)
 - Payment term: COD, 14 Hari, 15 Hari, 30 Hari
 - Simpan `customer_phone` & `customer_address` saat submit
@@ -318,6 +329,16 @@ git push -u origin feat/nama-fitur
   - Badge diskon 🏷️ di bawah nama produk kalau ada aturan diskon aktif dari `product_discount_rules` (cuma rule per-produk, bukan grup — diskon grup butuh konteks isi keranjang jadi belum ditampilkan di sini; juga cuma aturan **umum**, aturan khusus customer nggak muncul di list ini karena belum ada konteks customer), format sama dengan `discounts.html` (contoh "20%+5% (≥72pcs)")
   - Di kartu item Buat Faktur & Edit Faktur: begitu qty memenuhi syarat rule, **Harga Satuan otomatis berubah ke harga setelah diskon** (badge yang aktif jadi ✅ hijau, evaluasi ulang tiap qty berubah). Badge di sini menampilkan aturan umum **dan** aturan khusus customer yang lagi dipilih (label 🏪 buat yang khusus toko), dievaluasi ulang tiap ganti customer juga — plus baris kecil "Harga normal: Rp X" di bawahnya. Yang disubmit ke `invoice_items` tetap `price` = harga katalog asli + `item_discount`/`item_discount2`/`discount_type` tercatat terpisah (bukan harga baru begitu aja) — biar laporan margin & histori diskon tetap akurat
 - **Tab Absen** *(masih tahap testing — default cuma tampil buat admin/super_admin, di-ON-kan ke semua sales lewat toggle "Tampilkan tab Absen ke semua sales" di settings.html, key `app_settings.absen_tab_enabled`)*: bukti kunjungan sales — pilih customer, GPS + reverse-geocode alamat (OpenStreetMap Nominatim, gratis) diambil begitu tab dibuka, foto di-ambil lalu di-stempel nama toko+alamat+jam langsung ke pixel canvas (nggak bisa dihapus tanpa keliatan diedit) sambil di-compress, submit → simpan ke `sales_visits` (`supabase_migration27.sql`) + foto ke Storage bucket privat `visit-photos`, lalu foto asli (bukan link) di-attach otomatis ke share sheet WhatsApp HP via Web Share API (`navigator.share`) berisi teks lokasi+jam — sales pilih grup/kontak tujuan sendiri (nggak ada nomor/grup tetap, karena Web Share API cuma bisa buka share sheet umum, bukan target spesifik). Kalau browser nggak dukung file share (jarang, biasanya desktop), foto dibuka di tab baru via signed URL (30 hari) buat di-share manual. Jam yang tercatat di database pakai `default now()` server (bukan jam device) sebagai sumber kebenaran utama — stempel di foto pakai jam device, jadi kalau beda jauh dari jam server itu tanda kecurigaan. Koordinat kunjungan sekaligus ditempel ke `customers.latitude/longitude` lewat RPC `set_customer_location_from_visit()` (migration35) — kecuali titiknya sudah dikunci admin (`location_source = 'manual'`) — supaya link Buka Maps di tab Customer nunjuk titik toko yang sebenarnya, bukan nebak dari teks alamat. Gagal update koordinat tidak bikin absen dianggap gagal (absen sudah tersimpan duluan). Thumbnail foto (signed URL, expired 1 jam, di-generate ulang tiap load — cuma buat foto di halaman yang lagi ditampilkan) juga tampil di tabel "Riwayat Kunjungan" `laporan-sales.html`, dengan pagination 10 per halaman.
+
+### jadwal-kunjungan.html
+- Pengganti jadwal mingguan sales yang dulu dicetak di kertas HVS. Diisi sekali, **berulang otomatis tiap minggu** sampai diubah. `requireSuperAdmin()`
+- Pilih sales → tab hari (Senin–Sabtu, Minggu opsional; jumlah toko per hari, kuning kalau di bawah target) → tabel toko: PO terakhir, centang **Selalu tiap minggu** (`every_week`), pindah hari, hapus dari jadwal (customer tidak ikut terhapus). Satu toko boleh di beberapa hari / sales (ditampilkan sebagai chip)
+- **+ Tambah Toko**: modal pilih banyak toko sekaligus (cari + filter "Hanya yang belum ada jadwal", urut customer terbaru) + tambah customer baru langsung dari modal. Simpan via `upsert(..., { ignoreDuplicates: true })` pada unique key
+- Tombol "📋 N toko belum ada jadwal" — customer yang dibuat admin di `customers.html` tidak tahu harinya, jadi ditempatkan manual dari sini
+- Kartu **🆕 Toko baru dari sales — perlu dicek**: baris `needs_review = true`; super_admin bisa ganti sales/hari lalu ✓ Oke, atau hapus
+- Target toko per hari (`app_settings.visit_target_per_day`) diedit di halaman ini
+- Kartu **🧪 Tab "Hari Ini" di HP tampil untuk**: pilih satu akun (uji coba) / Semua sales / belum ke siapa pun → `app_settings.jadwal_tab_visible_for`. Jadwal tetap bisa disiapkan untuk semua sales walaupun tab-nya belum tampil
+- **🖨️ Cetak Jadwal**: semua hari untuk sales terpilih, A4, kolom No/Toko/Alamat/Telepon/Ket./✓
 
 ### retur.html
 - Print layout mirip invoice (3 kolom TTD)
@@ -351,7 +372,7 @@ git push -u origin feat/nama-fitur
 | `login.html`, `setup.html`, `split-csv.html` | — | Public |
 | `sales.html` | `requireSales()` | Semua role |
 | `index.html`, `products.html`, `customers.html`, `invoices.html`, `verify-invoices.html`, `purchases.html`, `stock-out.html`, `retur.html`, `wishlist.html`, `discounts.html`, `katalog-cetak.html` | `requireAdmin()` | admin + super_admin |
-| `reports.html`, `profit-loss.html`, `piutang.html`, `laporan-sales.html`, `settings.html` | `requireSuperAdmin()` | super_admin only |
+| `reports.html`, `profit-loss.html`, `piutang.html`, `laporan-sales.html`, `settings.html`, `jadwal-kunjungan.html` | `requireSuperAdmin()` | super_admin only |
 
 ## Print Invoice
 
@@ -378,5 +399,4 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration35.sql` | Kolom `latitude`/`longitude`/`location_updated_at`/`location_source` di `customers` + fungsi `set_customer_location_from_visit()` — titik GPS toko ditempel otomatis dari Absen Kunjungan, dipakai link "Buka Maps" di `sales.html` & `customers.html` |
 | `supabase_migration36.sql` | Tabel `product_cost_logs` + trigger `log_product_cost_change` di `products` — catat tiap perubahan `products.cost` (lama→baru, sumber, siapa, kapan). Sumber ditandai lewat GUC transaction-local `app.cost_source` (`increase_stock_on_purchase` → `purchase`, `edit_purchase()` ditulis ulang + `set_config()` → `purchase_edit`, sisanya `manual`). Termasuk backfill 1 baris awal per produk. Jalankan setelah migration34 |
 | `supabase_migration34.sql` | **Wajib untuk Edit PO.** Fungsi `edit_purchase()` — seluruh rangkaian edit pembelian jadi satu transaksi (sebelumnya 4 panggilan terpisah dari browser: koneksi putus di tengah = stok berkurang + item PO hilang). Sekaligus `increase_stock_on_purchase()` cuma menulis `products.cost` kalau PO itu memang pembelian terbaru untuk produk tsb — sebelumnya edit PO lama menarik mundur harga modal |
-
-
+| `supabase_migration42.sql` | **Wajib untuk Jadwal Kunjungan.** Tabel `visit_schedules` + setting `visit_target_per_day` (default 12) + `jadwal_tab_visible_for` (default kosong = tab Hari Ini belum tampil ke siapa pun). Tanpa ini tab Hari Ini di `sales.html` kosong dan `jadwal-kunjungan.html` menampilkan pesan error |
