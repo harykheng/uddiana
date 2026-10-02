@@ -250,6 +250,32 @@
     .toast-warning { background: #78350f; }
     .toast-warning .toast-icon { color: #fcd34d; }
 
+    /* TAB HARI INI (jadwal kunjungan) */
+    .tv-days { display:flex; gap:6px; overflow-x:auto; padding:12px 14px; }
+    .tv-day { flex:none; padding:7px 12px; border:1.5px solid var(--border); border-radius:20px; background:#fff; font-size:12.5px; font-weight:600; color:var(--muted); cursor:pointer; }
+    .tv-day.active { border-color:var(--primary); background:#eff6ff; color:var(--primary); }
+    .tv-day .today-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--success); margin-left:4px; vertical-align:middle; }
+    .tv-summary { padding:12px 16px; border-top:1px solid var(--border); font-size:13px; line-height:1.6; }
+    .tv-progress { height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden; margin-top:6px; }
+    .tv-progress > div { height:100%; background:var(--success); transition:width .4s; }
+    .tv-short { margin-top:10px; padding:10px 12px; background:#fef3c7; border:1px solid #fbbf24; border-radius:8px; color:#92400e; font-size:12.5px; }
+    .tv-section { font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin:4px 2px 8px; }
+    .tv-item { background:#fff; border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+    .tv-item.done { background:#f0fdf4; border-color:#bbf7d0; }
+    .tv-item-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+    .tv-name { font-weight:700; font-size:14px; }
+    .tv-sub { font-size:12px; color:var(--muted); margin-top:2px; line-height:1.4; }
+    .tv-reason { font-size:12px; margin-top:5px; }
+    .tv-reason.danger { color:#b91c1c; font-weight:600; }
+    .tv-reason.warning { color:#b45309; }
+    .tv-reason.info { color:#1d4ed8; }
+    .tv-reason.muted { color:var(--muted); }
+    .tv-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+    .tv-actions a, .tv-actions button { padding:6px 10px; font-size:12px; font-weight:600; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--primary); text-decoration:none; cursor:pointer; }
+    .tv-done-list summary { cursor:pointer; font-size:13px; font-weight:700; color:#166534; padding:12px 14px; list-style:none; }
+    .tv-done-list summary::-webkit-details-marker { display:none; }
+    .tv-done-row { padding:10px 14px; border-top:1px solid #f1f5f9; font-size:13px; }
+
     .reject-reason-box {
       background: #fef2f2;
       border: 1px solid #fecaca;
@@ -302,12 +328,22 @@
 </div>
 
 <div class="tabs">
+  <button class="tab-btn" onclick="switchTab('tab-today')">📅 Hari Ini</button>
   <button class="tab-btn active" onclick="switchTab('tab-new')">+ Buat Faktur</button>
   <button class="tab-btn" onclick="switchTab('tab-history')">📋 Riwayat</button>
   <button class="tab-btn" onclick="switchTab('tab-products')">📦 Produk</button>
   <button class="tab-btn" onclick="switchTab('tab-customers')">👥 Customer</button>
   <button class="tab-btn" id="tab-btn-absen" onclick="switchTab('tab-absen')" style="display:none">📍 Absen</button>
   <button class="tab-btn" onclick="switchTab('tab-wishlist')">⭐ Wishlist</button>
+</div>
+
+<!-- TAB: HARI INI (jadwal kunjungan dari jadwal-kunjungan.html) -->
+<div class="tab-content" id="tab-today">
+  <div class="card">
+    <div class="tv-days" id="tv-days"></div>
+    <div class="tv-summary" id="tv-summary">Memuat jadwal...</div>
+  </div>
+  <div id="tv-list"></div>
 </div>
 
 <!-- TAB: BUAT FAKTUR -->
@@ -604,6 +640,7 @@
 <script src="js/config.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/auth.js"></script>
+<script src="js/jadwal.js"></script>
 <script>
   let currentUser = null;
   let products = [];
@@ -634,7 +671,13 @@
     await Promise.all([loadProducts(), loadCustomers(), loadHistory(), loadOmzetBar(), loadDiscountRules()]);
     addItem();
     initAbsenSelect();
-    initAbsenTabVisibility();
+    await initAbsenTabVisibility();   // tombol 📍 Absen di tab Hari Ini ikut setting ini
+
+    // Sales yang sudah punya jadwal langsung dibuka di tab Hari Ini. todayLoaded
+    // baru di-set setelahnya supaya switchTab di sini tidak memuat ulang data.
+    await loadToday();
+    switchTab(mySchedules.length ? 'tab-today' : 'tab-new');
+    todayLoaded = true;
   }
 
   // Fitur Absen masih tahap testing: default hanya kelihatan buat admin/super_admin
@@ -972,8 +1015,13 @@
     if (error) { showToast('Gagal menambah customer: ' + error.message, 'error'); return; }
 
     customers.push(data);
+    await autoScheduleNewStore(data.id);
     const label = data.name + (data.store_name ? ' — ' + data.store_name : '');
     if (newCustomerCallback) newCustomerCallback({ value: data.id, text: label });
+    // Toko baru dari tab Hari Ini belum ada di dropdown faktur & absen
+    [customerTS, absenCustomerTS].forEach(ts => {
+      if (ts && !ts.options[data.id]) ts.addOption({ value: data.id, text: label });
+    });
 
     closeNewCustomerModal();
     showToast('✅ Customer baru berhasil ditambahkan');
@@ -2028,6 +2076,223 @@ function recalcTotal() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // HARI INI — jadwal kunjungan (visit_schedules, diatur di jadwal-kunjungan.html)
+  // Wajib / sudah PO dihitung di computeVisitStatus() (js/jadwal.js), tidak disimpan.
+  // ─────────────────────────────────────────────────────────────────────────
+
+  let mySchedules = [];
+  let todayLoaded = false;
+  let tvDay = isoDow(new Date());   // hari yang sedang dilihat (1 = Senin)
+  let tvTarget = 12;
+  let tvLoadSeq = 0;
+
+  // Tanggal yang dilihat: hari ini, atau hari tsb di 7 hari ke depan (buat intip besok)
+  function tvRefISO() {
+    const today = new Date();
+    const selisih = (tvDay - isoDow(today) + 7) % 7;
+    return addDaysISO(localDateISO(today), selisih);
+  }
+
+  async function loadToday() {
+    const seq = ++tvLoadSeq;
+    const [sRes, tRes] = await Promise.all([
+      supabase.from('visit_schedules').select('*').eq('sales_id', currentUser.session.user.id),
+      supabase.from('app_settings').select('value').eq('key', 'visit_target_per_day').maybeSingle(),
+    ]);
+    if (seq !== tvLoadSeq) return;
+    if (sRes.error) {
+      // Migration 42 belum dijalankan — tab tetap ada, cuma kosong
+      console.warn('visit_schedules:', sRes.error.message);
+      mySchedules = [];
+    } else {
+      mySchedules = sRes.data || [];
+    }
+    tvTarget = parseInt(tRes.data?.value) || 12;
+    await renderToday();
+  }
+
+  function selectTvDay(d) {
+    tvDay = d;
+    renderToday();
+  }
+
+  async function renderToday() {
+    const seq = ++tvLoadSeq;
+    const todayISO_ = localDateISO();
+    const refISO = tvRefISO();
+    const isToday = refISO === todayISO_;
+    const customerById = Object.fromEntries(customers.map(c => [c.id, c]));
+
+    // Pilihan hari: Senin–Sabtu, Minggu cuma kalau ada jadwalnya
+    const todayDow = isoDow(new Date());
+    document.getElementById('tv-days').innerHTML = [1,2,3,4,5,6,7].map(d => {
+      const n = mySchedules.filter(s => s.day_of_week === d).length;
+      if (d === 7 && !n && todayDow !== 7) return '';
+      return `<button class="tv-day${d === tvDay ? ' active' : ''}" onclick="selectTvDay(${d})">${HARI[d]}${n ? ` (${n})` : ''}${d === todayDow ? '<span class="today-dot"></span>' : ''}</button>`;
+    }).join('');
+
+    const summaryEl = document.getElementById('tv-summary');
+    const listEl = document.getElementById('tv-list');
+
+    if (!mySchedules.length) {
+      summaryEl.innerHTML = `<b>Belum ada jadwal kunjungan.</b><br><span style="color:var(--muted)">Minta super admin atur jalur kamu di menu 📅 Jadwal Kunjungan.</span>`;
+      listEl.innerHTML = '';
+      return;
+    }
+
+    const rows = mySchedules.filter(s => s.day_of_week === tvDay && customerById[s.customer_id]);
+    if (!rows.length) {
+      summaryEl.innerHTML = `<b>${HARI[tvDay]}, ${formatTanggalPendek(refISO).split(', ')[1]}</b> — tidak ada toko di jadwal hari ini.`;
+      listEl.innerHTML = isToday ? newStoreButton() : '';
+      return;
+    }
+
+    summaryEl.innerHTML = 'Memuat status toko...';
+    const ids = rows.map(s => s.customer_id);
+    let facts = {}, visited = new Set();
+    try {
+      const [f, v] = await Promise.all([
+        fetchVisitFacts(ids, refISO),
+        isToday ? fetchVisitedToday(ids) : Promise.resolve(new Set()),
+      ]);
+      facts = f; visited = v;
+    } catch (err) {
+      if (seq !== tvLoadSeq) return;
+      summaryEl.innerHTML = `<span style="color:var(--danger)">Gagal memuat status toko: ${escapeHtml(err.message)}</span>`;
+      return;
+    }
+    if (seq !== tvLoadSeq) return;   // user sudah pindah hari / tab dimuat ulang
+
+    const items = rows.map(s => {
+      const st = computeVisitStatus(s, facts[s.customer_id], refISO);
+      const done = isToday && (visited.has(s.customer_id) || !!st.poOnRef);
+      return { s, c: customerById[s.customer_id], st, done };
+    });
+
+    const wajib = items.filter(x => x.st.wajib)
+      .sort((a, b) => (a.done - b.done) || (b.st.priority - a.st.priority));
+    const libur = items.filter(x => !x.st.wajib)
+      .sort((a, b) => b.st.lastPo.invoice_date.localeCompare(a.st.lastPo.invoice_date));
+
+    const doneCount = wajib.filter(x => x.done).length;
+    const kurang = Math.max(0, tvTarget - wajib.length);
+    const pct = wajib.length ? Math.round(doneCount / wajib.length * 100) : 0;
+
+    summaryEl.innerHTML = `
+      <div><b>${HARI[tvDay]}, ${formatTanggalPendek(refISO).split(', ')[1]}</b>${isToday ? '' : ' <span style="color:var(--muted)">(jadwal berikutnya)</span>'}</div>
+      <div>Wajib dikunjungi: <b>${wajib.length} toko</b> · target ${tvTarget} toko/hari</div>
+      ${isToday ? `<div>Sudah dikunjungi: <b>${doneCount}/${wajib.length}</b></div>
+        <div class="tv-progress"><div style="width:${pct}%"></div></div>` : ''}
+      ${kurang ? `<div class="tv-short">⚠️ Kurang <b>${kurang} toko</b> dari target — cari toko baru di jalur ini.${isToday ? ' Toko yang kamu daftarkan otomatis masuk jadwal ' + HARI[tvDay] + '.' : ''}</div>` : ''}`;
+
+    const actions = c => {
+      const hasCoord = c.latitude != null && c.longitude != null;
+      const mapsUrl = hasCoord
+        ? `https://www.google.com/maps?q=${c.latitude},${c.longitude}`
+        : (c.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address)}` : '');
+      const absenVisible = document.getElementById('tab-btn-absen').style.display !== 'none';
+      return `<div class="tv-actions">
+        <button onclick="tvBuatFaktur('${c.id}')">🧾 Buat Faktur</button>
+        ${absenVisible && isToday ? `<button onclick="tvAbsen('${c.id}')">📍 Absen</button>` : ''}
+        ${mapsUrl ? `<a href="${mapsUrl}" target="_blank" rel="noopener">🗺️ Maps</a>` : ''}
+        ${c.phone ? `<a href="tel:${escapeHtml(c.phone)}">📞 Telepon</a>` : ''}
+      </div>`;
+    };
+
+    const wajibHtml = wajib.map(({ s, c, st, done }) => {
+      let doneBadge = '';
+      if (done) doneBadge = st.poOnRef
+        ? `<span class="badge badge-success">🧾 PO hari ini</span>`
+        : `<span class="badge badge-success">✅ Sudah absen</span>`;
+      return `<div class="tv-item${done ? ' done' : ''}">
+        <div class="tv-item-top">
+          <div style="min-width:0">
+            <div class="tv-name">${escapeHtml(c.store_name || c.name)}${s.needs_review ? ' <span class="badge badge-warning">🆕 baru</span>' : ''}</div>
+            <div class="tv-sub">${c.store_name ? escapeHtml(c.name) + ' · ' : ''}${escapeHtml(c.address || 'alamat belum diisi')}</div>
+          </div>
+          ${doneBadge}
+        </div>
+        ${st.reasons.map(r => `<div class="tv-reason ${r.tone}">${r.icon} ${escapeHtml(r.text)}</div>`).join('')}
+        ${actions(c)}
+      </div>`;
+    }).join('');
+
+    const liburHtml = libur.length ? `
+      <div class="card tv-done-list">
+        <details>
+          <summary>✔️ Sudah PO – kunjungi minggu depan (${libur.length}) ▸</summary>
+          ${libur.map(({ c, st }) => {
+            const po = st.lastPo;
+            const oleh = po.sales_name ? `oleh ${escapeHtml(po.sales_name)}` : 'via admin';
+            return `<div class="tv-done-row">
+              <div style="font-weight:600">${escapeHtml(c.store_name || c.name)}</div>
+              <div class="tv-sub">PO ${formatTanggalPendek(po.invoice_date)} (${st.daysSincePo} hari lalu) · ${formatCurrency(po.total)} · ${oleh}</div>
+            </div>`;
+          }).join('')}
+        </details>
+      </div>` : '';
+
+    listEl.innerHTML =
+      (wajib.length ? `<div class="tv-section">Wajib dikunjungi (${wajib.length})</div>${wajibHtml}` :
+        `<div class="empty-state" style="padding:24px"><div class="icon">🎉</div><h4>Semua toko di jalur ini sudah PO minggu lalu</h4></div>`) +
+      (isToday ? newStoreButton() : '') +
+      liburHtml;
+  }
+
+  function newStoreButton() {
+    return `<button class="btn btn-ghost btn-full" onclick="openNewCustomerModal('', tvAfterNewStore)" style="border:1.5px dashed var(--border);color:var(--primary);font-size:14px;margin-bottom:16px">➕ Daftarkan toko baru</button>`;
+  }
+
+  // Dipanggil confirmNewCustomer() setelah toko baru dari tab ini tersimpan
+  function tvAfterNewStore() {
+    loadToday();
+  }
+
+  // Toko yang sudah diabsen hari ini (oleh siapa pun)
+  async function fetchVisitedToday(ids) {
+    const start = parseLocalDate(localDateISO());
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    const { data, error } = await supabase.from('sales_visits')
+      .select('customer_id')
+      .in('customer_id', ids)
+      .gte('visited_at', start.toISOString())
+      .lt('visited_at', end.toISOString());
+    if (error) { console.warn('sales_visits:', error.message); return new Set(); }
+    return new Set((data || []).map(v => v.customer_id));
+  }
+
+  function tvBuatFaktur(customerId) {
+    switchTab('tab-new');
+    if (customerTS) customerTS.setValue(customerId);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function tvAbsen(customerId) {
+    switchTab('tab-absen');
+    if (absenCustomerTS) absenCustomerTS.setValue(customerId);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // Toko baru yang didaftarkan sales di lapangan otomatis masuk jadwal sales itu
+  // di hari ini, ditandai needs_review supaya super_admin bisa cek/pindahkan di
+  // jadwal-kunjungan.html. Cuma untuk role sales — admin yang tes di halaman ini
+  // tidak ikut mengisi jadwal.
+  async function autoScheduleNewStore(customerId) {
+    if (currentUser.profile.role !== 'sales') return;
+    const uid = currentUser.session.user.id;
+    const { data, error } = await supabase.from('visit_schedules').insert({
+      customer_id: customerId,
+      sales_id: uid,
+      day_of_week: isoDow(new Date()),
+      needs_review: true,
+      added_by_id: uid,
+    }).select('*').single();
+    // Customer-nya sudah tersimpan; gagal masuk jadwal tidak boleh bikin itu kelihatan gagal
+    if (error) { console.warn('Gagal memasukkan toko baru ke jadwal:', error.message); return; }
+    mySchedules.push(data);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // ABSEN KUNJUNGAN
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -2284,9 +2549,9 @@ function recalcTotal() {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     document.getElementById(id).classList.add('active');
-    const tabIds = ['tab-new', 'tab-history', 'tab-products', 'tab-customers', 'tab-absen', 'tab-wishlist'];
-    const btn = document.querySelectorAll('.tab-btn')[tabIds.indexOf(id)];
+    const btn = document.querySelector(`.tab-btn[onclick="switchTab('${id}')"]`);
     if (btn) btn.classList.add('active');
+    if (id === 'tab-today' && todayLoaded) loadToday();
     if (id === 'tab-history') loadHistory();
     if (id === 'tab-products') { renderProductList(); loadTopProductsPush(); }
     if (id === 'tab-customers') renderCustomerList();

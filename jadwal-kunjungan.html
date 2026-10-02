@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jadwal Kunjungan - StokManager</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .day-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px; }
+    .day-tab {
+      padding:8px 14px; border:1.5px solid var(--border); border-radius:8px; background:#fff;
+      font-size:13px; font-weight:600; color:#475569; cursor:pointer;
+    }
+    .day-tab .cnt { display:inline-block; min-width:20px; margin-left:4px; padding:1px 6px; border-radius:10px; background:#f1f5f9; font-size:11px; }
+    .day-tab.active { border-color:var(--primary); background:#eff6ff; color:var(--primary); }
+    .day-tab.active .cnt { background:var(--primary); color:#fff; }
+    .day-tab.under .cnt { background:#fef3c7; color:#92400e; }
+    .day-tab.active.under .cnt { background:#d97706; color:#fff; }
+    .chip-new { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:10px; background:#fef3c7; color:#92400e; }
+    .chip-sched { display:inline-block; font-size:10.5px; padding:1px 7px; border-radius:10px; background:#eff6ff; color:#1d4ed8; margin:2px 4px 0 0; }
+    .pick-list { max-height:52vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; }
+    .pick-row { display:flex; gap:10px; align-items:flex-start; padding:9px 12px; border-bottom:1px solid #f1f5f9; cursor:pointer; }
+    .pick-row:last-child { border-bottom:none; }
+    .pick-row:hover { background:#f8fafc; }
+    .pick-row input { margin-top:3px; width:16px; height:16px; flex-shrink:0; }
+    .pick-row.disabled { opacity:.5; cursor:default; }
+    td select.inline { padding:4px 6px; font-size:12px; border:1px solid var(--border); border-radius:6px; background:#fff; }
+    #print-area { display:none; }
+
+    @media print {
+      @page { size: A4; margin: 12mm; }
+      body > .layout, .modal-overlay, .toast { display:none !important; }
+      #print-area { display:block !important; font-family: Arial, sans-serif; color:#000; }
+      .pr-title { font-size:16px; font-weight:700; margin-bottom:2px; }
+      .pr-sub { font-size:11px; color:#333; margin-bottom:10px; }
+      .pr-day { break-inside:avoid; margin-bottom:14px; }
+      .pr-day h3 { font-size:13px; margin:0 0 4px; padding:4px 6px; background:#e5e7eb; }
+      .pr-day table { width:100%; border-collapse:collapse; font-size:11px; }
+      .pr-day th, .pr-day td { border:1px solid #9ca3af !important; padding:4px 5px !important; text-align:left; vertical-align:top; color:#000; }
+      .pr-day th { background:#f3f4f6 !important; text-transform:none !important; letter-spacing:0 !important; font-size:11px !important; }
+      .pr-day .ck { width:22px; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon"><img src="logo.png" alt="UD.DIANA" style="width:100%;height:auto;object-fit:contain;border-radius:6px;"></div>
+      <h2>UD.DIANA</h2>
+      <span>Sistem Manajemen Stok</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-label">Menu Utama</div>
+      <a href="index.html" class="nav-item"><span class="nav-icon">🏠</span> Dashboard</a>
+      <a href="products.html" class="nav-item"><span class="nav-icon">📦</span> Produk</a>
+      <a href="customers.html" class="nav-item"><span class="nav-icon">👥</span> Customers</a>
+      <div class="nav-label">Transaksi</div>
+      <a href="invoices.html" class="nav-item"><span class="nav-icon">🧾</span> Faktur Penjualan</a>
+      <a href="verify-invoices.html" class="nav-item"><span class="nav-icon">✅</span> Verifikasi Faktur</a>
+      <a href="purchases.html" class="nav-item"><span class="nav-icon">🛒</span> Pembelian/Masuk Barang</a>
+      <a href="stock-out.html" class="nav-item"><span class="nav-icon">📤</span> Keluar Barang</a>
+      <a href="retur.html" class="nav-item"><span class="nav-icon">↩️</span> Retur Barang</a>
+      <a href="stock-opname.html" class="nav-item" data-super-admin><span class="nav-icon">📋</span> Stock Opname</a>
+      <a href="scan-opname.html" class="nav-item"><span class="nav-icon">📷</span> Scan Opname</a>
+      <div class="nav-label">Laporan</div>
+      <a href="reports.html" class="nav-item" data-super-admin><span class="nav-icon">📊</span> Laporan Stok</a>
+      <a href="profit-loss.html" class="nav-item" data-super-admin><span class="nav-icon">💹</span> Laba Rugi</a>
+      <a href="piutang.html" class="nav-item" data-super-admin><span class="nav-icon">💰</span> Piutang</a>
+      <a href="laporan-sales.html" class="nav-item" data-super-admin><span class="nav-icon">👤</span> Laporan Sales</a>
+      <a href="jadwal-kunjungan.html" class="nav-item active" data-super-admin><span class="nav-icon">📅</span> Jadwal Kunjungan</a>
+      <div class="nav-label">Admin</div>
+      <a href="wishlist.html" class="nav-item"><span class="nav-icon">⭐</span> Wishlist</a>
+      <a href="discounts.html" class="nav-item"><span class="nav-icon">🏷️</span> Diskon Produk</a>
+      <a href="settings.html" class="nav-item" data-super-admin><span class="nav-icon">⚙️</span> Pengaturan</a>
+    </nav>
+    <div class="sidebar-footer">© 2025 StokManager</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h1>Jadwal Kunjungan</h1>
+        <p>Jalur mingguan tiap sales — berulang otomatis tiap minggu</p>
+      </div>
+      <div class="topbar-right">
+        <button class="btn btn-ghost" onclick="printSchedule()">🖨️ Cetak Jadwal</button>
+        <div class="user-avatar">A</div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="filter-bar">
+        <div style="display:flex;align-items:center;gap:8px">
+          <label for="sel-sales" style="font-size:13px;font-weight:600;color:#475569">Sales</label>
+          <select id="sel-sales" onchange="onSalesChange()" style="min-width:200px"></select>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label for="target-input" style="font-size:13px;font-weight:600;color:#475569">Target toko/hari</label>
+          <input type="text" inputmode="numeric" data-number id="target-input" style="width:70px">
+          <button class="btn btn-ghost btn-sm" onclick="saveTarget()">Simpan</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAll()">🔄 Refresh</button>
+        <button class="btn btn-ghost btn-sm" id="btn-unscheduled" onclick="openPicker(true)" style="display:none"></button>
+      </div>
+
+      <!-- TOKO BARU DARI SALES — PERLU DICEK -->
+      <div class="card" id="review-card" style="display:none;border:1.5px solid #fbbf24;margin-bottom:16px">
+        <div class="card-header">
+          <h3>🆕 Toko baru dari sales — perlu dicek <span id="review-count" class="badge badge-warning" style="margin-left:8px">0</span></h3>
+        </div>
+        <div style="padding:10px 20px 0;font-size:12.5px;color:var(--text-muted)">
+          Toko yang didaftarkan sales di lapangan otomatis masuk jadwal sales itu di hari ditemukan. Cek hari & sales-nya, lalu klik ✓ Oke — atau hapus kalau tokonya tidak valid / dobel.
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Toko</th><th>Ditambahkan</th><th>Sales</th><th>Hari</th><th>Aksi</th></tr>
+            </thead>
+            <tbody id="review-table"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="day-tabs" id="day-tabs"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 id="day-title">—</h3>
+          <button class="btn btn-primary btn-sm" onclick="openPicker(false)">+ Tambah Toko</button>
+        </div>
+        <div id="day-hint" style="padding:10px 20px 0;font-size:12.5px;color:var(--text-muted)"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Toko</th>
+                <th>Alamat</th>
+                <th>PO Terakhir</th>
+                <th title="Tetap didatangi tiap minggu walaupun minggu lalu sudah PO">Selalu tiap minggu</th>
+                <th>Pindah Hari</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="day-table">
+              <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- MODAL PILIH TOKO -->
+<div class="modal-overlay" id="modal-picker">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <h3 id="picker-title">Tambah Toko</h3>
+      <button class="modal-close" onclick="closeModal('modal-picker')">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <div class="search-input-wrap" style="flex:1;min-width:200px">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="picker-search" placeholder="Cari nama toko, customer, alamat..." oninput="renderPicker()">
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="picker-only-unscheduled" onchange="renderPicker()"> Hanya yang belum ada jadwal
+        </label>
+      </div>
+      <div class="pick-list" id="picker-list"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px;flex-wrap:wrap">
+        <span id="picker-info" style="font-size:12px;color:var(--text-muted)"></span>
+        <button class="btn btn-ghost btn-sm" onclick="openNewCustomer()">➕ Toko belum terdaftar? Tambah customer baru</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-picker')">Batal</button>
+      <button class="btn btn-primary" id="btn-picker-save" onclick="savePicker()">Tambahkan</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CUSTOMER BARU -->
+<div class="modal-overlay" id="modal-new-customer">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Tambah Customer Baru</h3>
+      <button class="modal-close" onclick="closeModal('modal-new-customer')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Nama Customer *</label>
+          <input type="text" id="nc-name" placeholder="Nama lengkap">
+        </div>
+        <div class="form-group">
+          <label>Nama Toko</label>
+          <input type="text" id="nc-store" placeholder="Nama toko / usaha">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Nomor Telepon</label>
+        <input type="tel" id="nc-phone" placeholder="08xx-xxxx-xxxx">
+      </div>
+      <div class="form-group mb-0">
+        <label>Alamat</label>
+        <textarea id="nc-address" placeholder="Alamat lengkap" style="min-height:70px"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-new-customer')">Batal</button>
+      <button class="btn btn-primary" id="btn-nc-save" onclick="saveNewCustomer()">Simpan & Pilih</button>
+    </div>
+  </div>
+</div>
+
+<div id="print-area"></div>
+
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/jadwal.js"></script>
+<script>
+  let me = null;
+  let salesUsers = [];      // user_profiles yang bisa diberi jadwal
+  let customers = [];       // semua customer
+  let customerById = {};
+  let schedules = [];       // semua baris visit_schedules (semua sales)
+  let facts = {};           // fetchVisitFacts — PO terakhir per customer
+  let target = 12;
+  let selSalesId = null;
+  let selDay = 1;
+  let pickerChecked = new Set();
+
+  async function init() {
+    const auth = await requireSuperAdmin();
+    if (!auth) return;
+    me = auth;
+    const today = isoDow(new Date());
+    selDay = today === 7 ? 1 : today;
+    await loadAll();
+  }
+
+  async function loadAll() {
+    const [uRes, cRes, sRes, tRes] = await Promise.all([
+      supabase.from('user_profiles').select('id,name,role,is_active').eq('is_active', true).order('name'),
+      fetchAll(() => supabase.from('customers').select('id,name,store_name,phone,address,created_at').order('name')),
+      fetchAll(() => supabase.from('visit_schedules').select('*').order('created_at')),
+      supabase.from('app_settings').select('value').eq('key', 'visit_target_per_day').maybeSingle(),
+    ]);
+    if (sRes.error) {
+      document.getElementById('day-table').innerHTML =
+        `<tr><td colspan="7" class="text-center" style="padding:40px;color:var(--danger)">Gagal memuat jadwal: ${escapeHtml(sRes.error.message)}<br><span class="text-muted">Sudah jalankan supabase_migration42.sql di Supabase SQL Editor?</span></td></tr>`;
+      return;
+    }
+
+    // Sales dulu; admin/super_admin tetap bisa dipilih (kadang owner ikut turun ke toko)
+    const users = uRes.data || [];
+    salesUsers = [...users.filter(u => u.role === 'sales'), ...users.filter(u => u.role !== 'sales')];
+    customers = cRes.data || [];
+    customerById = Object.fromEntries(customers.map(c => [c.id, c]));
+    schedules = (sRes.data || []).filter(s => customerById[s.customer_id]);
+    target = parseInt(tRes.data?.value) || 12;
+    document.getElementById('target-input').value = target;
+
+    renderSalesSelect();
+
+    try {
+      facts = await fetchVisitFacts([...new Set(schedules.map(s => s.customer_id))], localDateISO());
+    } catch (err) {
+      facts = {};
+      showToast('Gagal memuat riwayat PO: ' + err.message, 'warning');
+    }
+    renderAll();
+  }
+
+  function renderSalesSelect() {
+    const sel = document.getElementById('sel-sales');
+    if (!salesUsers.length) {
+      sel.innerHTML = '<option value="">Belum ada akun sales</option>';
+      selSalesId = null;
+      return;
+    }
+    if (!selSalesId || !salesUsers.some(u => u.id === selSalesId)) selSalesId = salesUsers[0].id;
+    const opt = u => `<option value="${u.id}"${u.id === selSalesId ? ' selected' : ''}>${escapeHtml(u.name)}</option>`;
+    const sales = salesUsers.filter(u => u.role === 'sales');
+    const others = salesUsers.filter(u => u.role !== 'sales');
+    sel.innerHTML = sales.map(opt).join('') +
+      (others.length ? `<optgroup label="Admin">${others.map(opt).join('')}</optgroup>` : '');
+  }
+
+  function onSalesChange() {
+    selSalesId = document.getElementById('sel-sales').value || null;
+    renderAll();
+  }
+
+  function salesName(id) {
+    return salesUsers.find(u => u.id === id)?.name || '(akun nonaktif)';
+  }
+
+  function renderAll() {
+    renderReview();
+    renderDayTabs();
+    renderDayTable();
+    renderUnscheduledButton();
+  }
+
+  // ── TOKO BARU DARI SALES ─────────────────────────────────
+  function renderReview() {
+    const rows = schedules.filter(s => s.needs_review);
+    document.getElementById('review-card').style.display = rows.length ? '' : 'none';
+    document.getElementById('review-count').textContent = rows.length;
+    document.getElementById('review-table').innerHTML = rows.map(s => {
+      const c = customerById[s.customer_id];
+      const salesOpts = salesUsers.map(u => `<option value="${u.id}"${u.id === s.sales_id ? ' selected' : ''}>${escapeHtml(u.name)}</option>`).join('');
+      const dayOpts = [1,2,3,4,5,6,7].map(d => `<option value="${d}"${d === s.day_of_week ? ' selected' : ''}>${HARI[d]}</option>`).join('');
+      return `<tr>
+        <td><div class="font-bold">${escapeHtml(c.store_name || c.name)}</div>
+            <div class="text-muted" style="font-size:12px">${c.store_name ? escapeHtml(c.name) + ' · ' : ''}${escapeHtml(c.address || 'alamat belum diisi')}</div></td>
+        <td style="font-size:12.5px">${escapeHtml(salesName(s.added_by_id || s.sales_id))}<br><span class="text-muted">${formatDate(s.created_at)}</span></td>
+        <td><select class="inline" id="rv-sales-${s.id}">${salesOpts}</select></td>
+        <td><select class="inline" id="rv-day-${s.id}">${dayOpts}</select></td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-success btn-sm" onclick="approveReview('${s.id}')">✓ Oke</button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteSchedule('${s.id}')" title="Hapus dari jadwal">🗑️</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function approveReview(id) {
+    const sales_id = document.getElementById(`rv-sales-${id}`).value;
+    const day_of_week = Number(document.getElementById(`rv-day-${id}`).value);
+    const { error } = await supabase.from('visit_schedules')
+      .update({ sales_id, day_of_week, needs_review: false }).eq('id', id);
+    if (error) { showToast(conflictMsg(error), 'error'); return; }
+    const s = schedules.find(x => x.id === id);
+    Object.assign(s, { sales_id, day_of_week, needs_review: false });
+    showToast(`Masuk jadwal ${salesName(sales_id)} – ${HARI[day_of_week]} ✅`);
+    renderAll();
+  }
+
+  function conflictMsg(error) {
+    return error.code === '23505'
+      ? 'Toko ini sudah ada di jadwal sales & hari tersebut'
+      : 'Gagal menyimpan: ' + error.message;
+  }
+
+  // ── TAB HARI ─────────────────────────────────────────────
+  function rowsFor(salesId, day) {
+    return schedules.filter(s => s.sales_id === salesId && s.day_of_week === day);
+  }
+
+  function renderDayTabs() {
+    const el = document.getElementById('day-tabs');
+    el.innerHTML = [1,2,3,4,5,6,7].map(d => {
+      const n = selSalesId ? rowsFor(selSalesId, d).length : 0;
+      // Minggu cuma tampil kalau memang ada jadwalnya
+      if (d === 7 && !n && selDay !== 7) return '';
+      const under = n > 0 && n < target;
+      return `<button class="day-tab${d === selDay ? ' active' : ''}${under ? ' under' : ''}" onclick="selectDay(${d})">${HARI[d]}<span class="cnt">${n}</span></button>`;
+    }).join('') + (rowsFor(selSalesId, 7).length || selDay === 7 ? '' :
+      `<button class="day-tab" onclick="selectDay(7)" style="color:#94a3b8">+ Minggu</button>`);
+  }
+
+  function selectDay(d) {
+    selDay = d;
+    renderDayTabs();
+    renderDayTable();
+  }
+
+  function lastPoLabel(customerId) {
+    const f = facts[customerId];
+    // fetchVisitFacts relatif ke hari ini: PO hari ini ada di poOnRef, bukan lastPo
+    const po = f?.poOnRef || f?.lastPo;
+    if (!po) return `<span class="text-muted">— (&gt;${JADWAL_RIWAYAT_HARI} hari)</span>`;
+    const hari = daysBetweenISO(localDateISO(), po.invoice_date);
+    const ket = hari === 0 ? 'hari ini' : `${hari} hari lalu`;
+    return `${formatDate(po.invoice_date)}<br><span class="text-muted" style="font-size:12px">${ket}</span>`;
+  }
+
+  function renderDayTable() {
+    const tbody = document.getElementById('day-table');
+    const title = document.getElementById('day-title');
+    const hint = document.getElementById('day-hint');
+    if (!selSalesId) {
+      title.textContent = '—';
+      hint.textContent = '';
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding:40px">Buat akun sales dulu di halaman Pengaturan</td></tr>`;
+      return;
+    }
+    const rows = rowsFor(selSalesId, selDay)
+      .map(s => ({ s, c: customerById[s.customer_id] }))
+      .sort((a, b) => (a.c.store_name || a.c.name).localeCompare(b.c.store_name || b.c.name));
+
+    title.innerHTML = `${HARI[selDay]} — ${escapeHtml(salesName(selSalesId))} <span class="badge badge-info" style="margin-left:8px">${rows.length} toko</span>`;
+    hint.innerHTML = rows.length < target
+      ? `⚠️ Kurang dari target ${target} toko/hari. Toko yang sudah PO minggu lalu otomatis dilewati minggu ini, jadi jalur sebaiknya berisi lebih dari ${target} toko.`
+      : `Toko yang sudah PO dalam 7 hari terakhir otomatis dilewati minggu ini di HP sales — kecuali yang dicentang <b>Selalu tiap minggu</b> atau punya tagihan jatuh tempo.`;
+
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted" style="padding:40px">Belum ada toko di hari ${HARI[selDay]}. Klik <b>+ Tambah Toko</b>.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = rows.map(({ s, c }, i) => {
+      const dayOpts = [1,2,3,4,5,6,7].map(d => `<option value="${d}"${d === s.day_of_week ? ' selected' : ''}>${HARI[d]}</option>`).join('');
+      const lain = schedules.filter(x => x.customer_id === c.id && x.id !== s.id)
+        .map(x => `<span class="chip-sched">${escapeHtml(salesName(x.sales_id))} · ${HARI[x.day_of_week]}</span>`).join('');
+      return `<tr>
+        <td class="text-muted">${i + 1}</td>
+        <td>
+          <div class="font-bold">${escapeHtml(c.store_name || c.name)} ${s.needs_review ? '<span class="chip-new">🆕 belum dicek</span>' : ''}</div>
+          <div class="text-muted" style="font-size:12px">${c.store_name ? escapeHtml(c.name) : ''}${c.phone ? (c.store_name ? ' · ' : '') + escapeHtml(c.phone) : ''}</div>
+          ${lain ? `<div>${lain}</div>` : ''}
+        </td>
+        <td style="font-size:12.5px;max-width:260px">${escapeHtml(c.address || '—')}</td>
+        <td style="font-size:12.5px;white-space:nowrap">${lastPoLabel(c.id)}</td>
+        <td class="text-center"><input type="checkbox" ${s.every_week ? 'checked' : ''} onchange="toggleEveryWeek('${s.id}', this)" style="width:16px;height:16px;cursor:pointer"></td>
+        <td><select class="inline" onchange="moveDay('${s.id}', this)">${dayOpts}</select></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="deleteSchedule('${s.id}')" title="Hapus dari jadwal">🗑️</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function toggleEveryWeek(id, cb) {
+    const { error } = await supabase.from('visit_schedules').update({ every_week: cb.checked }).eq('id', id);
+    if (error) { cb.checked = !cb.checked; showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
+    schedules.find(x => x.id === id).every_week = cb.checked;
+    showToast(cb.checked ? 'Toko ini selalu didatangi tiap minggu' : 'Toko ini ikut aturan PO (dilewati seminggu setelah PO)');
+  }
+
+  async function moveDay(id, sel) {
+    const s = schedules.find(x => x.id === id);
+    const day = Number(sel.value);
+    const { error } = await supabase.from('visit_schedules').update({ day_of_week: day }).eq('id', id);
+    if (error) { sel.value = s.day_of_week; showToast(conflictMsg(error), 'error'); return; }
+    s.day_of_week = day;
+    showToast(`Dipindah ke ${HARI[day]}`);
+    renderAll();
+  }
+
+  async function deleteSchedule(id) {
+    const s = schedules.find(x => x.id === id);
+    const c = customerById[s.customer_id];
+    if (!showConfirm(`Hapus ${c.store_name || c.name} dari jadwal ${salesName(s.sales_id)} hari ${HARI[s.day_of_week]}?\n\nData customer tidak ikut terhapus.`)) return;
+    const { error } = await supabase.from('visit_schedules').delete().eq('id', id);
+    if (error) { showToast('Gagal menghapus: ' + error.message, 'error'); return; }
+    schedules = schedules.filter(x => x.id !== id);
+    showToast('Dihapus dari jadwal');
+    renderAll();
+  }
+
+  // ── BELUM ADA JADWAL ─────────────────────────────────────
+  function unscheduledCustomers() {
+    const ada = new Set(schedules.map(s => s.customer_id));
+    return customers.filter(c => !ada.has(c.id));
+  }
+
+  function renderUnscheduledButton() {
+    const n = unscheduledCustomers().length;
+    const btn = document.getElementById('btn-unscheduled');
+    btn.style.display = n ? '' : 'none';
+    btn.textContent = `📋 ${n} toko belum ada jadwal`;
+  }
+
+  // ── MODAL PILIH TOKO ─────────────────────────────────────
+  function openPicker(onlyUnscheduled) {
+    if (!selSalesId) { showToast('Pilih sales dulu', 'warning'); return; }
+    pickerChecked = new Set();
+    document.getElementById('picker-search').value = '';
+    document.getElementById('picker-only-unscheduled').checked = !!onlyUnscheduled;
+    document.getElementById('picker-title').textContent = `Tambah Toko — ${salesName(selSalesId)}, ${HARI[selDay]}`;
+    renderPicker();
+    openModal('modal-picker');
+    setTimeout(() => document.getElementById('picker-search').focus(), 100);
+  }
+
+  function renderPicker() {
+    const q = document.getElementById('picker-search').value.trim().toLowerCase();
+    const onlyUnsched = document.getElementById('picker-only-unscheduled').checked;
+    const sudahDiSini = new Set(rowsFor(selSalesId, selDay).map(s => s.customer_id));
+    const adaJadwal = new Set(schedules.map(s => s.customer_id));
+
+    let list = customers.filter(c => {
+      if (onlyUnsched && adaJadwal.has(c.id)) return false;
+      if (!q) return true;
+      return `${c.name} ${c.store_name || ''} ${c.address || ''} ${c.phone || ''}`.toLowerCase().includes(q);
+    });
+    // Belum ada jadwal: yang paling baru dibuat di atas (customer baru dari admin)
+    if (onlyUnsched) list = list.slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+
+    const LIMIT = 200;
+    const shown = list.slice(0, LIMIT);
+    const el = document.getElementById('picker-list');
+    el.innerHTML = shown.length ? shown.map(c => {
+      const disabled = sudahDiSini.has(c.id);
+      const tags = schedules.filter(s => s.customer_id === c.id)
+        .map(s => `<span class="chip-sched">${escapeHtml(salesName(s.sales_id))} · ${HARI[s.day_of_week]}</span>`).join('');
+      return `<label class="pick-row${disabled ? ' disabled' : ''}">
+        <input type="checkbox" ${disabled ? 'checked disabled' : (pickerChecked.has(c.id) ? 'checked' : '')} onchange="togglePick('${c.id}', this.checked)">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13.5px">${escapeHtml(c.store_name || c.name)}${disabled ? ' <span class="text-muted" style="font-weight:400;font-size:12px">— sudah di hari ini</span>' : ''}</div>
+          <div class="text-muted" style="font-size:12px">${c.store_name ? escapeHtml(c.name) + ' · ' : ''}${escapeHtml(c.address || 'alamat belum diisi')}</div>
+          ${tags ? `<div>${tags}</div>` : (onlyUnsched ? '' : '<div><span class="chip-sched" style="background:#fef3c7;color:#92400e">belum ada jadwal</span></div>')}
+        </div>
+      </label>`;
+    }).join('') : `<div class="text-center text-muted" style="padding:30px">Tidak ada toko yang cocok</div>`;
+
+    document.getElementById('picker-info').textContent =
+      `${list.length} toko${list.length > LIMIT ? ` (tampil ${LIMIT}, ketik untuk mencari)` : ''}`;
+    updatePickerButton();
+  }
+
+  function togglePick(id, on) {
+    if (on) pickerChecked.add(id); else pickerChecked.delete(id);
+    updatePickerButton();
+  }
+
+  function updatePickerButton() {
+    const btn = document.getElementById('btn-picker-save');
+    btn.disabled = !pickerChecked.size;
+    btn.textContent = pickerChecked.size ? `Tambahkan (${pickerChecked.size})` : 'Tambahkan';
+  }
+
+  async function savePicker() {
+    if (!pickerChecked.size) return;
+    const btn = document.getElementById('btn-picker-save');
+    setLoading(btn, true);
+    const rows = [...pickerChecked].map(customer_id => ({
+      customer_id, sales_id: selSalesId, day_of_week: selDay, added_by_id: me.session.user.id,
+    }));
+    // ignoreDuplicates: kalau toko sudah ada di sales & hari ini (mis. tab lain), lewati saja
+    const { data, error } = await supabase.from('visit_schedules')
+      .upsert(rows, { onConflict: 'customer_id,sales_id,day_of_week', ignoreDuplicates: true })
+      .select('*');
+    setLoading(btn, false);
+    if (error) { showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
+    schedules.push(...(data || []));
+    closeModal('modal-picker');
+    showToast(`${(data || []).length} toko masuk jadwal ${HARI[selDay]} ✅`);
+    try {
+      Object.assign(facts, await fetchVisitFacts((data || []).map(s => s.customer_id), localDateISO()));
+    } catch (_) { /* kolom PO terakhir saja yang kosong */ }
+    renderAll();
+  }
+
+  // ── CUSTOMER BARU DARI MODAL ─────────────────────────────
+  function openNewCustomer() {
+    ['nc-name', 'nc-store', 'nc-phone', 'nc-address'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('nc-name').value = document.getElementById('picker-search').value.trim();
+    openModal('modal-new-customer');
+    setTimeout(() => document.getElementById('nc-name').focus(), 100);
+  }
+
+  async function saveNewCustomer() {
+    const name = document.getElementById('nc-name').value.trim();
+    if (!name) { showToast('Nama customer wajib diisi', 'error'); return; }
+    const btn = document.getElementById('btn-nc-save');
+    setLoading(btn, true);
+    const { data, error } = await supabase.from('customers').insert({
+      name,
+      store_name: document.getElementById('nc-store').value.trim() || null,
+      phone: document.getElementById('nc-phone').value.trim() || null,
+      address: document.getElementById('nc-address').value.trim() || null,
+    }).select('id,name,store_name,phone,address,created_at').single();
+    setLoading(btn, false);
+    if (error) { showToast('Gagal menambah customer: ' + error.message, 'error'); return; }
+
+    customers.push(data);
+    customers.sort((a, b) => a.name.localeCompare(b.name));
+    customerById[data.id] = data;
+    pickerChecked.add(data.id);
+    document.getElementById('picker-search').value = data.store_name || data.name;
+    document.getElementById('picker-only-unscheduled').checked = false;
+    closeModal('modal-new-customer');
+    // closeModal mengembalikan scroll body, padahal modal pilih toko masih terbuka
+    document.body.style.overflow = 'hidden';
+    renderPicker();
+    showToast('Customer baru ditambahkan — tinggal klik Tambahkan');
+  }
+
+  // ── TARGET ───────────────────────────────────────────────
+  async function saveTarget() {
+    const val = parseFormattedNumber(document.getElementById('target-input').value);
+    if (!val || val < 1) { showToast('Target minimal 1 toko', 'error'); return; }
+    const { error } = await supabase.from('app_settings')
+      .upsert({ key: 'visit_target_per_day', value: String(val), updated_at: new Date().toISOString() }, { onConflict: 'key' });
+    if (error) { showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
+    target = val;
+    showToast(`Target ${val} toko/hari tersimpan`);
+    renderAll();
+  }
+
+  // ── CETAK (pengganti kertas HVS) ─────────────────────────
+  function printSchedule() {
+    if (!selSalesId) { showToast('Pilih sales dulu', 'warning'); return; }
+    const days = [1,2,3,4,5,6,7].filter(d => rowsFor(selSalesId, d).length);
+    if (!days.length) { showToast('Sales ini belum punya jadwal', 'warning'); return; }
+
+    const html = days.map(d => {
+      const rows = rowsFor(selSalesId, d)
+        .map(s => ({ s, c: customerById[s.customer_id] }))
+        .sort((a, b) => (a.c.store_name || a.c.name).localeCompare(b.c.store_name || b.c.name));
+      return `<div class="pr-day">
+        <h3>${HARI[d]} — ${rows.length} toko</h3>
+        <table>
+          <thead><tr><th style="width:24px">No</th><th>Toko</th><th>Alamat</th><th style="width:95px">Telepon</th><th style="width:70px">Ket.</th><th class="ck">✓</th></tr></thead>
+          <tbody>${rows.map(({ s, c }, i) => `<tr>
+            <td>${i + 1}</td>
+            <td><b>${escapeHtml(c.store_name || c.name)}</b>${c.store_name ? `<br>${escapeHtml(c.name)}` : ''}</td>
+            <td>${escapeHtml(c.address || '')}</td>
+            <td>${escapeHtml(c.phone || '')}</td>
+            <td>${s.every_week ? 'Tiap minggu' : ''}</td>
+            <td class="ck"></td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+    }).join('');
+
+    document.getElementById('print-area').innerHTML = `
+      <div class="pr-title">Jadwal Kunjungan — ${escapeHtml(salesName(selSalesId))}</div>
+      <div class="pr-sub">DIANA KOSMETIK · dicetak ${formatDate(new Date())} · Toko yang sudah PO minggu lalu boleh dilewati, kecuali "Tiap minggu" atau ada tagihan jatuh tempo — cek tab "Hari Ini" di HP.</div>
+      ${html}`;
+    window.print();
+  }
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>
