@@ -4,7 +4,7 @@
 --
 -- Toko WAJIB dikunjungi minggu ini atau tidak TIDAK disimpan di sini — dihitung
 -- otomatis di sales.html (tab "Hari Ini") dari faktur:
---   * sudah PO dalam 7 hari terakhir  → minggu ini tidak perlu didatangi
+--   * PO kurang dari 10 hari lalu     → minggu ini tidak perlu didatangi
 --   * kecuali every_week = true, atau toko punya tagihan jatuh tempo (datang nagih)
 -- Jadi pola "PO → 2 minggu lagi, tidak PO → minggu depan lagi" jalan sendiri tanpa
 -- ada yang perlu diisi tiap minggu.
