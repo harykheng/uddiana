@@ -292,7 +292,10 @@
           <tbody id="invoice-items-body"></tbody>
         </table>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="addItemRow()" style="margin-bottom:14px">+ Tambah Item</button>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button class="btn btn-ghost btn-sm" onclick="addItemRow()">+ Tambah Item</button>
+        <button class="btn btn-ghost btn-sm" onclick="openWaImport()">📋 Import dari Teks WA</button>
+      </div>
 
       <!-- BIAYA TAMBAHAN -->
       <div style="margin-bottom:12px">
@@ -322,6 +325,33 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-create-invoice')">Batal</button>
       <button class="btn btn-primary" id="btn-save-invoice" onclick="saveInvoice()">🧾 Simpan Faktur</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: IMPORT ITEM DARI TEKS WA
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-wa-import" data-no-overlay-close>
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3>📋 Import Item dari Teks WA</h3>
+      <button class="modal-close" onclick="closeModal('modal-wa-import')">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12.5px;color:var(--text-muted);margin:0 0 10px;line-height:1.5">
+        Tempel pesan pesanan dari WA, <b>1 baris = 1 barang</b>. Sertakan qty & satuan di tiap baris,
+        contoh <code>Mineral Botanica Toner 2 lusin</code> atau <code>RDL Serum Vit C 24 pcs</code>
+        — satuan <b>lusin/lsn</b> otomatis dikonversi ke pcs. Hasilnya cuma <b>ditambahkan sebagai
+        draft baris item</b> di form faktur ini, belum tersimpan — baris yang produknya tidak
+        otomatis ketemu atau satuannya tidak pasti akan ditandai <b>kuning</b>, wajib dicek &
+        dilengkapi manual sebelum klik Simpan Faktur.
+      </p>
+      <textarea id="wa-import-text" placeholder="Contoh:&#10;Mineral Botanica Toner 2 lusin&#10;RDL Serum Vit C 24 pcs&#10;Hanasui Lip Cream Matte 01 x3" style="min-height:160px;width:100%;box-sizing:border-box;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical"></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-wa-import')">Batal</button>
+      <button class="btn btn-primary" onclick="parseAndImportWaText()">🔎 Parse & Tambahkan ke Faktur</button>
     </div>
   </div>
 </div>
@@ -831,6 +861,125 @@
       dropdownParent: 'body',
       onChange: () => onProductSelect(sel, id)
     });
+    return id;
+  }
+
+  // ── IMPORT ITEM DARI TEKS WA ────────────────────────────────
+  // Admin tempel teks order WA, tiap baris diparse jadi qty+produk lalu
+  // ditambahkan sebagai baris item draft lewat addItemRow()+onProductSelect()
+  // yang sama dengan input manual — tidak ada jalur baru ke invoice_items,
+  // cuma otomatisasi pengisian form yang sudah ada. Baris yang produknya
+  // tidak ketemu atau satuannya tidak pasti (dus/box/x-notation/angka polos
+  // tanpa satuan) ditandai kuning, qty TETAP diisi sebagai perkiraan awal
+  // tapi wajib dicek manual sebelum Simpan — tidak pernah auto-submit.
+  function openWaImport() {
+    document.getElementById('wa-import-text').value = '';
+    openModal('modal-wa-import');
+  }
+
+  // Satuan lusin/lsn/dz/dozen -> dikonversi pasti ke pcs (x12).
+  // Satuan pcs/pc/buah/biji/unit/botol/btl -> qty pcs apa adanya, pasti.
+  // Satuan dus/box/karton/pack/pak, notasi "x3"/"3x", atau angka polos di
+  // akhir baris tanpa satuan sama sekali -> qty diambil sebagai perkiraan
+  // tapi ditandai assumed=true (satuan sebenarnya belum pasti = pcs).
+  function extractQtyPcs(line) {
+    let m = line.match(/(\d+(?:[.,]\d+)?)\s*(lusin|lsn|dozen|dz)\b/i);
+    if (m) {
+      const n = parseFloat(m[1].replace(',', '.'));
+      return { qty: Math.round(n * 12), rest: line.slice(0, m.index) + line.slice(m.index + m[0].length), assumed: false };
+    }
+    m = line.match(/(\d+)\s*(pcs|pc|buah|biji|unit|botol|btl)\b/i);
+    if (m) {
+      return { qty: parseInt(m[1]), rest: line.slice(0, m.index) + line.slice(m.index + m[0].length), assumed: false };
+    }
+    m = line.match(/(\d+)\s*(dus|box|karton|pack|pak)\b/i);
+    if (m) {
+      return { qty: parseInt(m[1]), rest: line.slice(0, m.index) + line.slice(m.index + m[0].length), assumed: true };
+    }
+    m = line.match(/\bx\s*(\d+)\b/i) || line.match(/\b(\d+)\s*x\b/i);
+    if (m) {
+      return { qty: parseInt(m[1]), rest: line.slice(0, m.index) + line.slice(m.index + m[0].length), assumed: true };
+    }
+    m = line.match(/(\d+)\s*$/);
+    if (m) {
+      return { qty: parseInt(m[1]), rest: line.slice(0, m.index), assumed: true };
+    }
+    return { qty: null, rest: line, assumed: true };
+  }
+
+  function normalizeProdukText(s) {
+    return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  // Cocokkan sisa teks baris (setelah qty/satuan dibuang) ke nama produk via
+  // overlap kata, dinormalisasi dengan panjang kata terbanyak (query atau nama
+  // produk) supaya 1 kata umum yang kebetulan sama (misal "serum") tidak
+  // langsung dianggap cocok ke produk acak — minimal 60% kata nyambung.
+  function cariProdukTerbaik(teks) {
+    const norm = normalizeProdukText(teks);
+    if (!norm) return null;
+    const words = norm.split(' ').filter(w => w.length >= 2);
+    if (!words.length) return null;
+    let terbaik = null, skorTerbaik = 0;
+    for (const p of products) {
+      const namaP = normalizeProdukText(p.name);
+      const wordsP = namaP.split(' ').filter(Boolean);
+      let cocok = 0;
+      for (const w of words) if (wordsP.includes(w)) cocok++;
+      const skor = cocok / Math.max(words.length, wordsP.length);
+      if (skor > skorTerbaik) { skorTerbaik = skor; terbaik = p; }
+    }
+    if (!terbaik || skorTerbaik < 0.6) return null;
+    return terbaik;
+  }
+
+  function parseAndImportWaText() {
+    const raw = document.getElementById('wa-import-text').value;
+    const baris = raw.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!baris.length) { showToast('Teks kosong', 'error'); return; }
+
+    // Baris item masih kosong bawaan dari openCreateInvoice()? Bersihkan dulu
+    // supaya tidak nyisa 1 baris kosong nyampur di atas hasil import.
+    const rowsNow = document.querySelectorAll('#invoice-items-body tr[id]');
+    if (rowsNow.length === 1) {
+      const onlySel = rowsNow[0].querySelector('select');
+      if (!onlySel || !onlySel.value) removeItemRow(rowsNow[0].id);
+    }
+
+    let cocok = 0, perluCek = 0;
+
+    baris.forEach(line => {
+      const bersih = line.replace(/^[-•*]\s*/, '').replace(/^\d+[.)]\s*/, '');
+      const { qty, rest, assumed } = extractQtyPcs(bersih);
+      const namaProduk = rest.trim();
+      const produk = cariProdukTerbaik(namaProduk || bersih);
+
+      const id = addItemRow();
+      const tr = document.getElementById(id);
+
+      if (produk) { tomSelectInstances[id].setValue(produk.id); cocok++; }
+      else perluCek++;
+
+      if (qty && qty > 0) {
+        document.getElementById(`qty-${id}`).value = qty.toLocaleString('id-ID');
+        onQtyChange(id);
+      }
+
+      if (!produk || assumed || !qty) {
+        tr.style.background = '#fffbeb';
+        tr.title = `Dari teks WA: "${line}"` +
+          (!produk ? ' — produk tidak otomatis ketemu, pilih manual' : '') +
+          ((assumed || !qty) ? ' — qty/satuan perlu dicek' : '');
+      }
+    });
+
+    recalcTotal();
+    closeModal('modal-wa-import');
+    document.getElementById('wa-import-text').value = '';
+
+    let msg = `✅ ${cocok} baris otomatis cocok`;
+    if (perluCek) msg += `, ⚠️ ${perluCek} perlu dicek manual (baris kuning)`;
+    showToast(msg, perluCek ? 'warning' : 'success');
   }
 
   function onProductSelect(sel, rowId) {
