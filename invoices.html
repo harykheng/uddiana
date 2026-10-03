@@ -917,8 +917,19 @@
   }
 
   function normalizeProdukText(s) {
-    return (s || '').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   }
+
+  // Buang isi tanda kurung — dipakai sebagai salah satu dari 2 cara baca di
+  // cariProdukTerbaik(), BUKAN diterapkan begitu saja di normalizeProdukText,
+  // karena isi kurung kadang catatan ("(ALL warna)", "(harga dikonfirmasi)")
+  // tapi kadang justru NAMA VARIAN asli produk ("(Creme)", "(Kecil)", "(Biru)")
+  // — contoh nyata: "Marcks Bedak Beauty Powder ( Creme ) 40gr" vs
+  // "( Invisible )" vs "( Natural Beige )" vs "( Rose )" cuma beda di isi
+  // kurungnya; kalau dihapus semua jadi "Marcks Bedak Beauty Powder 40gr"
+  // yang IDENTIK buat ke-4 varian, jadi dianggap ambigu dan tidak ada yang
+  // ketemu walau namanya sama persis dengan database.
+  function stripKurung(s) { return s.replace(/\([^)]*\)/g, ' '); }
 
   function levenshtein(a, b) {
     const m = a.length, n = b.length;
@@ -956,26 +967,55 @@
   // yang ditulis toko di WA (contoh: WA "Pixy Refill 05" vs DB "Pixy UV
   // Whitening Two Way Cake Refill 05 Natural") — kalau dihukum karena nama
   // produk lebih panjang, hampir semua singkatan WA jadi tidak pernah cocok.
-  // Minimal 60% kata di teks WA nyambung, DAN kandidat terbaik harus menang
-  // jelas dari kandidat ke-2 (skorKedua < skorTerbaik*0.85) — supaya kalau 2
-  // produk sama-sama cocok (misal dua varian yang cuma beda merek) dianggap
-  // TIDAK ketemu, bukan asal pilih yang pertama ditemukan.
-  function cariProdukTerbaik(teks) {
+  // Minimal 60% kata di teks WA nyambung.
+  //
+  // Ambigu = kandidat terbaik TIDAK punya satu pun kata pembeda dibanding
+  // kandidat lain yang juga lolos ambang (yaitu semua kata yang bikin dia
+  // "terbaik" ikut dipunyai kandidat lain itu juga) — bukan sekadar skornya
+  // mepet. Ini supaya 2 kasus beda bisa dibedakan dengan benar:
+  //  - "Pasta Gigi Kecil" cocok ke Pepsodent & CloseUp SAMA PERSIS (kata yang
+  //    cocok di keduanya identik, ga ada pembeda) -> ambigu, ditolak.
+  //  - "...Extra Vitamin E 100ml" vs produk lain "...Extra Lidah Buaya 100ml"
+  //    cuma beda 1 kata ("vitamin") dari 7 kata, skor lawannya jadi tinggi
+  //    (6/7) -- tapi kata "vitamin" itu PEMBEDA NYATA (ga ada di kandidat
+  //    lain), jadi harus tetap dianggap ketemu, bukan ditolak cuma karena
+  //    skor keduanya kebetulan mepet secara persentase.
+  function cariKandidat(teks) {
     const norm = normalizeProdukText(teks);
     if (!norm) return null;
     const words = norm.split(' ').filter(w => w.length >= 2);
     if (!words.length) return null;
-    let terbaik = null, skorTerbaik = 0, skorKedua = 0;
-    for (const p of products) {
+    const kandidat = products.map(p => {
       const wordsP = normalizeProdukText(p.name).split(' ').filter(Boolean);
-      let cocok = 0;
-      for (const w of words) if (wordsP.some(wp => kataCocok(w, wp))) cocok++;
-      const skor = cocok / words.length;
-      if (skor > skorTerbaik) { skorKedua = skorTerbaik; skorTerbaik = skor; terbaik = p; }
-      else if (skor > skorKedua) { skorKedua = skor; }
+      const cocok = words.filter(w => wordsP.some(wp => kataCocok(w, wp)));
+      return { p, cocok, skor: cocok.length / words.length };
+    });
+    let terbaik = null;
+    for (const k of kandidat) if (!terbaik || k.skor > terbaik.skor) terbaik = k;
+    if (!terbaik || terbaik.skor < 0.6) return null;
+    const ambigu = kandidat.some(k =>
+      k.p !== terbaik.p && k.skor >= 0.6 &&
+      terbaik.cocok.every(w => k.cocok.includes(w))
+    );
+    if (ambigu) return null;
+    return terbaik.p;
+  }
+
+  // Coba 2 cara baca sekaligus: isi kurung dipertahankan sebagai kata biasa
+  // (penting kalau kurung = nama varian asli, cth Marcks Bedak di atas), DAN
+  // isi kurung dibuang (penting kalau kurung cuma catatan yang bukan bagian
+  // nama produk, cth "(harga dikonfirmasi)" — kalau dipaksa ikut dicocokkan,
+  // kata catatan itu cuma nurunin skor recall buat nama produk yang pendek).
+  // Kalau KEDUA cara dapat kandidat tapi produknya BEDA, dianggap ambigu
+  // (tidak ketemu) daripada asal pilih salah satu; kalau cuma salah satu
+  // yang dapat kandidat, pakai itu.
+  function cariProdukTerbaik(teks) {
+    const kandidatUtuh = cariKandidat(teks);
+    const kandidatTanpaKurung = cariKandidat(stripKurung(teks));
+    if (kandidatUtuh && kandidatTanpaKurung) {
+      return kandidatUtuh.id === kandidatTanpaKurung.id ? kandidatUtuh : null;
     }
-    if (!terbaik || skorTerbaik < 0.6 || skorKedua >= skorTerbaik * 0.85) return null;
-    return terbaik;
+    return kandidatUtuh || kandidatTanpaKurung || null;
   }
 
   function parseAndImportWaText() {
