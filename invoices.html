@@ -901,8 +901,16 @@
     if (m) {
       return { qty: parseInt(m[1]), rest: line.slice(0, m.index) + line.slice(m.index + m[0].length), assumed: true };
     }
+    // Angka polos di akhir baris TANPA satuan sama sekali -- tapi SKIP kalau
+    // berpadding nol (01, 02, 05, dst.): itu hampir pasti kode varian/shade
+    // kosmetik, bukan qty yang diketik manusia (orang nulis qty "5", bukan
+    // "05"). Kalau dipotong jadi qty, nama produknya ikut terpotong dan
+    // kehilangan pembeda varian -- berakibat baris itu jadi TIDAK ketemu
+    // sama sekali ketika admin paste nama produk asli apa adanya (misal
+    // "Hanasui Lip Cream Matte 01" / "...02" / "...05" semua jadi
+    // "Hanasui Lip Cream Matte" doang, dianggap ambigu, dianggap tidak ada).
     m = line.match(/(\d+)\s*$/);
-    if (m) {
+    if (m && !/^0\d/.test(m[1])) {
       return { qty: parseInt(m[1]), rest: line.slice(0, m.index), assumed: true };
     }
     return { qty: null, rest: line, assumed: true };
