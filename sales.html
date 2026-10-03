@@ -250,6 +250,36 @@
     .toast-warning { background: #78350f; }
     .toast-warning .toast-icon { color: #fcd34d; }
 
+    /* LOADING AWAL — menutup halaman sampai semua data (termasuk jadwal Hari Ini)
+       selesai dimuat, supaya tidak tampil tab Buat Faktur dulu lalu loncat */
+    #init-loading {
+      position: fixed; inset: 0; z-index: 10001; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+      transition: opacity .2s;
+    }
+    #init-loading.hide { opacity: 0; pointer-events: none; }
+    #init-loading .big-spinner {
+      width: 48px; height: 48px; border-radius: 50%;
+      border: 5px solid rgba(37,99,235,.2); border-top-color: var(--primary);
+      animation: spin .8s linear infinite;
+    }
+    #init-loading .txt { font-size: 15px; font-weight: 600; color: #334155; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* showFullLoading() di utils.js (dipakai submit Absen) — css/style.css tidak
+       dimuat di halaman ini, jadi overlay-nya perlu gaya sendiri */
+    .full-loading-overlay {
+      position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 10000;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none; transition: opacity .15s;
+    }
+    .full-loading-overlay.show { opacity: 1; pointer-events: all; }
+    .full-loading-box {
+      background: #fff; border-radius: 12px; padding: 20px 28px; display: flex; align-items: center; gap: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,.3); font-size: 14px; font-weight: 600; color: var(--text);
+    }
+    .spinner { display: inline-block; width: 20px; height: 20px; border-radius: 50%; border: 3px solid rgba(37,99,235,.25); border-top-color: var(--primary); animation: spin .7s linear infinite; }
+
     /* TAB HARI INI (jadwal kunjungan) */
     .tv-days { display:flex; gap:6px; overflow-x:auto; padding:12px 14px; }
     .tv-day { flex:none; padding:7px 12px; border:1.5px solid var(--border); border-radius:20px; background:#fff; font-size:12.5px; font-weight:600; color:var(--muted); cursor:pointer; }
@@ -288,6 +318,11 @@
   </style>
 </head>
 <body>
+
+<div id="init-loading">
+  <div class="big-spinner"></div>
+  <div class="txt" id="init-loading-text">Memuat data...</div>
+</div>
 
 <nav class="topnav">
   <div class="topnav-brand">
@@ -668,23 +703,47 @@
 
     document.getElementById('inv-date').value = new Date().toISOString().split('T')[0];
 
-    await Promise.all([loadProducts(), loadCustomers(), loadHistory(), loadOmzetBar(), loadDiscountRules()]);
-    addItem();
-    initAbsenSelect();
-    await initAbsenTabVisibility();   // tombol 📍 Absen di tab Hari Ini ikut setting ini
+    // Layar loading (#init-loading) menutup halaman sampai semua selesai, termasuk
+    // jadwal Hari Ini — tanpa ini tab Buat Faktur tampil dulu lalu loncat ke Hari Ini.
+    // Pengaman: kalau ada request yang menggantung, layar dibuka paksa setelah 20 detik.
+    const failsafe = setTimeout(hideInitLoading, 20000);
+    try {
+      // Semua query yang tidak saling bergantung dijalankan bersamaan
+      const results = await Promise.all([
+        loadProducts(), loadCustomers(), loadHistory(), loadOmzetBar(), loadDiscountRules(),
+        initAbsenTabVisibility(),   // tombol 📍 Absen di tab Hari Ini ikut setting ini
+        // Jadwal kunjungan masih uji coba: cuma aktif untuk akun yang dipilih di
+        // jadwal-kunjungan.html (app_settings.jadwal_tab_visible_for = user id / 'all').
+        // Akun lain: tab tidak tampil dan toko baru tidak otomatis masuk jadwal.
+        isJadwalEnabled(),
+      ]);
+      jadwalEnabled = results[results.length - 1];
+      addItem();
+      initAbsenSelect();
 
-    // Jadwal kunjungan masih uji coba: cuma aktif untuk akun yang dipilih di
-    // jadwal-kunjungan.html (app_settings.jadwal_tab_visible_for = user id / 'all').
-    // Akun lain: tab tidak tampil dan toko baru tidak otomatis masuk jadwal.
-    jadwalEnabled = await isJadwalEnabled();
-    if (!jadwalEnabled) return;
-    document.getElementById('tab-btn-today').style.display = '';
+      if (jadwalEnabled) {
+        document.getElementById('tab-btn-today').style.display = '';
+        document.getElementById('init-loading-text').textContent = 'Memuat jadwal hari ini...';
+        // Sales yang sudah punya jadwal langsung dibuka di tab Hari Ini. todayLoaded
+        // baru di-set setelahnya supaya switchTab di sini tidak memuat ulang data.
+        await loadToday();
+        switchTab(mySchedules.length ? 'tab-today' : 'tab-new');
+        todayLoaded = true;
+      }
+    } catch (err) {
+      console.error('init:', err);
+      showToast('Sebagian data gagal dimuat, coba muat ulang halaman', 'error');
+    } finally {
+      clearTimeout(failsafe);
+      hideInitLoading();
+    }
+  }
 
-    // Sales yang sudah punya jadwal langsung dibuka di tab Hari Ini. todayLoaded
-    // baru di-set setelahnya supaya switchTab di sini tidak memuat ulang data.
-    await loadToday();
-    switchTab(mySchedules.length ? 'tab-today' : 'tab-new');
-    todayLoaded = true;
+  function hideInitLoading() {
+    const el = document.getElementById('init-loading');
+    if (!el || el.classList.contains('hide')) return;
+    el.classList.add('hide');
+    setTimeout(() => el.remove(), 250);
   }
 
   async function isJadwalEnabled() {
