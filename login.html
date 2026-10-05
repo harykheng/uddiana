@@ -155,6 +155,7 @@
   </div>
 
 <script src="js/config.js"></script>
+<script src="js/auth.js"></script>
 <script>
   document.getElementById('password').addEventListener('keydown', e => {
     if (e.key === 'Enter') doLogin();
@@ -203,7 +204,7 @@
       return;
     }
 
-    window.location.href = (profile.role === 'admin' || profile.role === 'super_admin') ? 'index.html' : 'sales.html';
+    window.location.href = homePageForRole(profile.role);
   }
 
   function showError(msg) {
@@ -217,7 +218,7 @@
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
       const { data: profile } = await supabase.from('user_profiles').select('role').eq('id', session.user.id).single();
-      if (profile) window.location.href = (profile.role === 'admin' || profile.role === 'super_admin') ? 'index.html' : 'sales.html';
+      if (profile) window.location.href = homePageForRole(profile.role);
     }
   })();
 </script>

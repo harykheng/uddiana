@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retur Toko — DIANA KOSMETIK</title>
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* Dipakai di tablet (karyawan gudang) — tombol & baris dibuat besar untuk jari,
+       dua kolom di layar ≥ 900px (pilih barang | daftar retur), menumpuk di bawah itu. */
+    body { background: var(--bg); }
+
+    .init-loading { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 2000; flex-direction: column; gap: 12px; color: var(--text-muted); font-size: 14px; }
+    .init-loading.hide { display: none; }
+
+    .rt-top { position: sticky; top: 0; z-index: 50; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 20px; padding: 10px 24px; flex-wrap: wrap; }
+    .rt-brand { display: flex; align-items: center; gap: 10px; }
+    .rt-brand-icon { width: 40px; height: 40px; border-radius: 10px; background: var(--primary); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .rt-brand b { display: block; font-size: 16px; line-height: 1.2; }
+    .rt-brand small { color: var(--text-muted); font-size: 11px; letter-spacing: .04em; }
+    .rt-tabs { display: flex; gap: 8px; flex: 1; justify-content: center; }
+    .rt-tab { border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted); font-size: 15px; font-weight: 700; padding: 10px 22px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; min-height: 46px; }
+    .rt-tab.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .rt-tab .count { background: #f59e0b; color: #fff; border-radius: 999px; font-size: 12px; padding: 1px 8px; }
+    .rt-tab .count:empty { display: none; }
+    .rt-user { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-muted); }
+    .rt-user strong { color: var(--text); }
+
+    .rt-main { max-width: 1320px; margin: 0 auto; padding: 20px 24px 40px; }
+    .rt-label { display: block; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 8px; }
+    .rt-step { padding: 18px 20px; margin-bottom: 18px; }
+    .rt-step .ts-control { min-height: 52px; font-size: 16px; padding: 12px 14px; }
+    .rt-step .ts-dropdown .option { padding: 10px 14px; font-size: 15px; }
+    .opt-sub { display: block; font-size: 12px; color: var(--text-muted); }
+
+    .rt-grid { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
+    @media (min-width: 900px) {
+      .rt-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+      .rt-cart { position: sticky; top: 90px; }
+    }
+    .rt-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 16px 18px 10px; }
+    .rt-card-head h3 { font-size: 16px; font-weight: 800; }
+    .rt-card-head small { color: var(--text-muted); font-size: 12px; }
+    .rt-search { padding: 0 18px 12px; }
+    .rt-search input { min-height: 48px; font-size: 16px; }
+
+    .rt-plist { max-height: 55vh; min-height: 200px; overflow-y: auto; border-top: 1px solid var(--border); }
+    @media (min-width: 900px) { .rt-plist { max-height: calc(100vh - 290px); } }
+    .rt-prod { display: flex; align-items: center; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+    .rt-prod:last-child { border-bottom: none; }
+    .rt-prod.in-cart { background: var(--primary-light); }
+    .rt-prod.habis { opacity: .5; }
+    .rt-thumb { width: 56px; height: 56px; border-radius: 10px; background: #e2e8f0; flex-shrink: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #64748b; font-size: 16px; }
+    .rt-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .rt-pinfo { flex: 1; min-width: 0; }
+    .rt-pname { font-size: 15px; font-weight: 700; line-height: 1.3; }
+    .rt-pmeta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .rt-psisa { font-size: 13px; margin-top: 3px; }
+    .rt-psisa b { color: var(--success); }
+    .rt-add { min-height: 46px; min-width: 104px; font-size: 14px; }
+
+    .rt-cart-list { border-top: 1px solid var(--border); }
+    .rt-cart-empty { padding: 28px 18px; text-align: center; color: var(--text-muted); font-size: 14px; }
+    .rt-citem { padding: 12px 18px; border-bottom: 1px solid var(--border); }
+    .rt-citem-top { display: flex; align-items: flex-start; gap: 10px; }
+    .rt-citem-name { flex: 1; font-weight: 700; font-size: 14px; line-height: 1.3; }
+    .rt-remove { border: none; background: var(--danger-light); color: var(--danger); width: 36px; height: 36px; border-radius: 8px; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+    .rt-qty { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+    .rt-qty button.step { width: 46px; height: 46px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface); font-size: 22px; font-weight: 700; cursor: pointer; color: var(--text); }
+    .rt-qty input { width: 84px; height: 46px; text-align: center; font-size: 18px; font-weight: 800; padding: 0 6px; }
+    .rt-qty .max { font-size: 12px; color: var(--text-muted); }
+    .rt-qty .btn-max { border: 1.5px solid var(--border); background: var(--surface); border-radius: 8px; padding: 0 12px; height: 36px; font-size: 12px; font-weight: 700; cursor: pointer; color: var(--primary); }
+    .rt-qty .lsn { font-size: 12px; color: var(--text-muted); width: 100%; }
+
+    .rt-section { padding: 14px 18px; border-top: 1px solid var(--border); }
+    .rt-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .rt-chip { border: 1.5px solid var(--border); background: var(--surface); border-radius: 999px; padding: 10px 16px; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 44px; color: var(--text); }
+    .rt-chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .rt-photo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .rt-photo-btn { display: inline-flex; align-items: center; gap: 8px; border: 1.5px dashed #94a3b8; border-radius: 10px; padding: 12px 18px; font-size: 14px; font-weight: 700; cursor: pointer; color: var(--text); background: #f8fafc; min-height: 48px; }
+    .rt-photo-btn input { display: none; }
+    .rt-photo-preview { width: 84px; height: 84px; border-radius: 10px; object-fit: cover; border: 1px solid var(--border); }
+    .rt-submit { width: 100%; min-height: 56px; font-size: 17px; justify-content: center; }
+    .rt-summary { font-size: 13px; color: var(--text-muted); text-align: center; margin-top: 8px; }
+
+    .rt-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+    .rt-empty .icon { font-size: 52px; margin-bottom: 10px; }
+    .rt-empty h4 { color: var(--text); font-size: 17px; margin-bottom: 4px; }
+
+    .rt-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .rt-hcard { padding: 16px 18px; margin-bottom: 12px; }
+    .rt-hhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .rt-hhead .toko { font-size: 16px; font-weight: 800; }
+    .rt-hhead .meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .rt-hret { margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .rt-hret-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 12px; background: #f8fafc; font-size: 13px; font-weight: 700; }
+    .rt-hret ul { list-style: none; padding: 6px 12px 10px; margin: 0; font-size: 14px; }
+    .rt-hret li { padding: 3px 0; display: flex; justify-content: space-between; gap: 12px; }
+    .rt-hret li span:last-child { font-weight: 700; white-space: nowrap; }
+    .rt-reject { background: var(--danger-light); color: #991b1b; font-size: 13px; padding: 8px 12px; border-top: 1px solid #fecaca; }
+    .st { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+    .st-pending  { background: #fef9c3; color: #92400e; }
+    .st-approved { background: #dcfce7; color: #166534; }
+    .st-rejected { background: #fee2e2; color: #991b1b; }
+
+    @media (max-width: 700px) {
+      .rt-top { padding: 10px 16px; gap: 10px; }
+      .rt-tabs { order: 3; width: 100%; justify-content: stretch; }
+      .rt-tab { flex: 1; justify-content: center; padding: 8px 10px; font-size: 14px; }
+      .rt-main { padding: 14px 16px 32px; }
+      .rt-user span.nm { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="init-loading" id="init-loading">
+  <span class="spinner spinner-lg"></span>
+  <span>Memuat...</span>
+</div>
+
+<header class="rt-top">
+  <div class="rt-brand">
+    <div class="rt-brand-icon">↩️</div>
+    <div><b>Retur Toko</b><small>DIANA KOSMETIK</small></div>
+  </div>
+  <nav class="rt-tabs">
+    <button class="rt-tab active" id="tabbtn-input" onclick="switchTab('input')">➕ Input Retur</button>
+    <button class="rt-tab" id="tabbtn-riwayat" onclick="switchTab('riwayat')">📋 Riwayat <span class="count" id="pending-count"></span></button>
+  </nav>
+  <div class="rt-user">
+    <a href="index.html" id="back-admin" class="btn btn-ghost btn-sm" style="display:none">← Admin</a>
+    <span class="nm">👤 <strong id="user-name"></strong></span>
+    <button class="btn btn-ghost btn-sm" onclick="signOut()">🚪 Keluar</button>
+  </div>
+</header>
+
+<main class="rt-main">
+
+  <!-- ── TAB INPUT ─────────────────────────────────────────── -->
+  <section id="tab-input">
+    <div class="card rt-step">
+      <label class="rt-label" for="customer-select">1. Pilih Toko</label>
+      <select id="customer-select"></select>
+    </div>
+
+    <div id="input-placeholder" class="card rt-empty">
+      <div class="icon">🏪</div>
+      <h4>Pilih toko dulu</h4>
+      <p>Setelah toko dipilih, barang yang pernah dibeli toko itu akan muncul di sini.</p>
+    </div>
+
+    <div id="input-body" class="rt-grid" style="display:none">
+      <!-- Kolom kiri: barang yang pernah dibeli -->
+      <div class="card">
+        <div class="rt-card-head">
+          <div>
+            <h3>2. Pilih Barang</h3>
+            <small id="product-count"></small>
+          </div>
+        </div>
+        <div class="rt-search">
+          <input type="text" inputmode="search" enterkeyhint="search" id="product-search" placeholder="🔍 Cari nama barang atau SKU..." oninput="renderProducts()" autocomplete="off">
+        </div>
+        <div class="rt-plist" id="product-list"></div>
+      </div>
+
+      <!-- Kolom kanan: daftar retur -->
+      <div class="card rt-cart">
+        <div class="rt-card-head">
+          <div>
+            <h3>3. Daftar Retur</h3>
+            <small id="cart-store"></small>
+          </div>
+        </div>
+        <div class="rt-cart-list" id="cart-list"></div>
+
+        <div class="rt-section">
+          <label class="rt-label">Alasan Retur *</label>
+          <div class="rt-chips" id="reason-chips"></div>
+          <input type="text" id="reason-other" placeholder="Tulis alasannya..." style="margin-top:10px;display:none;min-height:46px;font-size:15px">
+        </div>
+
+        <div class="rt-section">
+          <label class="rt-label" for="retur-notes">Catatan (opsional)</label>
+          <textarea id="retur-notes" rows="2" placeholder="Contoh: kemasan penyok, segel terbuka" style="min-height:64px;font-size:15px"></textarea>
+        </div>
+
+        <div class="rt-section">
+          <label class="rt-label">Foto Barang (opsional)</label>
+          <div class="rt-photo-row">
+            <label class="rt-photo-btn">
+              📷 <span id="photo-btn-text">Ambil / Pilih Foto</span>
+              <input type="file" id="photo-input" accept="image/*" onchange="onPhotoSelected(this)">
+            </label>
+            <img id="photo-preview" class="rt-photo-preview" style="display:none" alt="Pratinjau foto">
+            <button type="button" id="photo-remove" class="btn btn-ghost btn-sm" style="display:none" onclick="clearPhoto()">✕ Hapus foto</button>
+          </div>
+          <div id="photo-status" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
+        </div>
+
+        <div class="rt-section">
+          <button class="btn btn-primary rt-submit" id="btn-submit" onclick="submitRetur()" disabled>Kirim Retur</button>
+          <div class="rt-summary">Retur dicek &amp; disetujui admin dulu sebelum stok masuk.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── TAB RIWAYAT ───────────────────────────────────────── -->
+  <section id="tab-riwayat" style="display:none">
+    <div class="rt-filter" id="history-filter">
+      <button class="rt-chip active" data-status="" onclick="setHistoryFilter(this)">Semua</button>
+      <button class="rt-chip" data-status="pending" onclick="setHistoryFilter(this)">🟡 Menunggu</button>
+      <button class="rt-chip" data-status="approved" onclick="setHistoryFilter(this)">🟢 Disetujui</button>
+      <button class="rt-chip" data-status="rejected" onclick="setHistoryFilter(this)">🔴 Ditolak</button>
+    </div>
+    <div id="history-list"></div>
+  </section>
+</main>
+
+<!-- MODAL: retur terkirim -->
+<div class="modal-overlay" id="modal-success">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <h3>✅ Retur terkirim</h3>
+      <button class="modal-close" onclick="closeModal('modal-success')">×</button>
+    </div>
+    <div class="modal-body" id="success-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="closeModal('modal-success')" style="min-height:46px;min-width:120px;justify-content:center">Oke</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  // Alasan sama dengan retur.html
+  const REASONS = ['Barang Rusak', 'Salah Kirim', 'Kelebihan Order', 'Kadaluarsa', 'Lainnya'];
+  const PHOTO_BUCKET = 'return-photos';
+  const PRODUCT_PHOTO_BUCKET = 'product-photos';
+
+  let currentUser = null;
+  let customers = [];
+  let customerTS = null;
+  let selectedCustomer = null;
+  // Barang yang pernah dibeli toko terpilih:
+  // { product_id, name, sku, unit, photo, sisa, lastDate }
+  // Sengaja TANPA harga — karyawan gudang tidak perlu melihat harga.
+  let returnable = [];
+  let cart = [];            // [{ product_id, qty }] — urut sesuai ditambahkan
+  let selectedReason = '';
+  let photoBlob = null;
+  let loadSeq = 0;          // ganti toko cepat-cepat: hasil muatan lama dibuang
+  let historyRows = [];
+  let historyStatus = '';
+
+  // ── Init ───────────────────────────────────────────────────────────────
+  async function init() {
+    try {
+      const auth = await requireGudang();
+      if (!auth) return;
+      currentUser = auth;
+      document.getElementById('user-name').textContent = auth.profile.name;
+      if (auth.profile.role !== 'gudang') document.getElementById('back-admin').style.display = '';
+
+      renderReasonChips();
+      renderCart();
+      await Promise.all([loadCustomers(), loadHistory()]);
+    } finally {
+      document.getElementById('init-loading').classList.add('hide');
+    }
+  }
+
+  function switchTab(tab) {
+    document.getElementById('tab-input').style.display   = tab === 'input' ? '' : 'none';
+    document.getElementById('tab-riwayat').style.display = tab === 'riwayat' ? '' : 'none';
+    document.getElementById('tabbtn-input').classList.toggle('active', tab === 'input');
+    document.getElementById('tabbtn-riwayat').classList.toggle('active', tab === 'riwayat');
+    if (tab === 'riwayat') loadHistory();
+  }
+
+  // ── Toko ───────────────────────────────────────────────────────────────
+  async function loadCustomers() {
+    const { data, error } = await fetchAll(() =>
+      supabase.from('customers').select('id,name,store_name,address').order('name').order('id'));
+    if (error) { showToast('Gagal memuat daftar toko: ' + error.message, 'error'); return; }
+    customers = data || [];
+
+    if (customerTS) customerTS.destroy();
+    customerTS = new TomSelect('#customer-select', {
+      options: customers.map(c => ({
+        value: c.id,
+        text: c.store_name ? `${c.name} (${c.store_name})` : c.name,
+        address: c.address || '',
+      })),
+      searchField: ['text', 'address'],
+      placeholder: '— Ketik nama toko —',
+      maxOptions: 200,
+      render: {
+        option: (d, esc) => `<div>${esc(d.text)}${d.address ? `<span class="opt-sub">${esc(d.address)}</span>` : ''}</div>`,
+      },
+      onChange: val => onCustomerChange(val),
+    });
+  }
+
+  async function onCustomerChange(customerId) {
+    cart = [];
+    clearPhoto();
+    const seq = ++loadSeq;
+    selectedCustomer = customers.find(c => c.id === customerId) || null;
+
+    if (!selectedCustomer) {
+      document.getElementById('input-body').style.display = 'none';
+      document.getElementById('input-placeholder').style.display = '';
+      returnable = [];
+      return;
+    }
+
+    document.getElementById('input-placeholder').style.display = 'none';
+    document.getElementById('input-body').style.display = '';
+    document.getElementById('product-search').value = '';
+    document.getElementById('cart-store').textContent = customerLabel(selectedCustomer);
+    document.getElementById('product-count').textContent = '';
+    document.getElementById('product-list').innerHTML =
+      '<div class="rt-cart-empty"><span class="spinner spinner-lg"></span><div style="margin-top:8px">Memuat barang toko ini...</div></div>';
+    renderCart();
+
+    try {
+      const list = await fetchReturnable(customerId);
+      if (seq !== loadSeq) return;
+      returnable = list;
+      renderProducts();
+    } catch (err) {
+      if (seq !== loadSeq) return;
+      returnable = [];
+      document.getElementById('product-list').innerHTML =
+        `<div class="rt-cart-empty">Gagal memuat barang: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  function customerLabel(c) {
+    return c.store_name ? `${c.name} (${c.store_name})` : c.name;
+  }
+
+  // Barang yang pernah dibeli toko ini + sisa yang masih bisa diretur.
+  // Aturannya HARUS sama dengan create_store_return() (supabase_migration43.sql),
+  // yang memutuskan sungguhan saat retur dikirim — ini cuma tampilan:
+  //   faktur toko ini, bukan 'cancelled', verifikasi NULL/'approved';
+  //   sisa per faktur = terjual − retur pending/approved, tidak pernah < 0.
+  async function fetchReturnable(customerId) {
+    const { data: invs, error: invErr } = await fetchAll(() =>
+      supabase.from('invoices')
+        .select('id,invoice_date')
+        .eq('customer_id', customerId)
+        .neq('status', 'cancelled')
+        .or('verification_status.is.null,verification_status.eq.approved')
+        .order('id'));
+    if (invErr) throw new Error(invErr.message);
+    if (!invs.length) return [];
+
+    const invDate = {};
+    invs.forEach(i => { invDate[i.id] = i.invoice_date; });
+    const ids = invs.map(i => i.id);
+
+    const sold = {};      // `${inv}|${pid}` → qty
+    const returned = {};  // `${inv}|${pid}` → qty
+    const nameFallback = {};
+    const CHUNK = 200;    // jaga panjang URL query .in()
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const part = ids.slice(i, i + CHUNK);
+      const [itemsRes, retRes] = await Promise.all([
+        fetchAll(() => supabase.from('invoice_items')
+          .select('id,invoice_id,product_id,product_name,quantity')
+          .in('invoice_id', part).order('id')),
+        fetchAll(() => supabase.from('returns')
+          .select('id,invoice_id,return_items(product_id,quantity)')
+          .in('invoice_id', part).in('status', ['pending', 'approved']).order('id')),
+      ]);
+      if (itemsRes.error) throw new Error(itemsRes.error.message);
+      if (retRes.error) throw new Error(retRes.error.message);
+
+      itemsRes.data.forEach(it => {
+        if (!it.product_id) return;
+        const k = `${it.invoice_id}|${it.product_id}`;
+        sold[k] = (sold[k] || 0) + Number(it.quantity || 0);
+        nameFallback[it.product_id] = it.product_name;
+      });
+      retRes.data.forEach(r => (r.return_items || []).forEach(ri => {
+        if (!ri.product_id) return;
+        const k = `${r.invoice_id}|${ri.product_id}`;
+        returned[k] = (returned[k] || 0) + Number(ri.quantity || 0);
+      }));
+    }
+
+    const byProduct = {};
+    Object.keys(sold).forEach(k => {
+      const [invId, pid] = k.split('|');
+      const p = byProduct[pid] || (byProduct[pid] = { product_id: pid, sisa: 0, lastDate: '' });
+      p.sisa += Math.max(0, sold[k] - (returned[k] || 0));
+      if ((invDate[invId] || '') > p.lastDate) p.lastDate = invDate[invId] || '';
+    });
+
+    const pids = Object.keys(byProduct);
+    const prodInfo = {};
+    for (let i = 0; i < pids.length; i += CHUNK) {
+      const { data, error } = await supabase.from('products')
+        .select('id,name,sku,unit,photo_thumb_path')
+        .in('id', pids.slice(i, i + CHUNK));
+      if (error) throw new Error(error.message);
+      (data || []).forEach(p => { prodInfo[p.id] = p; });
+    }
+
+    return pids.map(pid => {
+      const info = prodInfo[pid] || {};
+      return {
+        ...byProduct[pid],
+        name:  info.name || nameFallback[pid] || '-',
+        sku:   info.sku || '',
+        unit:  info.unit || 'pcs',
+        photo: info.photo_thumb_path || null,
+      };
+    }).sort((a, b) =>
+      (b.sisa > 0) - (a.sisa > 0) ||
+      (b.lastDate || '').localeCompare(a.lastDate || '') ||
+      a.name.localeCompare(b.name, 'id'));
+  }
+
+  // ── Daftar barang ──────────────────────────────────────────────────────
+  function fotoUrl(path) {
+    return path ? supabase.storage.from(PRODUCT_PHOTO_BUCKET).getPublicUrl(path).data.publicUrl : null;
+  }
+
+  function initials(name) {
+    return (name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+  }
+
+  // "15 pcs (1 lsn + 3)" — sama dengan format stok di products.html
+  function formatQty(qty, unit) {
+    const u = unit || 'pcs';
+    if (u !== 'pcs' || qty < 12) return `${qty} ${u}`;
+    const lsn = Math.floor(qty / 12), sisa = qty % 12;
+    return `${qty} pcs (${lsn} lsn${sisa ? ' + ' + sisa : ''})`;
+  }
+
+  function renderProducts() {
+    const el = document.getElementById('product-list');
+    const q = document.getElementById('product-search').value.trim().toLowerCase();
+    const words = q.split(/\s+/).filter(Boolean);
+    const bisa = returnable.filter(p => p.sisa > 0).length;
+    document.getElementById('product-count').textContent =
+      returnable.length ? `${bisa} barang bisa diretur dari ${returnable.length} yang pernah dibeli` : '';
+
+    if (!returnable.length) {
+      el.innerHTML = '<div class="rt-cart-empty">Toko ini belum pernah membeli barang (atau semua fakturnya batal/ditolak).</div>';
+      return;
+    }
+
+    const rows = [];
+    returnable.forEach((p, idx) => {
+      const hay = `${p.name} ${p.sku}`.toLowerCase();
+      if (words.length && !words.every(w => hay.includes(w))) return;
+      const inCart = cart.some(c => c.product_id === p.product_id);
+      const habis = p.sisa <= 0;
+      const foto = fotoUrl(p.photo);
+      rows.push(`<div class="rt-prod${inCart ? ' in-cart' : ''}${habis ? ' habis' : ''}">
+        <div class="rt-thumb">${foto ? `<img src="${foto}" alt="" loading="lazy">` : escapeHtml(initials(p.name))}</div>
+        <div class="rt-pinfo">
+          <div class="rt-pname">${escapeHtml(p.name)}</div>
+          <div class="rt-pmeta">${p.sku ? escapeHtml(p.sku) + ' · ' : ''}Terakhir dibeli ${formatDate(p.lastDate)}</div>
+          <div class="rt-psisa">${habis
+            ? '<span style="color:var(--danger);font-weight:600">Sudah diretur semua</span>'
+            : `Bisa diretur: <b>${formatQty(p.sisa, p.unit)}</b>`}</div>
+        </div>
+        ${habis ? '' : inCart
+          ? `<button class="btn btn-ghost rt-add" onclick="removeFromCart(${idx})">✓ Di daftar</button>`
+          : `<button class="btn btn-primary rt-add" onclick="addToCart(${idx})">+ Retur</button>`}
+      </div>`);
+    });
+
+    el.innerHTML = rows.length ? rows.join('') : '<div class="rt-cart-empty">Barang tidak ditemukan.</div>';
+  }
+
+  // ── Daftar retur (keranjang) ───────────────────────────────────────────
+  function addToCart(idx) {
+    const p = returnable[idx];
+    if (!p || p.sisa <= 0 || cart.some(c => c.product_id === p.product_id)) return;
+    cart.push({ product_id: p.product_id, qty: 1 });
+    renderProducts();
+    renderCart();
+  }
+
+  function removeFromCart(idx) {
+    const p = returnable[idx];
+    if (!p) return;
+    cart = cart.filter(c => c.product_id !== p.product_id);
+    renderProducts();
+    renderCart();
+  }
+
+  function productOf(pid) {
+    return returnable.find(p => p.product_id === pid);
+  }
+
+  function setQty(pid, value) {
+    const item = cart.find(c => c.product_id === pid);
+    const p = productOf(pid);
+    if (!item || !p) return;
+    let q = parseInt(value, 10);
+    if (!Number.isFinite(q) || q < 1) q = 1;
+    if (q > p.sisa) { q = p.sisa; showToast(`Maksimal ${formatQty(p.sisa, p.unit)} untuk barang ini`, 'warning'); }
+    item.qty = q;
+    renderCart();
+  }
+
+  function stepQty(pid, delta) {
+    const item = cart.find(c => c.product_id === pid);
+    if (item) setQty(pid, item.qty + delta);
+  }
+
+  function renderCart() {
+    const el = document.getElementById('cart-list');
+    if (!cart.length) {
+      el.innerHTML = '<div class="rt-cart-empty">Belum ada barang. Tekan <b>+ Retur</b> pada barang di sebelah.</div>';
+    } else {
+      el.innerHTML = cart.map(c => {
+        const p = productOf(c.product_id);
+        if (!p) return '';
+        const lsn = p.unit === 'pcs' && c.qty >= 12 ? formatQty(c.qty, p.unit) : '';
+        return `<div class="rt-citem">
+          <div class="rt-citem-top">
+            <div class="rt-citem-name">${escapeHtml(p.name)}</div>
+            <button class="rt-remove" title="Hapus dari daftar" onclick="removeFromCart(${returnable.indexOf(p)})">×</button>
+          </div>
+          <div class="rt-qty">
+            <button class="step" onclick="stepQty('${p.product_id}', -1)" aria-label="Kurangi">−</button>
+            <input type="number" inputmode="numeric" min="1" max="${p.sisa}" value="${c.qty}"
+              onchange="setQty('${p.product_id}', this.value)" aria-label="Qty retur">
+            <button class="step" onclick="stepQty('${p.product_id}', 1)" aria-label="Tambah">+</button>
+            <span class="max">${escapeHtml(p.unit)} · maks ${p.sisa}</span>
+            ${c.qty < p.sisa ? `<button class="btn-max" onclick="setQty('${p.product_id}', ${p.sisa})">Semua</button>` : ''}
+            ${lsn ? `<span class="lsn">= ${lsn}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+    updateSubmitState();
+  }
+
+  // ── Alasan ─────────────────────────────────────────────────────────────
+  function renderReasonChips() {
+    document.getElementById('reason-chips').innerHTML = REASONS.map((r, i) =>
+      `<button type="button" class="rt-chip" data-idx="${i}" onclick="selectReason(${i})">${escapeHtml(r)}</button>`).join('');
+  }
+
+  function selectReason(i) {
+    selectedReason = REASONS[i];
+    document.querySelectorAll('#reason-chips .rt-chip').forEach(b =>
+      b.classList.toggle('active', Number(b.dataset.idx) === i));
+    const other = document.getElementById('reason-other');
+    other.style.display = selectedReason === 'Lainnya' ? '' : 'none';
+    if (selectedReason === 'Lainnya') other.focus();
+    updateSubmitState();
+  }
+
+  function reasonText() {
+    if (selectedReason !== 'Lainnya') return selectedReason;
+    const t = document.getElementById('reason-other').value.trim();
+    return t ? `Lainnya: ${t}` : '';
+  }
+
+  function updateSubmitState() {
+    const btn = document.getElementById('btn-submit');
+    if (btn.dataset.original !== undefined && btn.disabled && btn.innerHTML.includes('spinner')) return; // sedang mengirim
+    const totalQty = cart.reduce((s, c) => s + c.qty, 0);
+    btn.disabled = !(selectedCustomer && cart.length && reasonText());
+    btn.innerHTML = cart.length
+      ? `Kirim Retur · ${cart.length} barang, ${totalQty} pcs`
+      : 'Kirim Retur';
+  }
+  document.addEventListener('input', e => { if (e.target.id === 'reason-other') updateSubmitState(); });
+
+  // ── Foto (opsional) ────────────────────────────────────────────────────
+  // Dikecilkan di browser sebelum diunggah (maks 1200px, WebP; JPEG kalau browser
+  // tidak bisa membuat WebP) — bucket membatasi 1 MB/file. Pola sama dengan
+  // foto produk di products.html.
+  async function readImage(file) {
+    try {
+      return await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (_) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail; img.src = url; });
+        return img;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+  }
+
+  async function shrinkImage(src, maxSide, quality) {
+    const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight;
+    const scale = Math.min(1, maxSide / Math.max(w0, h0));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(w0 * scale));
+    canvas.height = Math.max(1, Math.round(h0 * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
+    let blob = await new Promise(res => canvas.toBlob(res, 'image/webp', quality));
+    if (!blob || blob.type !== 'image/webp') {
+      blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    }
+    return blob;
+  }
+
+  async function onPhotoSelected(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    const status = document.getElementById('photo-status');
+    status.textContent = 'Memproses foto...';
+    try {
+      const src = await readImage(file);
+      let blob = await shrinkImage(src, 1200, 0.75);
+      if (blob && blob.size > 900 * 1024) blob = await shrinkImage(src, 900, 0.6);
+      if (!blob) throw new Error('Gagal memproses foto');
+      photoBlob = blob;
+      const prev = document.getElementById('photo-preview');
+      if (prev.src) URL.revokeObjectURL(prev.src);
+      prev.src = URL.createObjectURL(blob);
+      prev.style.display = '';
+      document.getElementById('photo-remove').style.display = '';
+      document.getElementById('photo-btn-text').textContent = 'Ganti Foto';
+      status.textContent = `Foto siap (${Math.round(blob.size / 1024)} KB)`;
+    } catch (err) {
+      clearPhoto();
+      status.textContent = 'Foto tidak bisa dibaca — coba foto lain.';
+    } finally {
+      input.value = '';
+    }
+  }
+
+  function clearPhoto() {
+    photoBlob = null;
+    const prev = document.getElementById('photo-preview');
+    if (prev.src) URL.revokeObjectURL(prev.src);
+    prev.removeAttribute('src');
+    prev.style.display = 'none';
+    document.getElementById('photo-remove').style.display = 'none';
+    document.getElementById('photo-btn-text').textContent = 'Ambil / Pilih Foto';
+    document.getElementById('photo-status').textContent = '';
+  }
+
+  // ── Kirim ──────────────────────────────────────────────────────────────
+  async function submitRetur() {
+    if (!selectedCustomer || !cart.length) return;
+    const reason = reasonText();
+    if (!reason) { showToast('Pilih / tulis alasan retur', 'error'); return; }
+
+    const totalQty = cart.reduce((s, c) => s + c.qty, 0);
+    const lines = cart.map(c => `• ${productOf(c.product_id)?.name} × ${c.qty}`).join('\n');
+    if (!confirm(`Kirim retur dari ${customerLabel(selectedCustomer)}?\n\n${lines}\n\nTotal ${cart.length} barang, ${totalQty} pcs.`)) return;
+
+    const btn = document.getElementById('btn-submit');
+    setLoading(btn, true);
+    const customerId = selectedCustomer.id;
+
+    // Foto diunggah dulu supaya path-nya ikut tersimpan di retur. Kalau retur
+    // gagal disimpan, foto yang terlanjur terunggah dihapus lagi.
+    let photoPath = null;
+    if (photoBlob) {
+      const ext = photoBlob.type === 'image/webp' ? 'webp' : 'jpg';
+      photoPath = `${customerId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error: upErr } = await supabase.storage.from(PHOTO_BUCKET)
+        .upload(photoPath, photoBlob, { contentType: photoBlob.type });
+      if (upErr) {
+        setLoading(btn, false); updateSubmitState();
+        showToast('Gagal mengunggah foto: ' + upErr.message + '. Hapus foto untuk kirim tanpa foto.', 'error');
+        return;
+      }
+    }
+
+    const { data, error } = await supabase.rpc('create_store_return', {
+      p_customer_id: customerId,
+      p_items:       cart.map(c => ({ product_id: c.product_id, quantity: c.qty })),
+      p_reason:      reason,
+      p_notes:       document.getElementById('retur-notes').value.trim() || null,
+      p_photo_path:  photoPath,
+    });
+
+    if (error) {
+      if (photoPath) await supabase.storage.from(PHOTO_BUCKET).remove([photoPath]);
+      setLoading(btn, false); updateSubmitState();
+      const missing = error.code === 'PGRST202' || /Could not find the function/i.test(error.message || '');
+      showToast(missing
+        ? 'Fitur retur gudang belum aktif — jalankan supabase_migration43.sql di Supabase.'
+        : 'Gagal mengirim retur: ' + error.message, 'error');
+      // Sisa qty mungkin sudah berubah (diretur orang lain) — muat ulang
+      if (!missing && selectedCustomer?.id === customerId) refreshReturnable(customerId);
+      return;
+    }
+
+    setLoading(btn, false);
+    showSuccess(data || [], customerLabel(selectedCustomer), totalQty);
+
+    // Reset form, toko tetap terpilih (sering ada beberapa retur dari toko yang sama)
+    cart = [];
+    selectedReason = '';
+    document.getElementById('reason-other').value = '';
+    document.getElementById('reason-other').style.display = 'none';
+    document.getElementById('retur-notes').value = '';
+    document.querySelectorAll('#reason-chips .rt-chip').forEach(b => b.classList.remove('active'));
+    clearPhoto();
+    renderCart();
+    refreshReturnable(customerId);
+    loadHistory();
+  }
+
+  async function refreshReturnable(customerId) {
+    const seq = ++loadSeq;
+    try {
+      const list = await fetchReturnable(customerId);
+      if (seq !== loadSeq) return;
+      returnable = list;
+      // Buang barang yang sisa qty-nya sudah tidak cukup lagi
+      cart = cart.filter(c => (productOf(c.product_id)?.sisa || 0) > 0);
+      cart.forEach(c => { c.qty = Math.min(c.qty, productOf(c.product_id).sisa); });
+      renderProducts();
+      renderCart();
+    } catch (_) { /* tampilan lama dibiarkan; database tetap yang memutuskan */ }
+  }
+
+  function showSuccess(created, toko, totalQty) {
+    const nomor = created.map(r => `<li style="font-weight:700;font-size:15px">${escapeHtml(r.return_number || '-')}</li>`).join('');
+    document.getElementById('success-body').innerHTML = `
+      <p style="font-size:15px;margin-bottom:10px">Retur <strong>${totalQty} pcs</strong> dari <strong>${escapeHtml(toko)}</strong> sudah dikirim dan <strong>menunggu persetujuan admin</strong>.</p>
+      <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:4px">No. Retur</div>
+      <ul style="padding-left:18px;margin-bottom:10px">${nomor}</ul>
+      ${created.length > 1 ? `<p style="font-size:12px;color:var(--text-muted)">Dipecah jadi ${created.length} nomor karena barangnya berasal dari ${created.length} faktur berbeda — ini otomatis, tidak perlu diapa-apakan.</p>` : ''}`;
+    openModal('modal-success');
+  }
+
+  // ── Riwayat ────────────────────────────────────────────────────────────
+  async function loadHistory() {
+    if (!currentUser) return;
+    const { data, error } = await supabase.from('returns')
+      .select('id,return_number,return_date,customer_id,customer_name,status,reason,notes,photo_path,created_at,return_items(product_name,quantity)')
+      .eq('created_by_id', currentUser.session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(150);
+    if (error) {
+      document.getElementById('history-list').innerHTML =
+        `<div class="card rt-empty"><div class="icon">⚠️</div><h4>Riwayat tidak bisa dimuat</h4><p>${escapeHtml(error.message)}</p></div>`;
+      return;
+    }
+    historyRows = data || [];
+    const pending = historyRows.filter(r => r.status === 'pending').length;
+    document.getElementById('pending-count').textContent = pending ? pending : '';
+    renderHistory();
+  }
+
+  function setHistoryFilter(btn) {
+    historyStatus = btn.dataset.status;
+    document.querySelectorAll('#history-filter .rt-chip').forEach(b => b.classList.toggle('active', b === btn));
+    renderHistory();
+  }
+
+  const STATUS_LABEL = { pending: '🟡 Menunggu admin', approved: '🟢 Disetujui', rejected: '🔴 Ditolak' };
+
+  function renderHistory() {
+    const el = document.getElementById('history-list');
+    // Satu pengajuan bisa jadi beberapa retur (1 per faktur). Semuanya dibuat dalam
+    // satu transaksi jadi created_at-nya sama persis — dipakai untuk mengelompokkan.
+    const groups = [];
+    const byKey = {};
+    historyRows.forEach(r => {
+      const key = `${r.created_at}|${r.customer_id}`;
+      if (!byKey[key]) { byKey[key] = { key, rows: [] }; groups.push(byKey[key]); }
+      byKey[key].rows.push(r);
+    });
+
+    const shown = groups.filter(g => !historyStatus || g.rows.some(r => r.status === historyStatus));
+    if (!shown.length) {
+      el.innerHTML = `<div class="card rt-empty"><div class="icon">📋</div><h4>${historyRows.length ? 'Tidak ada retur dengan status ini' : 'Belum ada retur'}</h4><p>Retur yang kamu kirim akan muncul di sini.</p></div>`;
+      return;
+    }
+
+    el.innerHTML = shown.map(g => {
+      const first = g.rows[0];
+      const notes = (first.notes || '').replace(/\n?\[Ditolak:.+\]/g, '').trim();
+      return `<div class="card rt-hcard">
+        <div class="rt-hhead">
+          <div>
+            <div class="toko">${escapeHtml(first.customer_name || '-')}</div>
+            <div class="meta">${formatDate(first.return_date)} · ${new Date(first.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} · ${escapeHtml(first.reason || '-')}${first.photo_path ? ' · 📷 ada foto' : ''}</div>
+            ${notes ? `<div class="meta">Catatan: ${escapeHtml(notes)}</div>` : ''}
+          </div>
+        </div>
+        ${g.rows.map(r => {
+          const rej = (r.notes || '').match(/\[Ditolak: (.+)\]/);
+          return `<div class="rt-hret">
+            <div class="rt-hret-head"><span>${escapeHtml(r.return_number || '-')}</span><span class="st st-${r.status}">${STATUS_LABEL[r.status] || escapeHtml(r.status)}</span></div>
+            <ul>${(r.return_items || []).map(it => `<li><span>${escapeHtml(it.product_name || '-')}</span><span>× ${it.quantity}</span></li>`).join('')}</ul>
+            ${r.status === 'rejected' && rej ? `<div class="rt-reject">Alasan ditolak: ${escapeHtml(rej[1])}</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+  }
+
+  // Tutup modal kalau klik di luar
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    el.addEventListener('click', e => { if (e.target === el) closeModal(el.id); });
+  });
+
+  init();
+</script>
+</body>
+</html>

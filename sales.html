@@ -694,6 +694,8 @@
   async function init() {
     const auth = await requireSales();
     if (!auth) return;
+    // Akun gudang cuma untuk input retur — bukan untuk bikin faktur
+    if (auth.profile.role === 'gudang') { window.location.href = 'retur-toko.html'; return; }
 
     const { session, profile } = auth;
     currentUser = { session, profile };

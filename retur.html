@@ -42,6 +42,7 @@
 
     /* ── STATUS BADGES ── */
     .badge-pending  { background:#fef9c3; color:#92400e; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+    .src-gudang { display:inline-block; margin-top:3px; background:#fef3c7; color:#92400e; padding:1px 8px; border-radius:10px; font-size:10.5px; font-weight:700; }
     .badge-approved { background:#dcfce7; color:#166534; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
     .badge-rejected { background:#fee2e2; color:#991b1b; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
 
@@ -660,7 +661,7 @@ create table if not exists return_items (
 
       return `<tr>
         <td style="color:var(--text-muted);font-size:12px;">${i+1}</td>
-        <td><strong>${escapeHtml(r.return_number||'-')}</strong></td>
+        <td><strong>${escapeHtml(r.return_number||'-')}</strong>${r.source === 'gudang' ? `<div class="src-gudang" title="Diinput dari halaman Retur Toko oleh ${escapeHtml(r.created_by||'-')}">🏬 Gudang${r.photo_path ? ' · 📷' : ''}</div>` : ''}</td>
         <td>${formatDate(r.return_date)}</td>
         <td>${escapeHtml(r.customer_name||'-')}</td>
         <td><span style="color:var(--primary);font-size:12px;">${escapeHtml(r.invoice_number||'-')}</span></td>
@@ -1125,6 +1126,9 @@ create table if not exists return_items (
           <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Diproses Oleh</div>
           <div>${escapeHtml(ret.handled_by||ret.created_by||'-')}</div>
         </div>
+        ${ret.source === 'gudang' ? `<div style="grid-column:1/-1;background:#fef3c7;border-radius:8px;padding:8px 12px;font-size:13px;color:#92400e;">
+          🏬 Diinput gudang oleh <strong>${escapeHtml(ret.created_by||'-')}</strong> lewat halaman Retur Toko — faktur asal dipilih otomatis (faktur terbaru toko ini yang berisi barang tsb). Pastikan barang fisiknya sudah diterima sebelum menyetujui.
+        </div>` : ''}
         <div style="grid-column:1/-1;">
           <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Alasan Retur</div>
           <div>${escapeHtml(ret.reason||'-')}</div>
@@ -1132,6 +1136,13 @@ create table if not exists return_items (
         ${notesDisplay ? `<div style="grid-column:1/-1;">
           <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Catatan</div>
           <div style="font-size:13px;color:var(--text-muted);">${escapeHtml(notesDisplay)}</div>
+        </div>` : ''}
+        ${ret.photo_path ? `<div style="grid-column:1/-1;">
+          <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Foto Barang</div>
+          <a id="detail-photo-link" target="_blank" rel="noopener" style="display:inline-block;">
+            <img id="detail-photo" alt="Foto barang retur" style="max-width:220px;max-height:220px;border-radius:8px;border:1px solid var(--border);display:none;">
+          </a>
+          <div id="detail-photo-status" style="font-size:12px;color:var(--text-muted);">Memuat foto...</div>
         </div>` : ''}
         ${rejectReason ? `<div style="grid-column:1/-1; background:#fee2e2; border-radius:8px; padding:10px 14px;">
           <div style="font-size:11px;font-weight:700;color:#991b1b;text-transform:uppercase;margin-bottom:2px;">Alasan Penolakan</div>
@@ -1172,6 +1183,22 @@ create table if not exists return_items (
       <button class="btn btn-secondary" onclick="closeDetailModal()">Tutup</button>`;
 
     openModal('modal-detail');
+    if (ret.photo_path) loadDetailPhoto(ret.photo_path);
+  }
+
+  // Bucket return-photos privat (migration43) — dibuka lewat signed URL 1 jam
+  let detailPhotoPath = null;
+  async function loadDetailPhoto(path) {
+    detailPhotoPath = path;
+    const { data, error } = await supabase.storage.from('return-photos').createSignedUrl(path, 3600);
+    const img = document.getElementById('detail-photo');
+    const status = document.getElementById('detail-photo-status');
+    if (!img || !status || detailPhotoPath !== path) return;   // modal sudah ganti retur
+    if (error || !data?.signedUrl) { status.textContent = 'Foto tidak bisa dimuat'; return; }
+    img.src = data.signedUrl;
+    img.style.display = '';
+    document.getElementById('detail-photo-link').href = data.signedUrl;
+    status.textContent = 'Klik foto untuk memperbesar';
   }
 
   function closeDetailModal() {

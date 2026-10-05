@@ -47,7 +47,7 @@
     <header class="topbar">
       <div class="topbar-title">
         <h1>Pengaturan</h1>
-        <p>Profil admin dan manajemen akun sales</p>
+        <p>Profil admin dan manajemen akun sales &amp; gudang</p>
       </div>
       <div class="topbar-right">
         <div class="user-avatar" id="user-avatar-initial">A</div>
@@ -58,7 +58,7 @@
       <!-- TABS -->
       <div style="display:flex;gap:4px;margin-bottom:24px;background:#f1f5f9;border-radius:10px;padding:4px;width:fit-content">
         <button class="tab-pill active" onclick="switchTab('tab-profile', this)">👤 Profil Saya</button>
-        <button class="tab-pill" onclick="switchTab('tab-sales', this)">👥 Akun Sales</button>
+        <button class="tab-pill" onclick="switchTab('tab-sales', this)">👥 Akun Sales &amp; Gudang</button>
         <button class="tab-pill" onclick="switchTab('tab-target', this)">🎯 Target Omzet</button>
         <button class="tab-pill" onclick="switchTab('tab-absen', this)">📍 Absen Kunjungan</button>
         <button class="tab-pill" onclick="switchTab('tab-katalog', this)">🔗 Katalog Toko</button>
@@ -211,9 +211,12 @@
       <!-- TAB: AKUN SALES -->
       <div id="tab-sales" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <h3 style="font-size:15px;font-weight:600">Daftar Akun Sales</h3>
-          <button class="btn btn-primary btn-sm" onclick="openAddSales()">+ Tambah Sales</button>
+          <h3 style="font-size:15px;font-weight:600">Daftar Akun Sales &amp; Gudang</h3>
+          <button class="btn btn-primary btn-sm" onclick="openAddSales()">+ Tambah Akun</button>
         </div>
+        <p style="font-size:12px;color:var(--text-muted);margin:-8px 0 14px">
+          Akun <strong>Gudang</strong> cuma bisa membuka halaman Retur Toko (input retur barang dari toko, tanpa harga) — tidak bisa membuat faktur. Sales tidak bisa input retur.
+        </p>
 
         <div class="card">
           <div class="table-wrap">
@@ -223,13 +226,14 @@
                   <th>#</th>
                   <th>Nama</th>
                   <th>Email</th>
+                  <th>Role</th>
                   <th>Status</th>
                   <th>Tgl Dibuat</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody id="sales-table">
-                <tr><td colspan="6" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+                <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
               </tbody>
             </table>
           </div>
@@ -243,12 +247,19 @@
 <div class="modal-overlay" id="modal-add-sales">
   <div class="modal" style="max-width:440px">
     <div class="modal-header">
-      <h3>Tambah Akun Sales</h3>
+      <h3>Tambah Akun</h3>
       <button class="modal-close" onclick="closeModal('modal-add-sales')">×</button>
     </div>
     <div class="modal-body">
       <div class="form-group">
-        <label>Nama Sales *</label>
+        <label>Jenis Akun *</label>
+        <select id="sales-role">
+          <option value="sales">Sales — buat faktur dari HP</option>
+          <option value="gudang">Gudang — input retur barang dari toko</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Nama *</label>
         <input type="text" id="sales-name" placeholder="Nama lengkap">
       </div>
       <div class="form-group">
@@ -260,7 +271,7 @@
         <input type="password" id="sales-password" placeholder="Minimal 6 karakter">
       </div>
       <p style="font-size:12px;color:#64748b;margin-top:8px">
-        ⚠️ Setelah membuat akun sales, Anda perlu login ulang karena Supabase akan membuat sesi baru.
+        ⚠️ Setelah membuat akun, Anda perlu login ulang karena Supabase akan membuat sesi baru.
       </p>
     </div>
     <div class="modal-footer">
@@ -353,7 +364,9 @@
 <script src="js/auth.js"></script>
 <script>
   let currentAdmin = null;
-  let allSales = [];
+  let allSales = [];     // role sales saja — dipakai juga di tab Target Omzet
+  let allAccounts = [];  // sales + gudang — tabel di tab Akun
+  const ROLE_LABEL = { sales: 'Sales', gudang: 'Gudang' };
   async function init() {
     const auth = await requireSuperAdmin();
     if (!auth) return;
@@ -475,23 +488,25 @@
   }
 
   async function loadSalesAccounts() {
-    const { data, error } = await supabase.from('user_profiles').select('*').eq('role', 'sales').order('created_at', { ascending: false });
-    if (error) { showToast('Gagal memuat akun sales', 'error'); return; }
-    allSales = data || [];
+    const { data, error } = await supabase.from('user_profiles').select('*').in('role', ['sales', 'gudang']).order('created_at', { ascending: false });
+    if (error) { showToast('Gagal memuat akun', 'error'); return; }
+    allAccounts = data || [];
+    allSales = allAccounts.filter(a => a.role === 'sales');
     renderSalesTable();
   }
 
   function renderSalesTable() {
     const tbody = document.getElementById('sales-table');
-    if (!allSales.length) {
-      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">👥</div><h4>Belum ada akun sales</h4><p>Tambah akun sales baru</p></div></td></tr>`;
+    if (!allAccounts.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👥</div><h4>Belum ada akun</h4><p>Tambah akun sales atau gudang baru</p></div></td></tr>`;
       return;
     }
-    tbody.innerHTML = allSales.map((s, i) => `
+    tbody.innerHTML = allAccounts.map((s, i) => `
       <tr>
         <td class="text-muted">${i + 1}</td>
         <td><strong>${escapeHtml(s.name)}</strong></td>
         <td class="text-muted">${escapeHtml(s.email)}</td>
+        <td><span class="badge ${s.role === 'gudang' ? 'badge-warning' : 'badge-info'}">${ROLE_LABEL[s.role] || s.role}</span></td>
         <td>
           <button class="status-toggle ${s.is_active ? 'active' : 'inactive'}" onclick="toggleActive('${s.id}', ${s.is_active})">
             ${s.is_active ? '✅ Aktif' : '🔴 Nonaktif'}
@@ -508,6 +523,7 @@
   }
 
   function openAddSales() {
+    document.getElementById('sales-role').value = 'sales';
     document.getElementById('sales-name').value = '';
     document.getElementById('sales-email').value = '';
     document.getElementById('sales-password').value = '';
@@ -516,6 +532,7 @@
 
   async function createSales() {
     const btn = document.getElementById('btn-create-sales');
+    const role = document.getElementById('sales-role').value === 'gudang' ? 'gudang' : 'sales';
     const name = document.getElementById('sales-name').value.trim();
     const email = document.getElementById('sales-email').value.trim();
     const password = document.getElementById('sales-password').value;
@@ -535,10 +552,11 @@
     const userId = data.user?.id;
     if (!userId) { showToast('Gagal mendapatkan user ID. Pastikan "Confirm email" dimatikan di Supabase.', 'error'); setLoading(btn, false); return; }
 
-    const { error: profileErr } = await supabase.from('user_profiles').insert({ id: userId, name, email, role: 'sales', is_active: true });
-
     // Pulihkan sesi admin SEGERA, sebelum apapun ditampilkan ke user —
-    // supaya tidak ada jendela waktu di mana browser diam-diam berjalan sebagai sesi sales baru.
+    // supaya tidak ada jendela waktu di mana browser diam-diam berjalan sebagai sesi akun baru.
+    // Juga WAJIB sebelum profil disimpan: database cuma mengizinkan super_admin
+    // menentukan role akun (trigger guard_user_profile_role, migration43), jadi
+    // profil harus ditulis dengan sesi super_admin, bukan sesi akun baru.
     if (adminSession) {
       await supabase.auth.setSession({
         access_token: adminSession.access_token,
@@ -546,10 +564,12 @@
       });
     }
 
+    const { error: profileErr } = await supabase.from('user_profiles').insert({ id: userId, name, email, role, is_active: true });
+
     if (profileErr) { showToast('Akun dibuat tapi gagal simpan profil: ' + profileErr.message, 'error'); setLoading(btn, false); return; }
 
     setLoading(btn, false);
-    showToast(`Akun sales "${name}" berhasil dibuat`);
+    showToast(`Akun ${ROLE_LABEL[role].toLowerCase()} "${name}" berhasil dibuat`);
     closeModal('modal-add-sales');
     loadSalesAccounts();
   }
