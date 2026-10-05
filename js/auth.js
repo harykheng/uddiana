@@ -90,6 +90,35 @@ function updateSidebarUser(profile) {
   }
 
   initMobileSidebar();
+  refreshReturPendingBadge();
+}
+
+// Badge jumlah retur 'pending' di menu "Retur Barang" sidebar admin — retur dari
+// gudang (retur-toko.html) tidak mengirim notifikasi, jadi ini penandanya.
+// Dipanggil otomatis lewat updateSidebarUser(); retur.html memanggil
+// setReturPendingBadge() sendiri setelah memuat ulang daftar retur.
+async function refreshReturPendingBadge() {
+  if (!document.querySelector('.nav-item[href="retur.html"]')) return;
+  const { count, error } = await supabase.from('returns')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'pending');
+  if (error) return;   // tabel retur belum ada / gagal — badge dilewati saja
+  setReturPendingBadge(count || 0);
+}
+
+function setReturPendingBadge(n) {
+  const link = document.querySelector('.nav-item[href="retur.html"]');
+  if (!link) return;
+  let badge = link.querySelector('.nav-badge');
+  if (!n) { if (badge) badge.remove(); return; }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'nav-badge';
+    badge.style.cssText = 'margin-left:auto;background:#f59e0b;color:#fff;border-radius:999px;font-size:11px;font-weight:700;padding:1px 8px;line-height:18px';
+    link.appendChild(badge);
+  }
+  badge.textContent = n > 99 ? '99+' : String(n);
+  badge.title = `${n} retur menunggu persetujuan`;
 }
 
 function initMobileSidebar() {

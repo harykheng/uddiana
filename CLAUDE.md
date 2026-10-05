@@ -118,6 +118,9 @@ Menu `data-super-admin` hanya tampil untuk `super_admin` (CSS + `body.is-super-a
 ### Mobile Sidebar
 `auth.js` otomatis inject hamburger button ke `.topbar` dan overlay backdrop saat `updateSidebarUser()` dipanggil. Tidak perlu kode tambahan di halaman.
 
+### Badge Retur Pending
+`updateSidebarUser()` juga memanggil `refreshReturPendingBadge()` — badge oranye jumlah retur `pending` di menu **↩️ Retur Barang** semua halaman admin (cari link `.nav-item[href="retur.html"]`, 1 query `count` head-only). Tidak perlu kode di halaman; `retur.html` memanggil `setReturPendingBadge(n)` sendiri setelah `loadReturns()` supaya badge langsung ikut berubah setelah setujui/tolak.
+
 ### Supabase — Bypass Limit 1000 Rows
 PostgREST default max 1000 rows. Gunakan pagination loop:
 ```js
@@ -353,6 +356,7 @@ git push -u origin feat/nama-fitur
 
 ### retur.html
 - Print layout mirip invoice (3 kolom TTD)
+- Retur **pending selalu tampil** di tabel walau di luar filter tanggal (default filter = bulan berjalan), dan diurutkan paling atas
 - Retur dari gudang ditandai **🏬 Gudang** (+ 📷 kalau ada foto) di tabel; detail menampilkan siapa yang input + foto barang (signed URL 1 jam dari bucket privat `return-photos`). Disetujui/ditolak dengan tombol yang sama seperti retur buatan admin
 
 ### retur-toko.html
