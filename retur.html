@@ -1127,7 +1127,7 @@ create table if not exists return_items (
           <div>${escapeHtml(ret.handled_by||ret.created_by||'-')}</div>
         </div>
         ${ret.source === 'gudang' ? `<div style="grid-column:1/-1;background:#fef3c7;border-radius:8px;padding:8px 12px;font-size:13px;color:#92400e;">
-          🏬 Diinput gudang oleh <strong>${escapeHtml(ret.created_by||'-')}</strong> lewat halaman Retur Toko — faktur asal dipilih otomatis (faktur terbaru toko ini yang berisi barang tsb). Pastikan barang fisiknya sudah diterima sebelum menyetujui.
+          🏬 Diinput gudang oleh <strong>${escapeHtml(ret.created_by||'-')}</strong> lewat halaman Retur Toko — faktur asal dipilih karyawan, atau otomatis (faktur terbaru toko ini yang berisi barang tsb). Pastikan barang fisiknya sudah diterima sebelum menyetujui.
         </div>` : ''}
         <div style="grid-column:1/-1;">
           <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Alasan Retur</div>

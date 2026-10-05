@@ -38,6 +38,17 @@
     body > .ts-dropdown .option { padding: 10px 14px; font-size: 15px; }
     .opt-sub { display: block; font-size: 12px; color: var(--text-muted); }
 
+    .rt-step-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+    .rt-step-head .rt-label { margin-bottom: 0; }
+    .rt-step-head small { color: var(--text-muted); font-size: 12px; }
+    .rt-inv-search { min-height: 44px; font-size: 15px; margin-bottom: 10px; }
+    .rt-invlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; max-height: 236px; overflow-y: auto; padding: 2px; }
+    .rt-inv { text-align: left; border: 1.5px solid var(--border); background: var(--surface); border-radius: 10px; padding: 10px 14px; cursor: pointer; min-height: 64px; color: var(--text); font-family: inherit; }
+    .rt-inv b { display: block; font-size: 15px; }
+    .rt-inv span { display: block; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .rt-inv.active { border-color: var(--primary); background: var(--primary-light); box-shadow: 0 0 0 2px var(--primary) inset; }
+    .rt-inv.auto b { color: var(--primary); }
+
     .rt-grid { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
     @media (min-width: 900px) {
       .rt-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
@@ -149,6 +160,15 @@
       <select id="customer-select"></select>
     </div>
 
+    <div class="card rt-step" id="invoice-step" style="display:none">
+      <div class="rt-step-head">
+        <label class="rt-label">2. Pilih Faktur</label>
+        <small id="invoice-hint"></small>
+      </div>
+      <input type="text" inputmode="search" id="invoice-search" class="rt-inv-search" placeholder="🔍 Cari nomor faktur..." oninput="renderInvoices()" autocomplete="off" style="display:none">
+      <div class="rt-invlist" id="invoice-list"></div>
+    </div>
+
     <div id="input-placeholder" class="card rt-empty">
       <div class="icon">🏪</div>
       <h4>Pilih toko dulu</h4>
@@ -160,7 +180,7 @@
       <div class="card">
         <div class="rt-card-head">
           <div>
-            <h3>2. Pilih Barang</h3>
+            <h3>3. Pilih Barang</h3>
             <small id="product-count"></small>
           </div>
         </div>
@@ -174,7 +194,7 @@
       <div class="card rt-cart">
         <div class="rt-card-head">
           <div>
-            <h3>3. Daftar Retur</h3>
+            <h3>4. Daftar Retur</h3>
             <small id="cart-store"></small>
           </div>
         </div>
@@ -252,9 +272,12 @@
   let customers = [];
   let customerTS = null;
   let selectedCustomer = null;
-  // Barang yang pernah dibeli toko terpilih:
-  // { product_id, name, sku, unit, photo, sisa, lastDate }
-  // Sengaja TANPA harga — karyawan gudang tidak perlu melihat harga.
+  // Data faktur toko terpilih (lihat fetchStoreData). Sengaja TANPA harga —
+  // karyawan gudang tidak perlu melihat harga.
+  let storeData = null;
+  let selectedInvoiceId = null;   // null = Otomatis (semua faktur, terbaru dulu)
+  // Barang yang bisa dipilih untuk faktur/mode terpilih:
+  // { product_id, name, sku, unit, photo, sisa, sold, lastDate }
   let returnable = [];
   let cart = [];            // [{ product_id, qty }] — urut sesuai ditambahkan
   let selectedReason = '';
@@ -320,61 +343,79 @@
     clearPhoto();
     const seq = ++loadSeq;
     selectedCustomer = customers.find(c => c.id === customerId) || null;
+    selectedInvoiceId = null;
+    storeData = null;
+    returnable = [];
+    document.getElementById('invoice-search').value = '';
 
     if (!selectedCustomer) {
       document.getElementById('input-body').style.display = 'none';
+      document.getElementById('invoice-step').style.display = 'none';
       document.getElementById('input-placeholder').style.display = '';
-      returnable = [];
       return;
     }
 
     document.getElementById('input-placeholder').style.display = 'none';
+    document.getElementById('invoice-step').style.display = '';
     document.getElementById('input-body').style.display = '';
     document.getElementById('product-search').value = '';
-    document.getElementById('cart-store').textContent = customerLabel(selectedCustomer);
     document.getElementById('product-count').textContent = '';
+    document.getElementById('invoice-hint').textContent = '';
+    document.getElementById('invoice-list').innerHTML =
+      '<div style="color:var(--text-muted);font-size:13px;padding:8px 0">Memuat faktur...</div>';
     document.getElementById('product-list').innerHTML =
       '<div class="rt-cart-empty"><span class="spinner spinner-lg"></span><div style="margin-top:8px">Memuat barang toko ini...</div></div>';
     renderCart();
 
     try {
-      const list = await fetchReturnable(customerId);
+      const data = await fetchStoreData(customerId);
       if (seq !== loadSeq) return;
-      returnable = list;
-      renderProducts();
+      storeData = data;
+      applySelection();
     } catch (err) {
       if (seq !== loadSeq) return;
-      returnable = [];
+      document.getElementById('invoice-list').innerHTML = '';
       document.getElementById('product-list').innerHTML =
         `<div class="rt-cart-empty">Gagal memuat barang: ${escapeHtml(err.message)}</div>`;
     }
+  }
+
+  // Bangun ulang daftar barang dari storeData + faktur terpilih, lalu gambar ulang
+  function applySelection() {
+    returnable = buildReturnable();
+    renderInvoices();
+    renderProducts();
+    renderCart();
   }
 
   function customerLabel(c) {
     return c.store_name ? `${c.name} (${c.store_name})` : c.name;
   }
 
-  // Barang yang pernah dibeli toko ini + sisa yang masih bisa diretur.
+  // Faktur toko ini + sisa yang masih bisa diretur per faktur per barang.
   // Aturannya HARUS sama dengan create_store_return() (supabase_migration43.sql),
   // yang memutuskan sungguhan saat retur dikirim — ini cuma tampilan:
   //   faktur toko ini, bukan 'cancelled', verifikasi NULL/'approved';
   //   sisa per faktur = terjual − retur pending/approved, tidak pernah < 0.
-  async function fetchReturnable(customerId) {
+  // Hasil: { invoices: [{id, number, date}] (terbaru dulu),
+  //          lines: { invoiceId: { productId: {sold, sisa} } }, products: { productId: info } }
+  async function fetchStoreData(customerId) {
     const { data: invs, error: invErr } = await fetchAll(() =>
       supabase.from('invoices')
-        .select('id,invoice_date')
+        .select('id,invoice_number,invoice_date,created_at')
         .eq('customer_id', customerId)
         .neq('status', 'cancelled')
         .or('verification_status.is.null,verification_status.eq.approved')
         .order('id'));
     if (invErr) throw new Error(invErr.message);
-    if (!invs.length) return [];
 
-    const invDate = {};
-    invs.forEach(i => { invDate[i.id] = i.invoice_date; });
-    const ids = invs.map(i => i.id);
+    const invoices = (invs || []).map(i => ({ id: i.id, number: i.invoice_number, date: i.invoice_date, created_at: i.created_at }))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.created_at || '').localeCompare(a.created_at || ''));
+    const lines = {};
+    const products = {};
+    if (!invoices.length) return { invoices, lines, products };
 
-    const sold = {};      // `${inv}|${pid}` → qty
+    const ids = invoices.map(i => i.id);
     const returned = {};  // `${inv}|${pid}` → qty
     const nameFallback = {};
     const CHUNK = 200;    // jaga panjang URL query .in()
@@ -393,8 +434,9 @@
 
       itemsRes.data.forEach(it => {
         if (!it.product_id) return;
-        const k = `${it.invoice_id}|${it.product_id}`;
-        sold[k] = (sold[k] || 0) + Number(it.quantity || 0);
+        const inv = lines[it.invoice_id] || (lines[it.invoice_id] = {});
+        const l = inv[it.product_id] || (inv[it.product_id] = { sold: 0, sisa: 0 });
+        l.sold += Number(it.quantity || 0);
         nameFallback[it.product_id] = it.product_name;
       });
       retRes.data.forEach(r => (r.return_items || []).forEach(ri => {
@@ -403,30 +445,41 @@
         returned[k] = (returned[k] || 0) + Number(ri.quantity || 0);
       }));
     }
+    Object.entries(lines).forEach(([invId, byPid]) => Object.entries(byPid).forEach(([pid, l]) => {
+      l.sisa = Math.max(0, l.sold - (returned[`${invId}|${pid}`] || 0));
+    }));
 
-    const byProduct = {};
-    Object.keys(sold).forEach(k => {
-      const [invId, pid] = k.split('|');
-      const p = byProduct[pid] || (byProduct[pid] = { product_id: pid, sisa: 0, lastDate: '' });
-      p.sisa += Math.max(0, sold[k] - (returned[k] || 0));
-      if ((invDate[invId] || '') > p.lastDate) p.lastDate = invDate[invId] || '';
-    });
-
-    const pids = Object.keys(byProduct);
-    const prodInfo = {};
+    const pids = [...new Set(Object.values(lines).flatMap(o => Object.keys(o)))];
     for (let i = 0; i < pids.length; i += CHUNK) {
       const { data, error } = await supabase.from('products')
         .select('id,name,sku,unit,photo_thumb_path')
         .in('id', pids.slice(i, i + CHUNK));
       if (error) throw new Error(error.message);
-      (data || []).forEach(p => { prodInfo[p.id] = p; });
+      (data || []).forEach(p => { products[p.id] = p; });
     }
+    pids.forEach(pid => { if (!products[pid]) products[pid] = { id: pid, name: nameFallback[pid] }; });
 
-    return pids.map(pid => {
-      const info = prodInfo[pid] || {};
+    return { invoices, lines, products };
+  }
+
+  // Otomatis: gabungan semua faktur. Faktur dipilih: cuma isi faktur itu.
+  function buildReturnable() {
+    if (!storeData) return [];
+    const invs = selectedInvoiceId
+      ? storeData.invoices.filter(i => i.id === selectedInvoiceId)
+      : storeData.invoices;
+    const byProduct = {};
+    invs.forEach(inv => Object.entries(storeData.lines[inv.id] || {}).forEach(([pid, l]) => {
+      const p = byProduct[pid] || (byProduct[pid] = { product_id: pid, sisa: 0, sold: 0, lastDate: '' });
+      p.sisa += l.sisa;
+      p.sold += l.sold;
+      if ((inv.date || '') > p.lastDate) p.lastDate = inv.date || '';
+    }));
+    return Object.values(byProduct).map(p => {
+      const info = storeData.products[p.product_id] || {};
       return {
-        ...byProduct[pid],
-        name:  info.name || nameFallback[pid] || '-',
+        ...p,
+        name:  info.name || '-',
         sku:   info.sku || '',
         unit:  info.unit || 'pcs',
         photo: info.photo_thumb_path || null,
@@ -435,6 +488,62 @@
       (b.sisa > 0) - (a.sisa > 0) ||
       (b.lastDate || '').localeCompare(a.lastDate || '') ||
       a.name.localeCompare(b.name, 'id'));
+  }
+
+  // Jumlah barang yang masih bisa diretur di satu faktur
+  function invoiceReturnableCount(invId) {
+    return Object.values(storeData?.lines[invId] || {}).filter(l => l.sisa > 0).length;
+  }
+
+  function selectedInvoice() {
+    return selectedInvoiceId ? storeData?.invoices.find(i => i.id === selectedInvoiceId) || null : null;
+  }
+
+  // ── Pilih faktur ───────────────────────────────────────────────────────
+  // Faktur yang semua barangnya sudah diretur tidak ditampilkan (kecuali yang
+  // sedang terpilih), supaya daftarnya tidak penuh faktur lama yang tidak berguna.
+  function renderInvoices() {
+    const el = document.getElementById('invoice-list');
+    const search = document.getElementById('invoice-search');
+    if (!storeData) { el.innerHTML = ''; return; }
+
+    const usable = storeData.invoices.filter(i => invoiceReturnableCount(i.id) > 0 || i.id === selectedInvoiceId);
+    const hidden = storeData.invoices.length - usable.length;
+    search.style.display = usable.length > 8 ? '' : 'none';
+    document.getElementById('invoice-hint').textContent = storeData.invoices.length
+      ? `${usable.length} faktur bisa diretur${hidden ? ` · ${hidden} faktur lain sudah diretur semua` : ''}`
+      : '';
+
+    if (!storeData.invoices.length) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:6px 0">Toko ini belum punya faktur (atau semua fakturnya batal/ditolak).</div>';
+      return;
+    }
+
+    const q = search.value.trim().toLowerCase();
+    const cards = [`<button type="button" class="rt-inv auto${selectedInvoiceId ? '' : ' active'}" onclick="selectInvoice(-1)">
+        <b>⚡ Otomatis</b><span>Semua faktur, terbaru dulu</span></button>`];
+    usable.forEach(inv => {
+      if (q && !(inv.number || '').toLowerCase().includes(q)) return;
+      const idx = storeData.invoices.indexOf(inv);
+      const n = invoiceReturnableCount(inv.id);
+      cards.push(`<button type="button" class="rt-inv${inv.id === selectedInvoiceId ? ' active' : ''}" onclick="selectInvoice(${idx})">
+        <b>${escapeHtml(inv.number || '-')}</b><span>${formatDate(inv.date)} · ${n ? `${n} barang bisa diretur` : 'sudah diretur semua'}</span></button>`);
+    });
+    el.innerHTML = cards.join('');
+  }
+
+  function selectInvoice(idx) {
+    const id = idx < 0 ? null : storeData?.invoices[idx]?.id || null;
+    if (id === selectedInvoiceId) return;
+    if (cart.length) {
+      // Sisa per barang beda antar faktur — daftar retur dikosongkan supaya
+      // qty yang sudah diisi tidak diam-diam pindah ke faktur lain
+      cart = [];
+      showToast('Ganti faktur — daftar retur dikosongkan', 'warning');
+    }
+    selectedInvoiceId = id;
+    document.getElementById('product-search').value = '';
+    applySelection();
   }
 
   // ── Daftar barang ──────────────────────────────────────────────────────
@@ -460,8 +569,11 @@
     const words = q.split(/\s+/).filter(Boolean);
     const bisa = returnable.filter(p => p.sisa > 0).length;
     document.getElementById('product-count').textContent =
-      returnable.length ? `${bisa} barang bisa diretur dari ${returnable.length} yang pernah dibeli` : '';
+      returnable.length
+        ? `${bisa} barang bisa diretur dari ${returnable.length} ${selectedInvoiceId ? 'di faktur ini' : 'yang pernah dibeli'}`
+        : '';
 
+    if (!storeData) return;   // masih memuat / gagal memuat
     if (!returnable.length) {
       el.innerHTML = '<div class="rt-cart-empty">Toko ini belum pernah membeli barang (atau semua fakturnya batal/ditolak).</div>';
       return;
@@ -478,7 +590,9 @@
         <div class="rt-thumb">${foto ? `<img src="${foto}" alt="" loading="lazy">` : escapeHtml(initials(p.name))}</div>
         <div class="rt-pinfo">
           <div class="rt-pname">${escapeHtml(p.name)}</div>
-          <div class="rt-pmeta">${p.sku ? escapeHtml(p.sku) + ' · ' : ''}Terakhir dibeli ${formatDate(p.lastDate)}</div>
+          <div class="rt-pmeta">${p.sku ? escapeHtml(p.sku) + ' · ' : ''}${selectedInvoiceId
+            ? `Dibeli ${formatQty(p.sold, p.unit)} di faktur ini`
+            : `Terakhir dibeli ${formatDate(p.lastDate)}`}</div>
           <div class="rt-psisa">${habis
             ? '<span style="color:var(--danger);font-weight:600">Sudah diretur semua</span>'
             : `Bisa diretur: <b>${formatQty(p.sisa, p.unit)}</b>`}</div>
@@ -531,6 +645,10 @@
 
   function renderCart() {
     const el = document.getElementById('cart-list');
+    const inv = selectedInvoice();
+    document.getElementById('cart-store').textContent = selectedCustomer
+      ? `${customerLabel(selectedCustomer)} · ${inv ? `Faktur ${inv.number}` : 'Faktur otomatis'}`
+      : '';
     if (!cart.length) {
       el.innerHTML = '<div class="rt-cart-empty">Belum ada barang. Tekan <b>+ Retur</b> pada barang di sebelah.</div>';
     } else {
@@ -672,7 +790,9 @@
 
     const totalQty = cart.reduce((s, c) => s + c.qty, 0);
     const lines = cart.map(c => `• ${productOf(c.product_id)?.name} × ${c.qty}`).join('\n');
-    if (!confirm(`Kirim retur dari ${customerLabel(selectedCustomer)}?\n\n${lines}\n\nTotal ${cart.length} barang, ${totalQty} pcs.`)) return;
+    const inv = selectedInvoice();
+    const fakturText = inv ? `Faktur: ${inv.number}` : 'Faktur: otomatis (terbaru dulu)';
+    if (!confirm(`Kirim retur dari ${customerLabel(selectedCustomer)}?\n${fakturText}\n\n${lines}\n\nTotal ${cart.length} barang, ${totalQty} pcs.`)) return;
 
     const btn = document.getElementById('btn-submit');
     setLoading(btn, true);
@@ -699,6 +819,7 @@
       p_reason:      reason,
       p_notes:       document.getElementById('retur-notes').value.trim() || null,
       p_photo_path:  photoPath,
+      p_invoice_id:  selectedInvoiceId,
     });
 
     if (error) {
@@ -732,19 +853,26 @@
   async function refreshReturnable(customerId) {
     const seq = ++loadSeq;
     try {
-      const list = await fetchReturnable(customerId);
+      const data = await fetchStoreData(customerId);
       if (seq !== loadSeq) return;
-      returnable = list;
+      storeData = data;
+      // Faktur terpilih hilang (dibatalkan/ditolak di sela-sela) → balik ke Otomatis
+      if (selectedInvoiceId && !storeData.invoices.some(i => i.id === selectedInvoiceId)) {
+        selectedInvoiceId = null;
+        cart = [];
+      }
+      returnable = buildReturnable();
       // Buang barang yang sisa qty-nya sudah tidak cukup lagi
       cart = cart.filter(c => (productOf(c.product_id)?.sisa || 0) > 0);
       cart.forEach(c => { c.qty = Math.min(c.qty, productOf(c.product_id).sisa); });
+      renderInvoices();
       renderProducts();
       renderCart();
     } catch (_) { /* tampilan lama dibiarkan; database tetap yang memutuskan */ }
   }
 
   function showSuccess(created, toko, totalQty) {
-    const nomor = created.map(r => `<li style="font-weight:700;font-size:15px">${escapeHtml(r.return_number || '-')}</li>`).join('');
+    const nomor = created.map(r => `<li style="font-size:15px"><b>${escapeHtml(r.return_number || '-')}</b> <span style="color:var(--text-muted);font-size:13px">· faktur ${escapeHtml(r.invoice_number || '-')}</span></li>`).join('');
     document.getElementById('success-body').innerHTML = `
       <p style="font-size:15px;margin-bottom:10px">Retur <strong>${totalQty} pcs</strong> dari <strong>${escapeHtml(toko)}</strong> sudah dikirim dan <strong>menunggu persetujuan admin</strong>.</p>
       <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;font-weight:700;margin-bottom:4px">No. Retur</div>
@@ -757,7 +885,7 @@
   async function loadHistory() {
     if (!currentUser) return;
     const { data, error } = await supabase.from('returns')
-      .select('id,return_number,return_date,customer_id,customer_name,status,reason,notes,photo_path,created_at,return_items(product_name,quantity)')
+      .select('id,return_number,invoice_number,return_date,customer_id,customer_name,status,reason,notes,photo_path,created_at,return_items(product_name,quantity)')
       .eq('created_by_id', currentUser.session.user.id)
       .order('created_at', { ascending: false })
       .limit(150);
@@ -812,7 +940,7 @@
         ${g.rows.map(r => {
           const rej = (r.notes || '').match(/\[Ditolak: (.+)\]/);
           return `<div class="rt-hret">
-            <div class="rt-hret-head"><span>${escapeHtml(r.return_number || '-')}</span><span class="st st-${r.status}">${STATUS_LABEL[r.status] || escapeHtml(r.status)}</span></div>
+            <div class="rt-hret-head"><span>${escapeHtml(r.return_number || '-')} <span style="font-weight:500;color:var(--text-muted)">· faktur ${escapeHtml(r.invoice_number || '-')}</span></span><span class="st st-${r.status}">${STATUS_LABEL[r.status] || escapeHtml(r.status)}</span></div>
             <ul>${(r.return_items || []).map(it => `<li><span>${escapeHtml(it.product_name || '-')}</span><span>× ${it.quantity}</span></li>`).join('')}</ul>
             ${r.status === 'rejected' && rej ? `<div class="rt-reject">Alasan ditolak: ${escapeHtml(rej[1])}</div>` : ''}
           </div>`;
