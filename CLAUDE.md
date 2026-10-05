@@ -20,8 +20,8 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 /
 ├── js/
 │   ├── config.js          ← Supabase URL + anon key, inisialisasi client
-│   ├── auth.js            ← requireAdmin(), requireSuperAdmin(), requireSales(),
-│   │                        signOut(), updateSidebarUser(), mobile sidebar (hamburger)
+│   ├── auth.js            ← requireAdmin(), requireSuperAdmin(), requireSales(), requireGudang(),
+│   │                        homePageForRole(), signOut(), updateSidebarUser(), mobile sidebar (hamburger)
 │   ├── utils.js           ← formatCurrency, formatDate, modal, toast, number format, debounce
 │   └── jadwal.js          ← helper Jadwal Kunjungan: HARI, localDateISO, fetchVisitFacts, computeVisitStatus
 ├── css/
@@ -47,6 +47,7 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 ├── purchases.html
 ├── stock-out.html
 ├── retur.html         ← Retur barang
+├── retur-toko.html    ← Input retur dari toko oleh karyawan gudang (role gudang, layout tablet)
 ├── reports.html       ← Laporan stok (super_admin only)
 ├── profit-loss.html   ← Laba rugi (super_admin only)
 ├── piutang.html       ← Piutang (super_admin only)
@@ -135,14 +136,17 @@ while (true) {
 ### Role System
 | Role | Akses |
 |---|---|
-| `sales` | `sales.html` saja |
+| `sales` | `sales.html` saja (tidak bisa input retur — dikunci di database) |
+| `gudang` | `retur-toko.html` saja (input retur dari toko, tanpa harga) |
 | `admin` | Semua halaman KECUALI yang `data-super-admin` |
 | `super_admin` | Semua halaman tanpa terkecuali |
 
 ### Auth Guard Functions
 - `requireAdmin()` — allow `admin` + `super_admin`, redirect ke `sales.html` jika bukan
 - `requireSuperAdmin()` — hanya `super_admin`, redirect ke `index.html` jika bukan
-- `requireSales()` — cek sesi aktif saja, semua role boleh
+- `requireSales()` — cek sesi aktif saja, semua role boleh (`sales.html` sendiri melempar role `gudang` ke `retur-toko.html`)
+- `requireGudang()` — `gudang` + `admin` + `super_admin`; sales dilempar ke `sales.html`
+- `homePageForRole(role)` — halaman awal per role (dipakai `login.html` & redirect guard): admin/super_admin → `index.html`, gudang → `retur-toko.html`, sales → `sales.html`
 - `requireAuth()` — **TIDAK ADA**, jangan gunakan
 
 ### Super Admin CSS (di style.css)
@@ -207,8 +211,8 @@ Saat edit subtotal → back-calc: `Math.round(subtotal / (qty * (1 - disc%)))`
 
 **Core:** `categories`, `products`, `customers`, `invoices`, `invoice_items`, `stock_movements`  
 **Transactions:** `purchases`, `purchase_items`, `stock_transfers`, `stock_transfer_items`  
-**Auth:** `user_profiles` (role: `'admin'` | `'sales'` | `'super_admin'`)  
-**Returns:** `returns`, `return_items`  
+**Auth:** `user_profiles` (role: `'admin'` | `'sales'` | `'super_admin'` | `'gudang'`) — role cuma boleh diubah super_admin (trigger `guard_user_profile_role`, migration43)  
+**Returns:** `returns`, `return_items` — `returns.source` (`'admin'` | `'gudang'`), `created_by_id`, `photo_path` (bucket privat `return-photos`). **RLS aktif** (migration43): baca bebas, tulis langsung cuma admin/super_admin, gudang lewat RPC `create_store_return()`, sales tidak bisa sama sekali  
 **Settings:** `app_settings`, `sales_targets`  
 **Wishlist:** `wishlist_items`  
 **Jadwal Kunjungan:** `visit_schedules` (customer_id, sales_id, day_of_week 1=Senin..7=Minggu, every_week, needs_review, added_by_id) — unik per (customer, sales, hari)  
@@ -349,6 +353,18 @@ git push -u origin feat/nama-fitur
 
 ### retur.html
 - Print layout mirip invoice (3 kolom TTD)
+- Retur dari gudang ditandai **🏬 Gudang** (+ 📷 kalau ada foto) di tabel; detail menampilkan siapa yang input + foto barang (signed URL 1 jam dari bucket privat `return-photos`). Disetujui/ditolak dengan tombol yang sama seperti retur buatan admin
+
+### retur-toko.html
+- Halaman **terpisah** untuk karyawan gudang/toko input retur barang dari toko pelanggan — sengaja tidak di `sales.html` supaya sales tidak bisa retur sembarangan. `requireGudang()`; tidak ada di sidebar admin (admin tetap memproses retur di `retur.html`)
+- Layout untuk **tablet** (tombol & baris besar, dua kolom ≥ 900px: pilih barang | daftar retur; menumpuk di layar lebih kecil). Top bar sendiri, bukan sidebar. Dua tab: ➕ Input Retur, 📋 Riwayat
+- Alur: pilih toko (TomSelect) → muncul **barang yang pernah dibeli toko itu** + sisa yang masih bisa diretur (format lusin) → + Retur, atur qty (stepper, maks = sisa, tombol "Semua") → alasan (chip sama dengan `retur.html`; "Lainnya" wajib diisi teks) → catatan & **foto opsional** → Kirim
+- **Tidak ada harga** di halaman ini — query tidak mengambil kolom harga sama sekali
+- **Faktur dicari otomatis di database** oleh RPC `create_store_return()` (migration43), bukan dipilih karyawan: faktur terbaru toko itu yang berisi barang tsb dulu, kalau qty-nya melebihi sisa di faktur itu sisanya diambil dari faktur sebelumnya → **1 retur per faktur** (satu pengajuan bisa jadi beberapa nomor RTR). Aturan sisa sama dengan `retur.html`: faktur bukan `cancelled`, verifikasi NULL/`approved`, sisa = terjual − retur `pending`+`approved`; harga retur = `invoice_items.price` (sama dengan `retur.html`). Semua dalam satu transaksi + advisory lock per toko — gagal satu barang = tidak ada yang tersimpan. Daftar sisa di layar (`fetchReturnable()`) cuma tampilan, rumusnya harus tetap sama dengan RPC
+- Retur masuk `pending`, `source = 'gudang'` — stok & piutang baru berubah setelah admin menyetujui di `retur.html`
+- Foto dikecilkan di browser (maks 1200px, WebP/JPEG, pola sama dengan foto produk) → bucket privat `return-photos` (1 MB, webp/jpeg). Diunggah sebelum RPC; kalau RPC gagal, foto dihapus lagi (policy owner delete)
+- Riwayat: retur milik akun yang login (`created_by_id`), dikelompokkan per pengajuan (`created_at` + toko — satu transaksi, jadi sama persis), status per nomor RTR + alasan kalau ditolak
+- Akun gudang dibuat super_admin di `settings.html` tab **👥 Akun Sales & Gudang** (pilih Jenis Akun saat tambah). `allSales` di halaman itu tetap cuma role sales (dipakai Target Omzet)
 
 ### profit-loss.html
 - Rekap kas: gunakan `cash_paid`/`transfer_paid` langsung (bukan `payment_method × total`)
@@ -377,7 +393,8 @@ git push -u origin feat/nama-fitur
 | Halaman | Auth | Role |
 |---|---|---|
 | `login.html`, `setup.html`, `split-csv.html` | — | Public |
-| `sales.html` | `requireSales()` | Semua role |
+| `sales.html` | `requireSales()` | Semua role kecuali gudang (dilempar ke `retur-toko.html`) |
+| `retur-toko.html` | `requireGudang()` | gudang + admin + super_admin |
 | `index.html`, `products.html`, `customers.html`, `invoices.html`, `verify-invoices.html`, `purchases.html`, `stock-out.html`, `retur.html`, `wishlist.html`, `discounts.html`, `katalog-cetak.html` | `requireAdmin()` | admin + super_admin |
 | `reports.html`, `profit-loss.html`, `piutang.html`, `laporan-sales.html`, `settings.html`, `jadwal-kunjungan.html` | `requireSuperAdmin()` | super_admin only |
 
@@ -406,4 +423,5 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration35.sql` | Kolom `latitude`/`longitude`/`location_updated_at`/`location_source` di `customers` + fungsi `set_customer_location_from_visit()` — titik GPS toko ditempel otomatis dari Absen Kunjungan, dipakai link "Buka Maps" di `sales.html` & `customers.html` |
 | `supabase_migration36.sql` | Tabel `product_cost_logs` + trigger `log_product_cost_change` di `products` — catat tiap perubahan `products.cost` (lama→baru, sumber, siapa, kapan). Sumber ditandai lewat GUC transaction-local `app.cost_source` (`increase_stock_on_purchase` → `purchase`, `edit_purchase()` ditulis ulang + `set_config()` → `purchase_edit`, sisanya `manual`). Termasuk backfill 1 baris awal per produk. Jalankan setelah migration34 |
 | `supabase_migration34.sql` | **Wajib untuk Edit PO.** Fungsi `edit_purchase()` — seluruh rangkaian edit pembelian jadi satu transaksi (sebelumnya 4 panggilan terpisah dari browser: koneksi putus di tengah = stok berkurang + item PO hilang). Sekaligus `increase_stock_on_purchase()` cuma menulis `products.cost` kalau PO itu memang pembelian terbaru untuk produk tsb — sebelumnya edit PO lama menarik mundur harga modal |
+| `supabase_migration43.sql` | **Wajib untuk Retur Toko.** Role `gudang`, kolom `returns.source`/`created_by_id`/`photo_path`, RPC `create_store_return()` (faktur dicari otomatis), **RLS di `returns` & `return_items`** (sales tidak bisa menulis retur), trigger `guard_user_profile_role` (role akun cuma bisa diubah super_admin — `settings.html` sekarang menyimpan profil akun baru setelah sesi super_admin dipulihkan), bucket privat `return-photos`. Jalankan setelah migration22 |
 | `supabase_migration42.sql` | **Wajib untuk Jadwal Kunjungan.** Tabel `visit_schedules` + setting `visit_target_per_day` (default 12) + `jadwal_tab_visible_for` (default kosong = tab Hari Ini belum tampil ke siapa pun). Tanpa ini tab Hari Ini di `sales.html` kosong dan `jadwal-kunjungan.html` menampilkan pesan error |
