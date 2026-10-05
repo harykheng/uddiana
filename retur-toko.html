@@ -33,7 +33,9 @@
     .rt-label { display: block; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); margin-bottom: 8px; }
     .rt-step { padding: 18px 20px; margin-bottom: 18px; }
     .rt-step .ts-control { min-height: 52px; font-size: 16px; padding: 12px 14px; }
-    .rt-step .ts-dropdown .option { padding: 10px 14px; font-size: 15px; }
+    /* Dropdown toko ditaruh di body (dropdownParent) — di atas top bar sticky */
+    body > .ts-dropdown { z-index: 60; }
+    body > .ts-dropdown .option { padding: 10px 14px; font-size: 15px; }
     .opt-sub { display: block; font-size: 12px; color: var(--text-muted); }
 
     .rt-grid { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
@@ -303,6 +305,9 @@
       searchField: ['text', 'address'],
       placeholder: '— Ketik nama toko —',
       maxOptions: 200,
+      // .card punya overflow:hidden — dropdown di dalamnya ikut terpotong.
+      // Ditaruh di body; posisi & tinggi diatur patch TomSelect di utils.js.
+      dropdownParent: 'body',
       render: {
         option: (d, esc) => `<div>${esc(d.text)}${d.address ? `<span class="opt-sub">${esc(d.address)}</span>` : ''}</div>`,
       },
