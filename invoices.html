@@ -156,7 +156,7 @@
           <option value="paid">Lunas</option>
           <option value="cancelled">Dibatalkan</option>
         </select>
-        <select id="filter-sales" onchange="renderInvoices()">
+        <select id="filter-sales" onchange="reloadInvoiceList()">
           <option value="">Semua Sales</option>
         </select>
         <input type="date" id="filter-date-from" onchange="loadInvoices()">
@@ -509,6 +509,7 @@
 <script>
   let allInvoices    = [];
   let products       = [];
+  let productById    = new Map();
   let customers      = [];
   let currentInvoice = null;
   let customerTS     = null;
@@ -523,7 +524,7 @@
   const INV_PAGE_SIZE = 25;
   let invPage = 1;
 
-  const handleSearch = debounce(() => { invPage = 1; renderInvoices(); }, 350);
+  const handleSearch = debounce(() => reloadInvoiceList(), 350);
 
   async function init() {
     const auth = await requireAdmin(); if (!auth) return;
@@ -537,6 +538,7 @@
       .select('id,name,sku,price,price_shopee,cost,stock_quantity,unit')
       .eq('is_active', true).order('name'));
     products = data || [];
+    productById = new Map(products.map(p => [p.id, p]));
   }
 
   async function loadDiscountRules() {
@@ -579,71 +581,215 @@
 
   let returTotalByInvoice = {};   // { invoice_id: nilai retur disetujui }
 
-  async function loadInvoices() {
-    invPage = 1;
+  // ── DAFTAR FAKTUR: pagination di database ──────────────────
+  // Dulu semua faktur (+ nama barang tiap faktur, untuk pencarian) diambil
+  // sekaligus lalu dipotong 25 per halaman di browser — makin lama makin berat,
+  // dan PostgREST diam-diam memotong di 1000 baris, jadi faktur lama tidak
+  // pernah tampil/ketemu. Sekarang yang diambil cuma 25 baris halaman aktif.
+  //
+  // allInvoices = baris halaman yang sedang tampil saja (dipakai tombol aksi
+  // per baris lewat allInvoices.find()).
+  let invTotalCount  = 0;     // jumlah faktur sesuai filter, semua halaman
+  let invSearchRows  = null;  // mode cari: {id,created_at,total,status} semua hasil, urut terbaru
+  let invSummaryRows = null;  // {total,status,sales_name} semua faktur sesuai filter status/tanggal
+  let invListSeq = 0, invSummarySeq = 0;   // abaikan respons yang sudah basi
+
+  // Filter status/tanggal/verifikasi (+ sales kalau withSales) — dipakai semua
+  // query daftar supaya halaman, jumlah, total & hasil cari selalu konsisten.
+  function applyInvoiceFilters(q, { withSales = true } = {}) {
+    q = q.or('verification_status.is.null,verification_status.eq.approved');
     const status   = document.getElementById('filter-status').value;
     const dateFrom = document.getElementById('filter-date-from').value;
     const dateTo   = document.getElementById('filter-date-to').value;
-
-    let q = supabase.from('invoices').select('*, invoice_items(product_name)').order('created_at', { ascending: false })
-      .or('verification_status.is.null,verification_status.eq.approved');
+    const sales    = document.getElementById('filter-sales').value;
     if (status)   q = q.eq('status', status);
     if (dateFrom) q = q.gte('invoice_date', dateFrom);
     if (dateTo)   q = q.lte('invoice_date', dateTo);
+    if (withSales && sales) q = q.eq('sales_name', sales);
+    return q;
+  }
 
-    const { data, error } = await q;
-    if (error) { showToast('Gagal memuat faktur', 'error'); return; }
-    allInvoices = data || [];
+  // Seperti fetchAll(), tapi halaman ke-2 dst diambil paralel (jumlah barisnya
+  // sudah diketahui dari halaman pertama). queryFn(selectOpts) harus punya
+  // .order() yang pasti supaya potongan range tidak tumpang tindih.
+  async function fetchAllParallel(queryFn, pageSize = 1000) {
+    const first = await queryFn({ count: 'exact' }).range(0, pageSize - 1);
+    if (first.error) return { data: null, error: first.error };
+    const count = first.count || 0;
+    if (count <= pageSize) return { data: first.data || [], error: null };
+    const rest = [];
+    for (let from = pageSize; from < count; from += pageSize) {
+      rest.push(queryFn().range(from, from + pageSize - 1));
+    }
+    const results = await Promise.all(rest);
+    const bad = results.find(r => r.error);
+    if (bad) return { data: null, error: bad.error };
+    return { data: (first.data || []).concat(...results.map(r => r.data || [])), error: null };
+  }
+
+  // Muat ulang semua: dipanggil saat buka halaman, ganti filter status/tanggal,
+  // dan setelah faktur dibuat/diedit/dibayar/dihapus.
+  async function loadInvoices() {
+    loadInvoiceSummary();   // jalan di belakang, tidak ditunggu
+    await reloadInvoiceList();
+  }
+
+  // Cari / filter sales berubah: daftar saja, ringkasan status/tanggal tetap.
+  async function reloadInvoiceList() {
+    invPage = 1;
+    const seq = ++invListSeq;
+    const search = document.getElementById('search-input').value.trim();
+    invSearchRows = null;
+    if (search) {
+      const rows = await searchInvoiceRows(search);
+      if (seq !== invListSeq) return;
+      if (!rows) { showToast('Gagal mencari faktur', 'error'); return; }
+      invSearchRows = rows;
+    }
+    renderInvoiceTotal();
+    await fetchInvoicePage(seq);
+  }
+
+  // Pencarian: no. faktur / pelanggan / toko / nama barang di faktur, sama
+  // seperti dulu. Hasilnya cuma kolom ringan (untuk jumlah, total & urutan);
+  // isi lengkap diambil per halaman oleh fetchInvoicePage().
+  async function searchInvoiceRows(raw) {
+    // Karakter khusus filter PostgREST dibuang; sisanya dicari apa adanya
+    const term = raw.replace(/[%_*,()"\\]/g, ' ').trim();
+    if (!term) return [];
+    const pattern = `%${term}%`;
+    const LIGHT = 'id,created_at,total,status';
+    const byCol = col => fetchAllParallel(opts =>
+      applyInvoiceFilters(supabase.from('invoices').select(LIGHT, opts))
+        .ilike(col, pattern).order('id'));
+    const byItem = fetchAllParallel(opts =>
+      supabase.from('invoice_items').select('invoice_id', opts)
+        .ilike('product_name', pattern).order('id'));
+
+    const results = await Promise.all([byCol('invoice_number'), byCol('customer_name'), byCol('store_name'), byItem]);
+    if (results.some(r => r.error)) return null;
+
+    const found = new Map();
+    results.slice(0, 3).forEach(r => r.data.forEach(row => found.set(row.id, row)));
+
+    // Faktur yang cocok lewat nama barang: ambil baris ringannya (dengan filter
+    // yang sama) untuk id yang belum ketemu dari kolom faktur.
+    const itemIds = [...new Set(results[3].data.map(r => r.invoice_id))].filter(id => id && !found.has(id));
+    const CHUNK = 200;   // jaga panjang URL query .in()
+    const chunks = [];
+    for (let i = 0; i < itemIds.length; i += CHUNK) chunks.push(itemIds.slice(i, i + CHUNK));
+    const byIds = await Promise.all(chunks.map(ids =>
+      applyInvoiceFilters(supabase.from('invoices').select(LIGHT)).in('id', ids)));
+    if (byIds.some(r => r.error)) return null;
+    byIds.forEach(r => (r.data || []).forEach(row => found.set(row.id, row)));
+
+    return [...found.values()].sort((a, b) =>
+      a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : (a.id < b.id ? 1 : -1));
+  }
+
+  async function fetchInvoicePage(seq = ++invListSeq) {
+    const from = (invPage - 1) * INV_PAGE_SIZE;
+    const to   = from + INV_PAGE_SIZE - 1;
+    const tbody = document.getElementById('invoices-table');
+    tbody.style.opacity = '.5';   // tanda sedang memuat; dikembalikan di renderInvoices()
+    let rows, count;
+    if (invSearchRows) {
+      count = invSearchRows.length;
+      const ids = invSearchRows.slice(from, to + 1).map(r => r.id);
+      rows = [];
+      if (ids.length) {
+        const { data, error } = await supabase.from('invoices').select('*').in('id', ids);
+        if (seq !== invListSeq) return;
+        if (error) { tbody.style.opacity = ''; showToast('Gagal memuat faktur', 'error'); return; }
+        const byId = new Map((data || []).map(r => [r.id, r]));
+        rows = ids.map(id => byId.get(id)).filter(Boolean);
+      }
+    } else {
+      const { data, error, count: c } = await applyInvoiceFilters(
+          supabase.from('invoices').select('*', { count: 'exact' }))
+        .order('created_at', { ascending: false }).order('id', { ascending: false })
+        .range(from, to);
+      if (seq !== invListSeq) return;
+      if (error) {
+        // Halaman di luar jangkauan (mis. faktur terakhir di halaman itu baru dihapus)
+        if (invPage > 1) { invPage = 1; return fetchInvoicePage(seq); }
+        tbody.style.opacity = '';
+        showToast('Gagal memuat faktur', 'error'); return;
+      }
+      rows = data || [];
+      count = c || 0;
+    }
 
     // Retur tidak mengubah invoices.total, jadi nilainya diambil terpisah lalu
     // dikurangkan sendiri saat menampilkan tagihan & sisa.
-    returTotalByInvoice = await fetchReturnTotals(allInvoices.map(i => i.id));
-
-    // Populasi dropdown filter sales dari data yang ada
-    const salesNames = [...new Set(allInvoices.map(i => i.sales_name).filter(Boolean))].sort();
-    const selSales = document.getElementById('filter-sales');
-    const prevVal = selSales.value;
-    selSales.innerHTML = '<option value="">Semua Sales</option>' +
-      salesNames.map(n => `<option value="${n}"${n === prevVal ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('');
-
+    const returTotals = await fetchReturnTotals(rows.map(i => i.id));
+    if (seq !== invListSeq) return;
+    returTotalByInvoice = returTotals;
+    allInvoices = rows;
+    invTotalCount = count;
     renderInvoices();
   }
 
-  function renderInvoices() {
-    const search     = document.getElementById('search-input').value.toLowerCase();
-    const salesFilter = document.getElementById('filter-sales').value;
-    let filtered = allInvoices.filter(inv => {
-      if (search) {
-        const inHeader = inv.invoice_number.toLowerCase().includes(search) ||
-          inv.customer_name.toLowerCase().includes(search) ||
-          (inv.store_name || '').toLowerCase().includes(search);
-        const inItems = (inv.invoice_items || []).some(it =>
-          (it.product_name || '').toLowerCase().includes(search));
-        if (!inHeader && !inItems) return false;
-      }
-      if (salesFilter && (inv.sales_name || '') !== salesFilter) return false;
-      return true;
-    });
+  // Dropdown filter sales + total nilai faktur butuh SEMUA faktur sesuai filter,
+  // bukan cuma halaman aktif. Cukup 3 kolom kecil, dan tidak menahan tabel.
+  async function loadInvoiceSummary() {
+    const seq = ++invSummarySeq;
+    invSummaryRows = null;
+    renderInvoiceTotal();
+    const { data, error } = await fetchAllParallel(opts =>
+      applyInvoiceFilters(supabase.from('invoices').select('total,status,sales_name', opts), { withSales: false })
+        .order('id'));
+    if (seq !== invSummarySeq) return;
+    if (error) { document.getElementById('total-summary').textContent = ''; return; }
+    invSummaryRows = data || [];
 
-    document.getElementById('invoice-count').textContent = filtered.length;
-    const totalVal = filtered.filter(i => i.status !== 'cancelled').reduce((s, i) => s + Number(i.total), 0);
-    document.getElementById('total-summary').textContent = `Total: ${formatCurrency(totalVal)}`;
+    const salesNames = [...new Set(invSummaryRows.map(i => i.sales_name).filter(Boolean))].sort();
+    const selSales = document.getElementById('filter-sales');
+    const prevVal = selSales.value;
+    selSales.innerHTML = '<option value="">Semua Sales</option>' +
+      salesNames.map(n => `<option value="${escapeHtml(n)}"${n === prevVal ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('');
+    // Sales yang sedang dipilih tidak ada lagi di filter status/tanggal baru —
+    // tetap dipertahankan supaya daftar & dropdown tidak saling bertentangan.
+    if (prevVal && !salesNames.includes(prevVal)) {
+      selSales.insertAdjacentHTML('beforeend', `<option value="${escapeHtml(prevVal)}" selected>${escapeHtml(prevVal)}</option>`);
+    }
+    renderInvoiceTotal();
+  }
+
+  function renderInvoiceTotal() {
+    const el = document.getElementById('total-summary');
+    let rows;
+    if (invSearchRows) {
+      rows = invSearchRows;   // sudah tersaring sales & kata kunci
+    } else if (invSummaryRows) {
+      const sales = document.getElementById('filter-sales').value;
+      rows = sales ? invSummaryRows.filter(i => (i.sales_name || '') === sales) : invSummaryRows;
+    } else {
+      el.textContent = 'Total: menghitung…';
+      return;
+    }
+    const totalVal = rows.filter(i => i.status !== 'cancelled').reduce((s, i) => s + Number(i.total), 0);
+    el.textContent = `Total: ${formatCurrency(totalVal)}`;
+  }
+
+  function renderInvoices() {
+    document.getElementById('invoice-count').textContent = invTotalCount;
 
     const tbody = document.getElementById('invoices-table');
-    if (!filtered.length) {
+    tbody.style.opacity = '';
+    if (!allInvoices.length) {
       tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🧾</div><h4>Tidak ada faktur</h4></div></td></tr>`;
       document.getElementById('inv-pagination').innerHTML = '';
       return;
     }
 
-    const totalPages = Math.ceil(filtered.length / INV_PAGE_SIZE);
-    if (invPage > totalPages) invPage = totalPages;
-    const pageItems = filtered.slice((invPage - 1) * INV_PAGE_SIZE, invPage * INV_PAGE_SIZE);
+    const totalPages = Math.max(1, Math.ceil(invTotalCount / INV_PAGE_SIZE));
+    const pageItems = allInvoices;
 
     // Render pagination controls
     const pg = document.getElementById('inv-pagination');
     if (totalPages <= 1) {
-      pg.innerHTML = `<span style="font-size:12px;color:var(--text-muted)">${filtered.length} faktur</span>`;
+      pg.innerHTML = `<span style="font-size:12px;color:var(--text-muted)">${invTotalCount} faktur</span>`;
     } else {
       const pages = [];
       for (let i = 1; i <= totalPages; i++) {
@@ -655,7 +801,7 @@
       }
       pg.innerHTML = `
         <span style="font-size:12px;color:var(--text-muted)">
-          Hal ${invPage} / ${totalPages} &nbsp;·&nbsp; ${filtered.length} faktur
+          Hal ${invPage} / ${totalPages} &nbsp;·&nbsp; ${invTotalCount} faktur
         </span>
         <div style="display:flex;gap:4px;flex-wrap:wrap">
           <button class="btn btn-ghost btn-sm" onclick="goInvPage(${invPage - 1})" ${invPage === 1 ? 'disabled' : ''}>‹ Prev</button>
@@ -728,8 +874,9 @@
   }
 
   function goInvPage(p) {
-    invPage = Math.max(1, p);
-    renderInvoices();
+    const totalPages = Math.max(1, Math.ceil(invTotalCount / INV_PAGE_SIZE));
+    invPage = Math.min(Math.max(1, p), totalPages);
+    fetchInvoicePage();
     document.querySelector('.card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
@@ -737,7 +884,6 @@
     ['search-input','filter-date-from','filter-date-to'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('filter-status').value = '';
     document.getElementById('filter-sales').value = '';
-    invPage = 1;
     loadInvoices();
   }
 
@@ -834,7 +980,6 @@
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
           <option value="">-- Pilih Produk --</option>
-          ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-stock="${p.stock_quantity}" data-unit="${p.unit}">${escapeHtml(p.name)}</option>`).join('')}
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
@@ -856,12 +1001,7 @@
     `;
     tbody.appendChild(tr);
     const sel = tr.querySelector('select');
-    tomSelectInstances[id] = new TomSelect(sel, {
-      placeholder: '— Cari & pilih produk —',
-      maxOptions: 200,
-      dropdownParent: 'body',
-      onChange: () => onProductSelect(sel, id)
-    });
+    tomSelectInstances[id] = createProductTomSelect(sel, products, () => onProductSelect(sel, id));
     return id;
   }
 
@@ -1075,10 +1215,10 @@
   }
 
   function onProductSelect(sel, rowId) {
-    const opt = sel.options[sel.selectedIndex];
-    const stock  = parseInt(opt.dataset.stock)  || 0;
-    const regular = parseFloat(opt.dataset.price)  || 0;
-    const shopee  = parseFloat(opt.dataset.shopee) || 0;
+    const prod = productById.get(sel.value);
+    const stock  = parseInt(prod?.stock_quantity) || 0;
+    const regular = parseFloat(prod?.price)        || 0;
+    const shopee  = parseFloat(prod?.price_shopee) || 0;
 
     let price = 0;
     if (currentPriceMode === 'regular') price = regular;
@@ -1092,7 +1232,7 @@
     setDiscAuto(rowId, true);
 
     // Auto-apply discount rule (jika ada aturan aktif untuk produk ini)
-    const productId = opt.value;
+    const productId = sel.value;
     const qty = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value) || 1;
     applyDiscountRule(rowId, productId, qty, price);
 
@@ -1232,12 +1372,19 @@
   // (misal ≥72 pcs) nggak pernah kepakai kalau qty diisi SETELAH pilih produk,
   // yang justru urutan normalnya. Sekarang semua baris dievaluasi ulang lewat
   // jalur yang sama dengan saat produk dipilih.
+  //
+  // Data semua baris, customer & total dihitung sekali per evaluasi (lihat
+  // catatan di reapplyAllDiscountsEdit()).
   function reapplyAllDiscounts() {
-    _getAllRowData().forEach(({ rowId, productId, qty, price }) => {
+    const allRowData = _getAllRowData();
+    const customerId = document.getElementById('inv-customer-select')?.value || null;
+    allRowData.forEach(({ rowId, productId, qty, price }) => {
       if (isDiscManual(rowId)) return;   // diskon diketik tangan — jangan ditimpa
-      applyDiscountRule(rowId, productId, qty, price);
-      recalcRow(rowId);
+      writeDiscountToRow(rowId, 'disc',
+        findBestDiscountRule(productId, qty, price, customerId, allRowData));
+      recalcRow(rowId, false);
     });
+    recalcTotal();
   }
 
   // Handler untuk perubahan qty — recalc + re-evaluate group discounts
@@ -1266,7 +1413,7 @@
     if (disc2El) disc2El.style.display = show ? '' : 'none';
   }
 
-  function recalcRow(rowId) {
+  function recalcRow(rowId, updateTotal = true) {
     const qty      = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value);
     const price    = parseFormattedNumber(document.getElementById(`price-${rowId}`)?.value);
     const discType = document.getElementById(`disctype-${rowId}`)?.value || 'percent';
@@ -1278,7 +1425,7 @@
     // Formula bersama di js/utils.js — dipakai sales.html & verify-invoices.html juga
     const total = hitungSubtotalBaris(qty, price, discType, disc, disc2);
     if (sub) sub.value = total > 0 ? total.toLocaleString('id-ID') : '0';
-    recalcTotal();
+    if (updateTotal) recalcTotal();
   }
 
   function recalcRowFromSubtotal(rowId) {
@@ -1505,12 +1652,19 @@
     });
   }
 
+  // Data semua baris & total dihitung SEKALI per evaluasi, bukan per baris —
+  // dulu tiap baris membaca ulang semua baris + menghitung ulang total, jadi
+  // faktur 50 item = 2.500× baca baris tiap ketik qty. Qty & harga tidak diubah
+  // oleh penulisan diskon, jadi data di awal tetap berlaku sampai akhir.
   function reapplyAllDiscountsEdit() {
-    _getAllEditRowData().forEach(({ rowId, productId, qty, price }) => {
+    const allRowData = _getAllEditRowData();
+    allRowData.forEach(({ rowId, productId, qty, price }) => {
       if (isDiscManual(rowId)) return;
-      applyDiscountRuleEdit(rowId, productId, qty, price);
-      recalcEditInvoiceRow(rowId);
+      writeDiscountToRow(rowId, 'edisc',
+        findBestDiscountRule(productId, qty, price, editInvoiceCustomerId || null, allRowData));
+      recalcEditInvoiceRow(rowId, false);
     });
+    recalcEditInvoiceTotal();
   }
 
   function onEditQtyChange(rowId) {
@@ -1536,6 +1690,7 @@
   let editInvoiceCustomerId = null;
   // Salinan daftar produk khusus modal edit: stok LIVE + qty yang sudah dipakai faktur ini.
   let editProducts = [];
+  let editProductById = new Map();
 
   async function openEditInvoice(id) {
     const inv = allInvoices.find(x => x.id === id);
@@ -1583,6 +1738,7 @@
       ...p,
       stock_quantity: (liveStockById[p.id] ?? p.stock_quantity) + (ownedByProduct[p.id] || 0),
     }));
+    editProductById = new Map(editProducts.map(p => [p.id, p]));
 
     document.getElementById('edit-invoice-items-body').innerHTML = '';
     const sortedForEdit = editInvoiceItems.slice().sort((a, b) => (a.product_name || '').localeCompare(b.product_name || '', 'id'));
@@ -1612,14 +1768,17 @@
       tr.dataset.savedDisc2 = String(existingItem.item_discount2 || 0);
       tr.dataset.savedDiscType = existingItem.discount_type || 'percent';
     }
+    // Produk tersimpan yang sudah tidak ada di daftar (nonaktif) tetap tidak
+    // terpilih, sama seperti waktu daftar produk masih ditulis sebagai <option>.
+    const existingProd = existingItem ? editProductById.get(existingItem.product_id) : null;
     tr.innerHTML = `
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
           <option value="">-- Pilih Produk --</option>
-          ${editProducts.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-stock="${p.stock_quantity}"${existingItem && p.id===existingItem.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+          ${existingProd ? `<option value="${existingProd.id}" selected>${escapeHtml(existingProd.name)}</option>` : ''}
         </select>
       </td>
-      <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingItem ? (editProducts.find(p=>p.id===existingItem.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingProd?.stock_quantity || 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eqty-${id}" value="${existingItem ? existingItem.quantity : '1'}" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onEditQtyChange('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eprice-${id}" value="${existingItem ? Number(existingItem.price||0).toLocaleString('id-ID') : '0'}" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onEditPriceChange('${id}')"></td>
       <td style="padding:5px 6px">
@@ -1639,21 +1798,16 @@
     tbody.appendChild(tr);
     toggleDisc2(id, existingItem?.discount_type || 'percent', 'edisc');
     const sel = tr.querySelector('select');
-    editTomSelectInstances[id] = new TomSelect(sel, {
-      placeholder: '— Cari & pilih produk —',
-      maxOptions: 200,
-      dropdownParent: 'body',
-      onChange: () => {
-        const opt      = sel.options[sel.selectedIndex];
-        const productId = opt.value;
-        const price    = parseFloat(opt.dataset.price || 0);
-        const qty      = parseFormattedNumber(document.getElementById(`eqty-${id}`)?.value) || 1;
-        document.getElementById(`estock-${id}`).value = opt.dataset.stock || 0;
-        document.getElementById(`eprice-${id}`).value = price > 0 ? price.toLocaleString('id-ID') : '0';
-        setDiscAuto(id, true);
-        if (productId) applyDiscountRuleEdit(id, productId, qty, price);
-        recalcEditInvoiceRow(id);
-      }
+    editTomSelectInstances[id] = createProductTomSelect(sel, editProducts, () => {
+      const productId = sel.value;
+      const prod     = editProductById.get(productId);
+      const price    = parseFloat(prod?.price || 0);
+      const qty      = parseFormattedNumber(document.getElementById(`eqty-${id}`)?.value) || 1;
+      document.getElementById(`estock-${id}`).value = prod?.stock_quantity || 0;
+      document.getElementById(`eprice-${id}`).value = price > 0 ? price.toLocaleString('id-ID') : '0';
+      setDiscAuto(id, true);
+      if (productId) applyDiscountRuleEdit(id, productId, qty, price);
+      recalcEditInvoiceRow(id);
     });
   }
 
@@ -1691,7 +1845,7 @@
     }
   }
 
-  function recalcEditInvoiceRow(rowId) {
+  function recalcEditInvoiceRow(rowId, updateTotal = true) {
     const qty      = parseFormattedNumber(document.getElementById(`eqty-${rowId}`)?.value || '0');
     const price    = parseFormattedNumber(document.getElementById(`eprice-${rowId}`)?.value || '0');
     const discType = document.getElementById(`edisctype-${rowId}`)?.value || 'percent';
@@ -1703,13 +1857,13 @@
     sub = hitungSubtotalBaris(qty, price, discType, disc, disc2);
     const subEl = document.getElementById(`esub-${rowId}`);
     if (subEl) subEl.value = sub > 0 ? sub.toLocaleString('id-ID') : '0';
-    recalcEditInvoiceTotal();
+    if (updateTotal) recalcEditInvoiceTotal();
   }
 
   function recalcEditInvoiceTotal() {
     let total = 0;
-    document.querySelectorAll('#edit-invoice-items-body tr').forEach(tr => {
-      const subEl = tr.querySelector('[id^="esub-"]');
+    document.querySelectorAll('#edit-invoice-items-body tr[id]').forEach(tr => {
+      const subEl = document.getElementById(`esub-${tr.id}`);
       total += parseFormattedNumber(subEl?.value || '0');
     });
     document.getElementById('edit-inv-total').textContent = formatCurrency(total);
@@ -1748,7 +1902,7 @@
       if (discType === 'percent') { disc = Math.min(disc, 100); disc2 = Math.min(disc2, 100); } else { disc2 = 0; }
       let sub;
       sub = hitungSubtotalBaris(qty, price, discType, disc, disc2);
-      const prod  = editProducts.find(p => p.id === sel.value);
+      const prod  = editProductById.get(sel.value);
       const cost  = prod?.cost || 0;
       const stockEl = tr.querySelector('[id^="estock-"]');
       const stockAvail = parseInt(stockEl?.value || '0');

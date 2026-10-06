@@ -237,6 +237,29 @@ async function fetchAll(queryFn, pageSize = 1000) {
   };
 })();
 
+// ── TOMSELECT PILIH PRODUK DI BARIS ITEM FAKTUR ───────────────
+// Daftar produk diberikan sebagai data ke TomSelect, BUKAN sebagai <option>
+// di HTML. Dulu tiap baris item membuat <select> berisi semua produk, jadi
+// faktur 50 item = 50 × ribuan <option> di DOM: modal edit faktur besar lama
+// dibuka, dan tiap ketik qty ikut berat karena sel.value / querySelector di
+// baris harus menyisir ribuan <option> itu. Sekarang <select>-nya cuma berisi
+// opsi kosong + produk yang terpilih (dibuat TomSelect sendiri saat memilih).
+//
+// Akibatnya <option> terpilih TIDAK punya data-price/data-stock lagi — ambil
+// data produk dari array produk halaman berdasarkan sel.value.
+//
+// productList: array produk ({ id, name }). Objek option dibuat baru per
+// instance karena TomSelect menulis $order/$id ke objek itu.
+function createProductTomSelect(sel, productList, onChange) {
+  return new TomSelect(sel, {
+    placeholder: '— Cari & pilih produk —',
+    maxOptions: 200,
+    dropdownParent: 'body',
+    options: productList.map(p => ({ value: p.id, text: p.name })),
+    onChange,
+  });
+}
+
 // ── RETUR vs FAKTUR ───────────────────────────────────────────
 // Retur TIDAK mengubah invoices.total — nilai faktur asli harus tetap utuh untuk
 // audit & cetak ulang. Konsekuensinya setiap halaman yang menghitung tagihan,

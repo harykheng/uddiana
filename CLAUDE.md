@@ -183,6 +183,9 @@ const nilai = parseFormattedNumber(document.getElementById('my-input').value);
 input.value = Number(angka).toLocaleString('id-ID');
 ```
 
+### Dropdown Produk di Baris Item Faktur
+Pakai `createProductTomSelect(sel, productList, onChange)` dari `utils.js` (dipakai `invoices.html`, `sales.html`, `verify-invoices.html`). **JANGAN** tulis semua produk sebagai `<option>` di tiap baris — faktur 60 item × 3000 produk bikin modal edit butuh ~8 detik dibuka dan ~0,7 detik per ketikan qty. `<select>`-nya cukup berisi opsi kosong + produk terpilih; karena itu `<option>` **tidak punya** `data-price`/`data-stock` — ambil data produk dari Map (`productById` / `editProductById`) berdasarkan `sel.value`.
+
 ### Currency & Date
 ```js
 formatCurrency(amount)    // → "Rp 1.500.000"
@@ -283,6 +286,7 @@ git push -u origin feat/nama-fitur
 - **Buat PDF**: dari bar aksi yang sama → buka `katalog-cetak.html?ids=<uuid1,uuid2,...>` (produk terpilih via query string, bukan sessionStorage — supaya reload halaman & window.open tanpa opener tetap jalan) di tab baru. Ini mode "manual" dari `katalog-cetak.html`, lihat halaman itu
 
 ### invoices.html
+- **Daftar faktur dipaginasi di database** (25/halaman lewat `.range()` + `count: 'exact'`), bukan ambil semua lalu dipotong di browser — dulu juga diam-diam terpotong di 1000 faktur (batas PostgREST). `allInvoices` = baris halaman aktif saja. Pencarian (no. faktur / pelanggan / toko / nama barang) mengambil kolom ringan semua hasil (`searchInvoiceRows()`), isi lengkap tetap per halaman. Total nilai + dropdown filter sales dihitung dari query 3 kolom (`loadInvoiceSummary()`) yang jalan di belakang, tidak menahan tabel. Semua query daftar lewat `applyInvoiceFilters()` supaya halaman, jumlah, dan total konsisten
 - Price mode: Regular / Shopee / Custom
 - **Diskon per item**: toggle `%` (persentase) atau `Rp` (nominal, **per pcs** — otomatis dikali qty) per baris item
   - `item_discount`: nilai diskon tier pertama (angka % atau Rp per pcs)
