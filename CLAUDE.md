@@ -286,6 +286,7 @@ git push -u origin feat/nama-fitur
 - **Buat PDF**: dari bar aksi yang sama → buka `katalog-cetak.html?ids=<uuid1,uuid2,...>` (produk terpilih via query string, bukan sessionStorage — supaya reload halaman & window.open tanpa opener tetap jalan) di tab baru. Ini mode "manual" dari `katalog-cetak.html`, lihat halaman itu
 
 ### invoices.html
+- **Daftar faktur dipaginasi di database** (25/halaman lewat `.range()` + `count: 'exact'`), bukan ambil semua lalu dipotong di browser — dulu juga diam-diam terpotong di 1000 faktur (batas PostgREST). `allInvoices` = baris halaman aktif saja. Pencarian (no. faktur / pelanggan / toko / nama barang) mengambil kolom ringan semua hasil (`searchInvoiceRows()`), isi lengkap tetap per halaman. Total nilai + dropdown filter sales dihitung dari query 3 kolom (`loadInvoiceSummary()`) yang jalan di belakang, tidak menahan tabel. Semua query daftar lewat `applyInvoiceFilters()` supaya halaman, jumlah, dan total konsisten
 - Price mode: Regular / Shopee / Custom
 - **Diskon per item**: toggle `%` (persentase) atau `Rp` (nominal, **per pcs** — otomatis dikali qty) per baris item
   - `item_discount`: nilai diskon tier pertama (angka % atau Rp per pcs)
