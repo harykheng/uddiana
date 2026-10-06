@@ -118,6 +118,9 @@ Menu `data-super-admin` hanya tampil untuk `super_admin` (CSS + `body.is-super-a
 ### Mobile Sidebar
 `auth.js` otomatis inject hamburger button ke `.topbar` dan overlay backdrop saat `updateSidebarUser()` dipanggil. Tidak perlu kode tambahan di halaman.
 
+### Badge Retur Pending
+`updateSidebarUser()` juga memanggil `refreshReturPendingBadge()` — badge oranye jumlah retur `pending` di menu **↩️ Retur Barang** semua halaman admin (cari link `.nav-item[href="retur.html"]`, 1 query `count` head-only). Tidak perlu kode di halaman; `retur.html` memanggil `setReturPendingBadge(n)` sendiri setelah `loadReturns()` supaya badge langsung ikut berubah setelah setujui/tolak.
+
 ### Supabase — Bypass Limit 1000 Rows
 PostgREST default max 1000 rows. Gunakan pagination loop:
 ```js
@@ -353,17 +356,19 @@ git push -u origin feat/nama-fitur
 
 ### retur.html
 - Print layout mirip invoice (3 kolom TTD)
+- Retur **pending selalu tampil** di tabel walau di luar filter tanggal (default filter = bulan berjalan), dan diurutkan paling atas
 - Retur dari gudang ditandai **🏬 Gudang** (+ 📷 kalau ada foto) di tabel; detail menampilkan siapa yang input + foto barang (signed URL 1 jam dari bucket privat `return-photos`). Disetujui/ditolak dengan tombol yang sama seperti retur buatan admin
 
 ### retur-toko.html
 - Halaman **terpisah** untuk karyawan gudang/toko input retur barang dari toko pelanggan — sengaja tidak di `sales.html` supaya sales tidak bisa retur sembarangan. `requireGudang()`; tidak ada di sidebar admin (admin tetap memproses retur di `retur.html`)
 - Layout untuk **tablet** (tombol & baris besar, dua kolom ≥ 900px: pilih barang | daftar retur; menumpuk di layar lebih kecil). Top bar sendiri, bukan sidebar. Dua tab: ➕ Input Retur, 📋 Riwayat
-- Alur: pilih toko (TomSelect) → muncul **barang yang pernah dibeli toko itu** + sisa yang masih bisa diretur (format lusin) → + Retur, atur qty (stepper, maks = sisa, tombol "Semua") → alasan (chip sama dengan `retur.html`; "Lainnya" wajib diisi teks) → catatan & **foto opsional** → Kirim
+- Alur: pilih toko (TomSelect, dropdown di `body` karena `.card` ber-`overflow:hidden`) → **pilih faktur** (kartu ⚡ Otomatis + faktur toko itu yang masih ada sisa, terbaru dulu; kotak cari nomor faktur muncul kalau > 8 faktur) → muncul **barang** + sisa yang masih bisa diretur (format lusin) — mode Otomatis: gabungan semua faktur; faktur dipilih: cuma isi faktur itu ("Dibeli X di faktur ini"). Ganti faktur = daftar retur dikosongkan → + Retur, atur qty (stepper, maks = sisa, tombol "Semua") → alasan (chip sama dengan `retur.html`; "Lainnya" wajib diisi teks) → catatan & **foto opsional** → Kirim
 - **Tidak ada harga** di halaman ini — query tidak mengambil kolom harga sama sekali
-- **Faktur dicari otomatis di database** oleh RPC `create_store_return()` (migration43), bukan dipilih karyawan: faktur terbaru toko itu yang berisi barang tsb dulu, kalau qty-nya melebihi sisa di faktur itu sisanya diambil dari faktur sebelumnya → **1 retur per faktur** (satu pengajuan bisa jadi beberapa nomor RTR). Aturan sisa sama dengan `retur.html`: faktur bukan `cancelled`, verifikasi NULL/`approved`, sisa = terjual − retur `pending`+`approved`; harga retur = `invoice_items.price` (sama dengan `retur.html`). Semua dalam satu transaksi + advisory lock per toko — gagal satu barang = tidak ada yang tersimpan. Daftar sisa di layar (`fetchReturnable()`) cuma tampilan, rumusnya harus tetap sama dengan RPC
+- Faktur dipilih → RPC `create_store_return(..., p_invoice_id)` cuma memakai faktur itu (qty melebihi sisanya = ditolak; faktur bukan milik toko / batal / ditolak verifikasi = ditolak)
+- **Otomatis** (`p_invoice_id` NULL) → faktur dicari di database oleh RPC `create_store_return()` (migration43): faktur terbaru toko itu yang berisi barang tsb dulu, kalau qty-nya melebihi sisa di faktur itu sisanya diambil dari faktur sebelumnya → **1 retur per faktur** (satu pengajuan bisa jadi beberapa nomor RTR). Aturan sisa sama dengan `retur.html`: faktur bukan `cancelled`, verifikasi NULL/`approved`, sisa = terjual − retur `pending`+`approved`; harga retur = `invoice_items.price` (sama dengan `retur.html`). Semua dalam satu transaksi + advisory lock per toko — gagal satu barang = tidak ada yang tersimpan. Daftar sisa di layar (`fetchStoreData()` + `buildReturnable()`) cuma tampilan, rumusnya harus tetap sama dengan RPC
 - Retur masuk `pending`, `source = 'gudang'` — stok & piutang baru berubah setelah admin menyetujui di `retur.html`
 - Foto dikecilkan di browser (maks 1200px, WebP/JPEG, pola sama dengan foto produk) → bucket privat `return-photos` (1 MB, webp/jpeg). Diunggah sebelum RPC; kalau RPC gagal, foto dihapus lagi (policy owner delete)
-- Riwayat: retur milik akun yang login (`created_by_id`), dikelompokkan per pengajuan (`created_at` + toko — satu transaksi, jadi sama persis), status per nomor RTR + alasan kalau ditolak
+- Riwayat: retur milik akun yang login (`created_by_id`), dikelompokkan per pengajuan (`created_at` + toko — satu transaksi, jadi sama persis), nomor RTR + nomor faktur + status per retur + alasan kalau ditolak
 - Akun gudang dibuat super_admin di `settings.html` tab **👥 Akun Sales & Gudang** (pilih Jenis Akun saat tambah). `allSales` di halaman itu tetap cuma role sales (dipakai Target Omzet)
 
 ### profit-loss.html
@@ -423,5 +428,5 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration35.sql` | Kolom `latitude`/`longitude`/`location_updated_at`/`location_source` di `customers` + fungsi `set_customer_location_from_visit()` — titik GPS toko ditempel otomatis dari Absen Kunjungan, dipakai link "Buka Maps" di `sales.html` & `customers.html` |
 | `supabase_migration36.sql` | Tabel `product_cost_logs` + trigger `log_product_cost_change` di `products` — catat tiap perubahan `products.cost` (lama→baru, sumber, siapa, kapan). Sumber ditandai lewat GUC transaction-local `app.cost_source` (`increase_stock_on_purchase` → `purchase`, `edit_purchase()` ditulis ulang + `set_config()` → `purchase_edit`, sisanya `manual`). Termasuk backfill 1 baris awal per produk. Jalankan setelah migration34 |
 | `supabase_migration34.sql` | **Wajib untuk Edit PO.** Fungsi `edit_purchase()` — seluruh rangkaian edit pembelian jadi satu transaksi (sebelumnya 4 panggilan terpisah dari browser: koneksi putus di tengah = stok berkurang + item PO hilang). Sekaligus `increase_stock_on_purchase()` cuma menulis `products.cost` kalau PO itu memang pembelian terbaru untuk produk tsb — sebelumnya edit PO lama menarik mundur harga modal |
-| `supabase_migration43.sql` | **Wajib untuk Retur Toko.** Role `gudang`, kolom `returns.source`/`created_by_id`/`photo_path`, RPC `create_store_return()` (faktur dicari otomatis), **RLS di `returns` & `return_items`** (sales tidak bisa menulis retur), trigger `guard_user_profile_role` (role akun cuma bisa diubah super_admin — `settings.html` sekarang menyimpan profil akun baru setelah sesi super_admin dipulihkan), bucket privat `return-photos`. Jalankan setelah migration22 |
+| `supabase_migration43.sql` | **Wajib untuk Retur Toko.** Role `gudang`, kolom `returns.source`/`created_by_id`/`photo_path`, RPC `create_store_return()` (faktur dipilih karyawan atau dicari otomatis; `p_invoice_id` — versi awal 5 parameter di-DROP, aman dijalankan ulang), **RLS di `returns` & `return_items`** (sales tidak bisa menulis retur), trigger `guard_user_profile_role` (role akun cuma bisa diubah super_admin — `settings.html` sekarang menyimpan profil akun baru setelah sesi super_admin dipulihkan), bucket privat `return-photos`. Jalankan setelah migration22 |
 | `supabase_migration42.sql` | **Wajib untuk Jadwal Kunjungan.** Tabel `visit_schedules` + setting `visit_target_per_day` (default 12) + `jadwal_tab_visible_for` (default kosong = tab Hari Ini belum tampil ke siapa pun). Tanpa ini tab Hari Ini di `sales.html` kosong dan `jadwal-kunjungan.html` menampilkan pesan error |

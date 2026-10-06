@@ -601,6 +601,7 @@ create table if not exists return_items (
     allReturns = data || [];
     updateStats();
     renderTable();
+    setReturPendingBadge(allReturns.filter(r => r.status === 'pending').length);
   }
 
   // ── Stats ──────────────────────────────────────────────────────────────
@@ -626,16 +627,24 @@ create table if not exists return_items (
     const from   = document.getElementById('filter-from').value;
     const to     = document.getElementById('filter-to').value;
 
+    // Retur 'pending' selalu tampil walau di luar rentang tanggal — default
+    // filternya bulan berjalan, dan retur yang belum diproses dari bulan lalu
+    // (termasuk yang diinput gudang) tidak boleh "hilang" dari tabel.
     filteredReturns = allReturns.filter(r => {
       if (status && r.status !== status) return false;
-      if (from && r.return_date < from) return false;
-      if (to   && r.return_date > to)   return false;
+      if (r.status !== 'pending') {
+        if (from && r.return_date < from) return false;
+        if (to   && r.return_date > to)   return false;
+      }
       if (search) {
         const hay = `${r.return_number} ${r.customer_name} ${r.invoice_number}`.toLowerCase();
         if (!hay.includes(search)) return false;
       }
       return true;
     });
+
+    // Yang menunggu persetujuan di atas, sisanya tetap urut terbaru dulu
+    filteredReturns.sort((a, b) => (b.status === 'pending') - (a.status === 'pending'));
 
     document.getElementById('retur-count').textContent = `${filteredReturns.length} retur`;
 
@@ -1127,7 +1136,7 @@ create table if not exists return_items (
           <div>${escapeHtml(ret.handled_by||ret.created_by||'-')}</div>
         </div>
         ${ret.source === 'gudang' ? `<div style="grid-column:1/-1;background:#fef3c7;border-radius:8px;padding:8px 12px;font-size:13px;color:#92400e;">
-          🏬 Diinput gudang oleh <strong>${escapeHtml(ret.created_by||'-')}</strong> lewat halaman Retur Toko — faktur asal dipilih otomatis (faktur terbaru toko ini yang berisi barang tsb). Pastikan barang fisiknya sudah diterima sebelum menyetujui.
+          🏬 Diinput gudang oleh <strong>${escapeHtml(ret.created_by||'-')}</strong> lewat halaman Retur Toko — faktur asal dipilih karyawan, atau otomatis (faktur terbaru toko ini yang berisi barang tsb). Pastikan barang fisiknya sudah diterima sebelum menyetujui.
         </div>` : ''}
         <div style="grid-column:1/-1;">
           <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;margin-bottom:2px;">Alasan Retur</div>
@@ -1369,7 +1378,7 @@ create table if not exists return_items (
     hideFullLoading();
     showToast('Retur berhasil diperbarui');
     closeModal('modal-edit-retur');
-    await loadAllReturns();
+    await loadReturns();
   }
 
   // ── Print ──────────────────────────────────────────────────────────────

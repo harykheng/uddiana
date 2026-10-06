@@ -6,10 +6,11 @@
 -- lewat halaman sendiri (retur-toko.html), terpisah dari sales.html & halaman
 -- admin, supaya sales tidak bisa retur sembarangan.
 --
--- Karyawan cuma pilih TOKO + BARANG + QTY. Faktur asal dicari otomatis di
--- database oleh create_store_return(): mulai dari faktur terbaru toko itu yang
--- berisi barang tsb, dan kalau qty-nya melebihi sisa di satu faktur, sisanya
--- diambil dari faktur sebelumnya (1 retur per faktur). Jadi retur tetap
+-- Karyawan pilih TOKO, lalu FAKTUR (opsional) + BARANG + QTY. Kalau faktur
+-- dibiarkan "Otomatis", faktur asal dicari di database oleh create_store_return():
+-- mulai dari faktur terbaru toko itu yang berisi barang tsb, dan kalau qty-nya
+-- melebihi sisa di satu faktur, sisanya diambil dari faktur sebelumnya
+-- (1 retur per faktur). Jadi retur tetap
 -- terikat ke faktur seperti sebelumnya — piutang, laporan sales, dan batas qty
 -- retur tetap jalan tanpa perubahan apa pun.
 --
@@ -111,7 +112,13 @@ CREATE TRIGGER trg_guard_user_profile_role
 -- ============================================================
 -- Dipanggil retur-toko.html:
 --   supabase.rpc('create_store_return', {
---     p_customer_id, p_items: [{product_id, quantity}], p_reason, p_notes, p_photo_path })
+--     p_customer_id, p_items: [{product_id, quantity}], p_reason, p_notes, p_photo_path,
+--     p_invoice_id })
+--
+-- p_invoice_id NULL = "Otomatis": faktur dicari sendiri, terbaru dulu, dan kalau
+-- qty melebihi sisa satu faktur sisanya diambil dari faktur sebelumnya.
+-- p_invoice_id diisi = karyawan memilih fakturnya sendiri: cuma faktur itu yang
+-- dipakai, qty melebihi sisa faktur itu = ditolak.
 --
 -- Semua dalam SATU transaksi: kalau satu barang qty-nya melebihi sisa yang bisa
 -- diretur, tidak ada satu pun retur yang tersimpan.
@@ -126,12 +133,17 @@ CREATE TRIGGER trg_guard_user_profile_role
 --
 -- SECURITY DEFINER supaya bisa menulis returns walaupun RLS (bagian 5) cuma
 -- mengizinkan admin menulis langsung — role pemanggil dicek sendiri di sini.
+-- Versi awal tanpa p_invoice_id dihapus dulu: kalau dibiarkan, dua versi fungsi
+-- sama-sama cocok dan PostgREST menolak panggilannya (ambigu).
+DROP FUNCTION IF EXISTS create_store_return(uuid, jsonb, text, text, text);
+
 CREATE OR REPLACE FUNCTION create_store_return(
   p_customer_id uuid,
   p_items       jsonb,
   p_reason      text,
   p_notes       text DEFAULT NULL,
-  p_photo_path  text DEFAULT NULL
+  p_photo_path  text DEFAULT NULL,
+  p_invoice_id  uuid DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -177,6 +189,16 @@ BEGIN
     RAISE EXCEPTION 'Toko tidak ditemukan';
   END IF;
 
+  IF p_invoice_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM invoices
+    WHERE id = p_invoice_id
+      AND customer_id = p_customer_id
+      AND status <> 'cancelled'
+      AND (verification_status IS NULL OR verification_status = 'approved')
+  ) THEN
+    RAISE EXCEPTION 'Faktur yang dipilih bukan milik toko ini, sudah dibatalkan, atau ditolak verifikasinya';
+  END IF;
+
   -- Dua pengajuan untuk toko yang sama diproses bergiliran, supaya keduanya
   -- tidak sama-sama melihat sisa qty yang sama lalu sama-sama lolos.
   PERFORM pg_advisory_xact_lock(hashtextextended('store_return:' || p_customer_id::text, 0));
@@ -205,6 +227,7 @@ BEGIN
                  AND r.status IN ('pending', 'approved')) AS returned
       FROM invoices i
       WHERE i.customer_id = p_customer_id
+        AND (p_invoice_id IS NULL OR i.id = p_invoice_id)
         AND i.status <> 'cancelled'
         AND (i.verification_status IS NULL OR i.verification_status = 'approved')
         AND EXISTS (SELECT 1 FROM invoice_items ii
@@ -239,8 +262,10 @@ BEGIN
     END LOOP;
 
     IF v_left > 0 THEN
-      RAISE EXCEPTION 'Qty retur "%" melebihi sisa yang bisa diretur untuk toko ini (diminta %, sisa %). Mungkin sudah pernah diretur sebelumnya.',
-        coalesce(v_prod.name, v_req.product_id::text), v_req.qty, v_req.qty - v_left;
+      RAISE EXCEPTION 'Qty retur "%" melebihi sisa yang bisa diretur % (diminta %, sisa %). Mungkin sudah pernah diretur sebelumnya.',
+        coalesce(v_prod.name, v_req.product_id::text),
+        CASE WHEN p_invoice_id IS NULL THEN 'untuk toko ini' ELSE 'dari faktur ini' END,
+        v_req.qty, v_req.qty - v_left;
     END IF;
   END LOOP;
 
@@ -283,8 +308,8 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION create_store_return(uuid, jsonb, text, text, text) FROM public;
-GRANT EXECUTE ON FUNCTION create_store_return(uuid, jsonb, text, text, text) TO authenticated;
+REVOKE ALL ON FUNCTION create_store_return(uuid, jsonb, text, text, text, uuid) FROM public;
+GRANT EXECUTE ON FUNCTION create_store_return(uuid, jsonb, text, text, text, uuid) TO authenticated;
 
 
 -- ============================================================
