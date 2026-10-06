@@ -689,7 +689,13 @@
   let editItemCount = 0;
   let editCustomerTS = null;
   let editItemTomSelects = {};
+  // true selama openEditInvoice() mengisi baris-baris item: tiap baris yang dipilih
+  // produknya memicu recalcEditItem() yang menghitung ulang SEMUA baris, jadi
+  // faktur 60 item = 60× hitung ulang 60 baris. Dihitung sekali saja setelah selesai.
+  let editItemsLoading = false;
   let editProducts = [];
+  let productById = new Map();
+  let editProductById = new Map();
 
   async function init() {
     const auth = await requireSales();
@@ -845,6 +851,7 @@
   async function loadProducts() {
     const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit').eq('is_active', true).order('name'));
     products = data || [];
+    productById = new Map(products.map(p => [p.id, p]));
   }
 
   let discountRulesByProduct = {};
@@ -1562,7 +1569,6 @@
       </div>
       <select class="item-product-sel">
         <option value="">— Pilih Produk —</option>
-        ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`).join('')}
       </select>
       <div class="item-disc-badges" style="margin:4px 0 0;display:flex;flex-wrap:wrap;gap:4px"></div>
       <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:start;">
@@ -1591,12 +1597,7 @@
     div.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
     const sel = div.querySelector('.item-product-sel');
-    new TomSelect(sel, {
-      placeholder: '— Cari & pilih produk —',
-      maxOptions: 200,
-      dropdownParent: 'body',
-      onChange: () => updateItemPrice(sel)
-    });
+    createProductTomSelect(sel, products, () => updateItemPrice(sel));
 
     recalcTotal();
   }
@@ -1613,9 +1614,9 @@
 
   function updateItemPrice(sel) {
     const row = sel.closest('.item-row');
-    const opt = sel.options[sel.selectedIndex];
+    const prod = productById.get(sel.value);
     const badgesEl = row.querySelector('.item-disc-badges');
-    if (!opt.value) {
+    if (!prod) {
       row.querySelector('.item-stock-input').value = '—';
       row.querySelector('.item-price-input').value = 0;
       row.dataset.productId = '';
@@ -1626,10 +1627,10 @@
       recalcItem(row.id.replace('item-', ''));
       return;
     }
-    const stock = parseInt(opt.dataset.stock) || 0;
-    row.querySelector('.item-stock-input').value = `${stock} ${opt.dataset.unit}`;
-    row.dataset.productId = opt.value;
-    row.dataset.basePrice = opt.dataset.price || 0;
+    const stock = parseInt(prod.stock_quantity) || 0;
+    row.querySelector('.item-stock-input').value = `${stock} ${prod.unit || 'pcs'}`;
+    row.dataset.productId = prod.id;
+    row.dataset.basePrice = prod.price || 0;
     const qtyInput = row.querySelector('.item-qty-input');
     qtyInput.max = stock;
     if (parseInt(qtyInput.value) > stock) qtyInput.value = stock;
@@ -1726,7 +1727,7 @@ function recalcTotal() {
       if (!sel.value) continue;
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
       const opt = sel.options[sel.selectedIndex];
-      const stock = parseInt(opt.dataset.stock) || 0;
+      const stock = parseInt(productById.get(sel.value)?.stock_quantity) || 0;
       if (stock === 0) { showToast(`Stok "${opt.text.split(' (')[0]}" habis`, 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
       if (qty > stock) { showToast(`Stok "${opt.text.split(' (')[0]}" tidak cukup (stok: ${stock})`, 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
       // Harga katalog asli + diskon dicatat terpisah (bukan cuma harga baru) supaya
@@ -1844,8 +1845,9 @@ function recalcTotal() {
     // Buat salinan lokal dengan stok dikembalikan untuk item di faktur ini
     // (karena saat simpan, stok akan di-restore dulu sebelum item baru dimasukkan)
     editProducts = products.map(p => ({ ...p }));
+    editProductById = new Map(editProducts.map(p => [p.id, p]));
     (inv.invoice_items || []).forEach(it => {
-      const p = editProducts.find(p => p.id === it.product_id);
+      const p = editProductById.get(it.product_id);
       if (p) p.stock_quantity += it.quantity;
     });
 
@@ -1873,21 +1875,26 @@ function recalcTotal() {
     // Isi item yang sudah ada, urut alfabetis
     const items = (inv.invoice_items || []).slice()
       .sort((a, b) => (a.products?.name || '').localeCompare(b.products?.name || '', 'id'));
-    if (items.length === 0) {
-      addEditItem();
-    } else {
-      items.forEach(it => addEditItem(it.product_id, it.quantity));
+    editItemsLoading = true;
+    try {
+      if (items.length === 0) {
+        addEditItem();
+      } else {
+        items.forEach(it => addEditItem(it.product_id, it.quantity));
+      }
+    } finally {
+      editItemsLoading = false;
     }
 
-    recalcEditTotal();
+    recalcEditItem();   // sudah termasuk recalcEditTotal()
     openModal('modal-edit');
   }
 
   function addEditItem(productId = null, qty = 1) {
     const id = ++editItemCount;
-    const optionsHtml = editProducts.map(p =>
-      `<option value="${p.id}" data-price="${p.price}" data-stock="${p.stock_quantity}" data-unit="${escapeHtml(p.unit || 'pcs')}">${escapeHtml(p.name)}</option>`
-    ).join('');
+    // Produk sudah dipilih langsung di HTML, bukan lewat ts.setValue() — setValue
+    // ikut merender ulang daftar dropdown, terasa kalau faktur berisi puluhan item.
+    const existingProd = productId ? editProductById.get(productId) : null;
 
     const div = document.createElement('div');
     div.className = 'item-row';
@@ -1899,7 +1906,7 @@ function recalcTotal() {
       </div>
       <select class="item-product-sel">
         <option value="">— Pilih Produk —</option>
-        ${optionsHtml}
+        ${existingProd ? `<option value="${existingProd.id}" selected>${escapeHtml(existingProd.name)}</option>` : ''}
       </select>
       <div class="item-disc-badges" style="margin:4px 0 0;display:flex;flex-wrap:wrap;gap:4px"></div>
       <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:start;">
@@ -1926,15 +1933,10 @@ function recalcTotal() {
     document.getElementById('edit-items-list').appendChild(div);
 
     const sel = div.querySelector('.item-product-sel');
-    const ts = new TomSelect(sel, {
-      placeholder: '— Cari & pilih produk —',
-      maxOptions: 200,
-      dropdownParent: 'body',
-      onChange: () => updateEditItemPrice(sel, id)
-    });
+    const ts = createProductTomSelect(sel, editProducts, () => updateEditItemPrice(sel, id));
     editItemTomSelects[id] = ts;
 
-    if (productId) ts.setValue(productId);
+    if (existingProd) updateEditItemPrice(sel, id);
   }
 
   function removeEditItem(id) {
@@ -1952,9 +1954,9 @@ function recalcTotal() {
   function updateEditItemPrice(sel, id) {
     const row = document.getElementById('edit-item-' + id);
     if (!row) return;
-    const opt = sel.options[sel.selectedIndex];
+    const prod = editProductById.get(sel.value);
     const badgesEl = row.querySelector('.item-disc-badges');
-    if (!opt || !opt.value) {
+    if (!prod) {
       row.querySelector('.item-stock-input').value = '—';
       row.querySelector('.item-price-input').value = '0';
       row.dataset.productId = '';
@@ -1965,16 +1967,17 @@ function recalcTotal() {
       recalcEditItem(id);
       return;
     }
-    const stock = parseInt(opt.dataset.stock) || 0;
-    row.querySelector('.item-stock-input').value = `${stock} ${opt.dataset.unit}`;
-    row.dataset.productId = opt.value;
-    row.dataset.basePrice = opt.dataset.price || 0;
+    const stock = parseInt(prod.stock_quantity) || 0;
+    row.querySelector('.item-stock-input').value = `${stock} ${prod.unit || 'pcs'}`;
+    row.dataset.productId = prod.id;
+    row.dataset.basePrice = prod.price || 0;
     const qtyInput = row.querySelector('.item-qty-input');
     qtyInput.max = stock;
     recalcEditItem(id);
   }
 
   function recalcEditItem(id) {
+    if (editItemsLoading) return;
     const customerId = editCustomerTS?.getValue() || null;
     const rows = cartRows('#edit-items-list');
     document.querySelectorAll('#edit-items-list .item-row')
@@ -2063,7 +2066,7 @@ function recalcTotal() {
         item_discount2:  Number(row.dataset.disc2) || 0,
         discount_type:   row.dataset.discType || 'percent',
         subtotal:        subtotal,
-        cost_price:      editProducts.find(p => p.id === sel.value)?.cost || 0
+        cost_price:      editProductById.get(sel.value)?.cost || 0
       });
     }
     if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }

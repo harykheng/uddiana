@@ -509,6 +509,7 @@
 <script>
   let allInvoices    = [];
   let products       = [];
+  let productById    = new Map();
   let customers      = [];
   let currentInvoice = null;
   let customerTS     = null;
@@ -537,6 +538,7 @@
       .select('id,name,sku,price,price_shopee,cost,stock_quantity,unit')
       .eq('is_active', true).order('name'));
     products = data || [];
+    productById = new Map(products.map(p => [p.id, p]));
   }
 
   async function loadDiscountRules() {
@@ -834,7 +836,6 @@
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
           <option value="">-- Pilih Produk --</option>
-          ${products.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-stock="${p.stock_quantity}" data-unit="${p.unit}">${escapeHtml(p.name)}</option>`).join('')}
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
@@ -856,12 +857,7 @@
     `;
     tbody.appendChild(tr);
     const sel = tr.querySelector('select');
-    tomSelectInstances[id] = new TomSelect(sel, {
-      placeholder: '— Cari & pilih produk —',
-      maxOptions: 200,
-      dropdownParent: 'body',
-      onChange: () => onProductSelect(sel, id)
-    });
+    tomSelectInstances[id] = createProductTomSelect(sel, products, () => onProductSelect(sel, id));
     return id;
   }
 
@@ -1075,10 +1071,10 @@
   }
 
   function onProductSelect(sel, rowId) {
-    const opt = sel.options[sel.selectedIndex];
-    const stock  = parseInt(opt.dataset.stock)  || 0;
-    const regular = parseFloat(opt.dataset.price)  || 0;
-    const shopee  = parseFloat(opt.dataset.shopee) || 0;
+    const prod = productById.get(sel.value);
+    const stock  = parseInt(prod?.stock_quantity) || 0;
+    const regular = parseFloat(prod?.price)        || 0;
+    const shopee  = parseFloat(prod?.price_shopee) || 0;
 
     let price = 0;
     if (currentPriceMode === 'regular') price = regular;
@@ -1092,7 +1088,7 @@
     setDiscAuto(rowId, true);
 
     // Auto-apply discount rule (jika ada aturan aktif untuk produk ini)
-    const productId = opt.value;
+    const productId = sel.value;
     const qty = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value) || 1;
     applyDiscountRule(rowId, productId, qty, price);
 
@@ -1232,12 +1228,19 @@
   // (misal ≥72 pcs) nggak pernah kepakai kalau qty diisi SETELAH pilih produk,
   // yang justru urutan normalnya. Sekarang semua baris dievaluasi ulang lewat
   // jalur yang sama dengan saat produk dipilih.
+  //
+  // Data semua baris, customer & total dihitung sekali per evaluasi (lihat
+  // catatan di reapplyAllDiscountsEdit()).
   function reapplyAllDiscounts() {
-    _getAllRowData().forEach(({ rowId, productId, qty, price }) => {
+    const allRowData = _getAllRowData();
+    const customerId = document.getElementById('inv-customer-select')?.value || null;
+    allRowData.forEach(({ rowId, productId, qty, price }) => {
       if (isDiscManual(rowId)) return;   // diskon diketik tangan — jangan ditimpa
-      applyDiscountRule(rowId, productId, qty, price);
-      recalcRow(rowId);
+      writeDiscountToRow(rowId, 'disc',
+        findBestDiscountRule(productId, qty, price, customerId, allRowData));
+      recalcRow(rowId, false);
     });
+    recalcTotal();
   }
 
   // Handler untuk perubahan qty — recalc + re-evaluate group discounts
@@ -1266,7 +1269,7 @@
     if (disc2El) disc2El.style.display = show ? '' : 'none';
   }
 
-  function recalcRow(rowId) {
+  function recalcRow(rowId, updateTotal = true) {
     const qty      = parseFormattedNumber(document.getElementById(`qty-${rowId}`)?.value);
     const price    = parseFormattedNumber(document.getElementById(`price-${rowId}`)?.value);
     const discType = document.getElementById(`disctype-${rowId}`)?.value || 'percent';
@@ -1278,7 +1281,7 @@
     // Formula bersama di js/utils.js — dipakai sales.html & verify-invoices.html juga
     const total = hitungSubtotalBaris(qty, price, discType, disc, disc2);
     if (sub) sub.value = total > 0 ? total.toLocaleString('id-ID') : '0';
-    recalcTotal();
+    if (updateTotal) recalcTotal();
   }
 
   function recalcRowFromSubtotal(rowId) {
@@ -1505,12 +1508,19 @@
     });
   }
 
+  // Data semua baris & total dihitung SEKALI per evaluasi, bukan per baris —
+  // dulu tiap baris membaca ulang semua baris + menghitung ulang total, jadi
+  // faktur 50 item = 2.500× baca baris tiap ketik qty. Qty & harga tidak diubah
+  // oleh penulisan diskon, jadi data di awal tetap berlaku sampai akhir.
   function reapplyAllDiscountsEdit() {
-    _getAllEditRowData().forEach(({ rowId, productId, qty, price }) => {
+    const allRowData = _getAllEditRowData();
+    allRowData.forEach(({ rowId, productId, qty, price }) => {
       if (isDiscManual(rowId)) return;
-      applyDiscountRuleEdit(rowId, productId, qty, price);
-      recalcEditInvoiceRow(rowId);
+      writeDiscountToRow(rowId, 'edisc',
+        findBestDiscountRule(productId, qty, price, editInvoiceCustomerId || null, allRowData));
+      recalcEditInvoiceRow(rowId, false);
     });
+    recalcEditInvoiceTotal();
   }
 
   function onEditQtyChange(rowId) {
@@ -1536,6 +1546,7 @@
   let editInvoiceCustomerId = null;
   // Salinan daftar produk khusus modal edit: stok LIVE + qty yang sudah dipakai faktur ini.
   let editProducts = [];
+  let editProductById = new Map();
 
   async function openEditInvoice(id) {
     const inv = allInvoices.find(x => x.id === id);
@@ -1583,6 +1594,7 @@
       ...p,
       stock_quantity: (liveStockById[p.id] ?? p.stock_quantity) + (ownedByProduct[p.id] || 0),
     }));
+    editProductById = new Map(editProducts.map(p => [p.id, p]));
 
     document.getElementById('edit-invoice-items-body').innerHTML = '';
     const sortedForEdit = editInvoiceItems.slice().sort((a, b) => (a.product_name || '').localeCompare(b.product_name || '', 'id'));
@@ -1612,14 +1624,17 @@
       tr.dataset.savedDisc2 = String(existingItem.item_discount2 || 0);
       tr.dataset.savedDiscType = existingItem.discount_type || 'percent';
     }
+    // Produk tersimpan yang sudah tidak ada di daftar (nonaktif) tetap tidak
+    // terpilih, sama seperti waktu daftar produk masih ditulis sebagai <option>.
+    const existingProd = existingItem ? editProductById.get(existingItem.product_id) : null;
     tr.innerHTML = `
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
           <option value="">-- Pilih Produk --</option>
-          ${editProducts.map(p => `<option value="${p.id}" data-price="${p.price}" data-shopee="${p.price_shopee||0}" data-stock="${p.stock_quantity}"${existingItem && p.id===existingItem.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+          ${existingProd ? `<option value="${existingProd.id}" selected>${escapeHtml(existingProd.name)}</option>` : ''}
         </select>
       </td>
-      <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingItem ? (editProducts.find(p=>p.id===existingItem.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingProd?.stock_quantity || 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eqty-${id}" value="${existingItem ? existingItem.quantity : '1'}" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onEditQtyChange('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eprice-${id}" value="${existingItem ? Number(existingItem.price||0).toLocaleString('id-ID') : '0'}" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onEditPriceChange('${id}')"></td>
       <td style="padding:5px 6px">
@@ -1639,21 +1654,16 @@
     tbody.appendChild(tr);
     toggleDisc2(id, existingItem?.discount_type || 'percent', 'edisc');
     const sel = tr.querySelector('select');
-    editTomSelectInstances[id] = new TomSelect(sel, {
-      placeholder: '— Cari & pilih produk —',
-      maxOptions: 200,
-      dropdownParent: 'body',
-      onChange: () => {
-        const opt      = sel.options[sel.selectedIndex];
-        const productId = opt.value;
-        const price    = parseFloat(opt.dataset.price || 0);
-        const qty      = parseFormattedNumber(document.getElementById(`eqty-${id}`)?.value) || 1;
-        document.getElementById(`estock-${id}`).value = opt.dataset.stock || 0;
-        document.getElementById(`eprice-${id}`).value = price > 0 ? price.toLocaleString('id-ID') : '0';
-        setDiscAuto(id, true);
-        if (productId) applyDiscountRuleEdit(id, productId, qty, price);
-        recalcEditInvoiceRow(id);
-      }
+    editTomSelectInstances[id] = createProductTomSelect(sel, editProducts, () => {
+      const productId = sel.value;
+      const prod     = editProductById.get(productId);
+      const price    = parseFloat(prod?.price || 0);
+      const qty      = parseFormattedNumber(document.getElementById(`eqty-${id}`)?.value) || 1;
+      document.getElementById(`estock-${id}`).value = prod?.stock_quantity || 0;
+      document.getElementById(`eprice-${id}`).value = price > 0 ? price.toLocaleString('id-ID') : '0';
+      setDiscAuto(id, true);
+      if (productId) applyDiscountRuleEdit(id, productId, qty, price);
+      recalcEditInvoiceRow(id);
     });
   }
 
@@ -1691,7 +1701,7 @@
     }
   }
 
-  function recalcEditInvoiceRow(rowId) {
+  function recalcEditInvoiceRow(rowId, updateTotal = true) {
     const qty      = parseFormattedNumber(document.getElementById(`eqty-${rowId}`)?.value || '0');
     const price    = parseFormattedNumber(document.getElementById(`eprice-${rowId}`)?.value || '0');
     const discType = document.getElementById(`edisctype-${rowId}`)?.value || 'percent';
@@ -1703,13 +1713,13 @@
     sub = hitungSubtotalBaris(qty, price, discType, disc, disc2);
     const subEl = document.getElementById(`esub-${rowId}`);
     if (subEl) subEl.value = sub > 0 ? sub.toLocaleString('id-ID') : '0';
-    recalcEditInvoiceTotal();
+    if (updateTotal) recalcEditInvoiceTotal();
   }
 
   function recalcEditInvoiceTotal() {
     let total = 0;
-    document.querySelectorAll('#edit-invoice-items-body tr').forEach(tr => {
-      const subEl = tr.querySelector('[id^="esub-"]');
+    document.querySelectorAll('#edit-invoice-items-body tr[id]').forEach(tr => {
+      const subEl = document.getElementById(`esub-${tr.id}`);
       total += parseFormattedNumber(subEl?.value || '0');
     });
     document.getElementById('edit-inv-total').textContent = formatCurrency(total);
@@ -1748,7 +1758,7 @@
       if (discType === 'percent') { disc = Math.min(disc, 100); disc2 = Math.min(disc2, 100); } else { disc2 = 0; }
       let sub;
       sub = hitungSubtotalBaris(qty, price, discType, disc, disc2);
-      const prod  = editProducts.find(p => p.id === sel.value);
+      const prod  = editProductById.get(sel.value);
       const cost  = prod?.cost || 0;
       const stockEl = tr.querySelector('[id^="estock-"]');
       const stockAvail = parseInt(stockEl?.value || '0');

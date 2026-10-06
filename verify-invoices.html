@@ -265,6 +265,7 @@
   let currentInvoiceId = null;
   let currentClaimId   = null;
   let allProducts = [];
+  let productById = new Map();
   let isSuperAdmin = false;
 
   const handleSearch = debounce(() => renderTable(), 300);
@@ -428,6 +429,7 @@
   async function loadProducts() {
     const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit,price_verified_at').eq('is_active', true).order('name'));
     allProducts = data || [];
+    productById = new Map(allProducts.map(p => [p.id, p]));
   }
 
   async function loadInvoices() {
@@ -699,7 +701,7 @@
               <div>
                 <label style="font-size:11px;font-weight:600;color:#64748b;display:block;margin-bottom:4px">Produk</label>
                 <select class="edit-product-sel" style="width:100%;padding:8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;outline:none">
-                  ${allProducts.map(p => `<option value="${p.id}" data-price="${p.price}" data-stock="${p.stock_quantity}"${p.id===it.product_id?' selected':''}>${escapeHtml(p.name)}</option>`).join('')}
+                  <option value="${it.product_id}" selected>${escapeHtml(productById.get(it.product_id)?.name || it.product_name || '')}</option>
                 </select>
               </div>
               <div>
@@ -736,14 +738,15 @@
       </div>
     `;
     // Init Tom Select on each product select in edit modal
+    // Produk tersimpan yang sudah nonaktif (tidak ada di allProducts) tetap
+    // ditampilkan sebagai pilihan baris itu, supaya tidak hilang dari faktur.
     document.querySelectorAll('#modal-edit-body .edit-product-sel').forEach((sel, idx) => {
       if (sel.tomselect) sel.tomselect.destroy();
-      new TomSelect(sel, {
-        placeholder: '— Cari produk —',
-        maxOptions: 200,
-        dropdownParent: 'body',
-        onChange: () => updateEditProduct(sel, idx)
-      });
+      const it = items[idx];
+      const list = productById.has(it.product_id)
+        ? allProducts
+        : [{ id: it.product_id, name: it.product_name || '' }, ...allProducts];
+      createProductTomSelect(sel, list, () => updateEditProduct(sel, idx));
     });
 
     openModal('modal-edit');
@@ -763,8 +766,8 @@
 
   function updateEditProduct(sel, idx) {
     const row = sel.closest('.edit-item-row');
-    const opt = sel.options[sel.selectedIndex];
-    row.querySelector('.edit-price').value = Number(opt.dataset.price || 0).toLocaleString('id-ID');
+    const prod = productById.get(sel.value);
+    if (prod) row.querySelector('.edit-price').value = Number(prod.price || 0).toLocaleString('id-ID');
     // Produknya diganti — diskon milik produk lama tidak berlaku lagi
     if (sel.value !== row.dataset.originalProductId) {
       row.dataset.disc = '0'; row.dataset.disc2 = '0'; row.dataset.discType = 'percent';
