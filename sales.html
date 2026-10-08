@@ -275,9 +275,12 @@
     }
     .full-loading-overlay.show { opacity: 1; pointer-events: all; }
     .full-loading-box {
-      background: #fff; border-radius: 12px; padding: 20px 28px; display: flex; align-items: center; gap: 12px;
-      box-shadow: 0 10px 40px rgba(0,0,0,.3); font-size: 14px; font-weight: 600; color: var(--text);
+      background: #fff; border-radius: 16px; padding: 28px 32px; min-width: 260px; max-width: calc(100vw - 32px);
+      display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
+      box-shadow: 0 10px 40px rgba(0,0,0,.3); font-size: 16px; font-weight: 700; color: var(--text);
     }
+    .full-loading-sub { font-size: 13px; font-weight: 500; color: var(--muted); margin-top: -6px; }
+    .full-loading-box .spinner { width: 48px; height: 48px; border-width: 5px; }
     .spinner { display: inline-block; width: 20px; height: 20px; border-radius: 50%; border: 3px solid rgba(37,99,235,.25); border-top-color: var(--primary); animation: spin .7s linear infinite; }
 
     /* TAB HARI INI (jadwal kunjungan) */

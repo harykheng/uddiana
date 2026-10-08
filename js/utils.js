@@ -64,7 +64,7 @@ function showFullLoading(message) {
     el = document.createElement('div');
     el.id = 'full-loading-overlay';
     el.className = 'full-loading-overlay';
-    el.innerHTML = '<div class="full-loading-box"><span class="spinner spinner-lg"></span><span class="full-loading-text"></span></div>';
+    el.innerHTML = '<div class="full-loading-box"><span class="spinner spinner-lg"></span><span class="full-loading-text"></span><span class="full-loading-sub">Mohon tunggu, jangan tutup halaman ini</span></div>';
     document.body.appendChild(el);
   }
   el.querySelector('.full-loading-text').textContent = message || 'Memproses...';
@@ -74,6 +74,29 @@ function showFullLoading(message) {
 function hideFullLoading() {
   const el = document.getElementById('full-loading-overlay');
   if (el) el.classList.remove('show');
+}
+
+// ── DATA SELALU TERBARU SAAT PINDAH HALAMAN ──────────────────
+// Tombol Back/Forward browser sering memulihkan halaman dari bfcache — snapshot
+// lama, init() tidak jalan lagi, jadi data yang tampil basi (mis. faktur yang
+// baru disetujui masih kelihatan "menunggu"). Dimuat ulang supaya ambil data baru.
+window.addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
+
+// Balik ke tab ini setelah ditinggal (pindah tab browser / aplikasi lain) →
+// panggil fn untuk ambil ulang data. Sengaja BUKAN reload halaman penuh, dan
+// dilewati kalau ada modal terbuka / proses yang sedang jalan, supaya isian
+// form yang belum disimpan tidak hilang. Halaman yang mau ikut tinggal panggil
+// refreshOnReturn(() => loadData()).
+function refreshOnReturn(fn, minHiddenMs = 10000) {
+  let hiddenAt = null;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { hiddenAt = Date.now(); return; }
+    const lama = hiddenAt !== null && Date.now() - hiddenAt >= minHiddenMs;
+    hiddenAt = null;
+    if (!lama) return;
+    if (document.querySelector('.modal-overlay.open, .full-loading-overlay.show')) return;
+    fn();
+  });
 }
 
 function setLoading(btn, loading) {

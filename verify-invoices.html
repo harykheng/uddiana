@@ -275,6 +275,8 @@
     if (!auth) return;
     isSuperAdmin = auth.profile.role === 'super_admin';
     await Promise.all([loadProducts(), loadInvoices(), loadPaymentClaims()]);
+    // Faktur baru dari sales masuk terus — balik ke tab ini = daftar diambil ulang
+    refreshOnReturn(() => Promise.all([loadInvoices(), loadPaymentClaims()]));
   }
 
   // ── TAB SWITCHING ────────────────────────────────────────────
@@ -380,6 +382,8 @@
     if (!inv) return;
     const btn = document.getElementById('btn-confirm-claim');
     setLoading(btn, true);
+    showFullLoading(`Mengonfirmasi pembayaran ${inv.invoice_number}...`);
+    try {
 
     const alreadyPaid  = Number(inv.paid_amount || 0);
     const claimAmount  = Number(inv.payment_claimed_amount);
@@ -403,11 +407,15 @@
       payment_claimed_note:   null,
     }).eq('id', currentClaimId);
 
-    setLoading(btn, false);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
-    showToast(isFullyPaid ? '✅ Faktur dikonfirmasi lunas' : '✅ Pembayaran sebagian dikonfirmasi');
     closeModal('modal-confirm-payment');
-    loadPaymentClaims();
+    showFullLoading('Memuat ulang daftar...');
+    await loadPaymentClaims();
+    showToast(isFullyPaid ? '✅ Faktur dikonfirmasi lunas' : '✅ Pembayaran sebagian dikonfirmasi');
+    } finally {
+      setLoading(btn, false);
+      hideFullLoading();
+    }
   }
 
   async function rejectPaymentClaim() {
@@ -442,9 +450,13 @@
     if (status) query = query.eq('verification_status', status);
     else query = query.not('verification_status', 'is', null);
 
-    const { data, error } = await query;
+    const [{ data, error }, { count: pendingCount }] = await Promise.all([
+      query,
+      supabase.from('invoices').select('id', { count: 'exact', head: true }).eq('verification_status', 'pending'),
+    ]);
     if (error) { showToast('Gagal memuat: ' + error.message, 'error'); return; }
     allInvoices = data || [];
+    document.getElementById('count-verify').textContent = pendingCount ?? 0;
     renderTable();
   }
 
@@ -589,6 +601,8 @@
     if (approvingInvoiceId) return;
     if (!showConfirm('Setujui faktur ini? Stok sudah terpotong saat faktur dibuat.')) return;
     approvingInvoiceId = id;
+    const inv = allInvoices.find(x => x.id === id);
+    showFullLoading(`Memverifikasi faktur ${inv?.invoice_number || ''}...`);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const { error } = await supabase.from('invoices').update({
@@ -598,20 +612,23 @@
       }).eq('id', id);
       if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
 
-      // Tandai price_verified_at untuk semua produk di faktur ini
-      const inv = allInvoices.find(x => x.id === id);
-      const now = new Date().toISOString();
-      for (const item of (inv?.invoice_items || [])) {
-        if (item.product_id) {
-          await supabase.from('products').update({ price_verified_at: now }).eq('id', item.product_id);
-        }
+      // Tandai price_verified_at untuk semua produk di faktur ini — satu query
+      // untuk semua produk (dulu 1 query per item, faktur 60 item = 60 kali bolak-balik)
+      const productIds = [...new Set((inv?.invoice_items || []).map(i => i.product_id).filter(Boolean))];
+      let priceErr = null;
+      if (productIds.length) {
+        ({ error: priceErr } = await supabase.from('products')
+          .update({ price_verified_at: new Date().toISOString() }).in('id', productIds));
       }
 
-      showToast('Faktur disetujui');
       closeModal('modal-detail');
-      loadInvoices();
+      showFullLoading('Memuat ulang daftar faktur...');
+      await loadInvoices();
+      if (priceErr) showToast('Faktur disetujui, tapi tanda harga terverifikasi produk gagal disimpan: ' + priceErr.message, 'warning');
+      else showToast('Faktur disetujui');
     } finally {
       approvingInvoiceId = null;
+      hideFullLoading();
     }
   }
 
@@ -628,16 +645,17 @@
 
     const btn = document.getElementById('btn-confirm-reject');
     setLoading(btn, true);
+    const inv = allInvoices.find(x => x.id === currentInvoiceId);
+    showFullLoading(`Menolak faktur ${inv?.invoice_number || ''}...`);
+    try {
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa tolak faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
-      setLoading(btn, false);
       return;
     }
 
-    const inv = allInvoices.find(x => x.id === currentInvoiceId);
-    if (!inv) { showToast('Faktur tidak ditemukan', 'error'); setLoading(btn, false); return; }
+    if (!inv) { showToast('Faktur tidak ditemukan', 'error'); return; }
 
     // Klaim penolakan secara atomik dulu — hanya berhasil kalau verification_status masih 'pending'.
     // Mencegah dobel-restore stok kalau 2 admin nolak faktur yang sama nyaris bersamaan.
@@ -647,10 +665,12 @@
       .eq('verification_status', 'pending')
       .select('id');
 
-    if (claimErr) { showToast('Gagal: ' + claimErr.message, 'error'); setLoading(btn, false); return; }
+    if (claimErr) { showToast('Gagal: ' + claimErr.message, 'error'); return; }
     if (!claimed?.length) {
+      closeModal('modal-reject');
+      await loadInvoices();
       showToast('Faktur ini sudah diproses sebelumnya', 'error');
-      setLoading(btn, false); closeModal('modal-reject'); loadInvoices(); return;
+      return;
     }
 
     // Kembalikan stok tiap item (tanpa RPC) — aman dilakukan sesudah klaim berhasil
@@ -675,12 +695,15 @@
         if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
       }
     }
-    hideFullLoading();
 
-    setLoading(btn, false);
-    showToast('Faktur ditolak dan stok dikembalikan');
     closeModal('modal-reject');
-    loadInvoices();
+    showFullLoading('Memuat ulang daftar faktur...');
+    await loadInvoices();
+    showToast('Faktur ditolak dan stok dikembalikan');
+    } finally {
+      setLoading(btn, false);
+      hideFullLoading();
+    }
   }
 
   function openEdit(id) {
@@ -809,16 +832,14 @@
   async function saveEdit() {
     const btn = document.getElementById('btn-save-edit');
     setLoading(btn, true);
+    showFullLoading('Menyimpan perubahan & memverifikasi faktur...');
+    try {
 
     const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
     if (opnameSesi?.length) {
       showToast(`Tidak bisa edit faktur — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
-      setLoading(btn, false);
       return;
     }
-
-    showFullLoading('Menyimpan perubahan faktur...');
-    try {
 
     const inv = allInvoices.find(x => x.id === currentInvoiceId);
     const rows = document.querySelectorAll('.edit-item-row');
@@ -914,9 +935,10 @@
     }).eq('id', currentInvoiceId);
 
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
-    showToast('Faktur diedit dan disetujui');
     closeModal('modal-edit');
-    loadInvoices();
+    showFullLoading('Memuat ulang daftar faktur...');
+    await loadInvoices();
+    showToast('Faktur diedit dan disetujui');
     } finally {
       setLoading(btn, false);
       hideFullLoading();

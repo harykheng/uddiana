@@ -174,6 +174,11 @@ closeModal('modal-id');
 ```
 **JANGAN** pakai `el.style.display` — modal tidak akan muncul.
 
+### Loading Besar & Data Selalu Terbaru
+- Proses yang menulis ke database (simpan/setujui/tolak) pakai `showFullLoading('pesan...')` → `hideFullLoading()` di `finally`. Overlay ditahan sampai daftar **selesai dimuat ulang** (`await loadX()`), baru toast sukses — supaya user tidak melihat daftar lama sesaat setelah proses selesai. Contoh: Setujui/Tolak/Edit faktur & Konfirmasi Bayar di `verify-invoices.html`
+- `utils.js` otomatis `location.reload()` kalau halaman dipulihkan dari bfcache (tombol Back/Forward) — tanpa ini halaman tampil sebagai snapshot lama dan `init()` tidak jalan lagi
+- `refreshOnReturn(fn)` (opt-in per halaman): balik ke tab setelah ≥ 10 detik ditinggal → `fn()` ambil ulang data. **Bukan** reload penuh, dan dilewati kalau ada modal terbuka / overlay loading tampil, supaya isian form tidak hilang (admin sering bolak-balik ke tab WhatsApp). Saat ini dipakai `verify-invoices.html`
+
 ### Number Formatting (Indonesian)
 ```html
 <input type="text" inputmode="numeric" data-number id="my-input">
