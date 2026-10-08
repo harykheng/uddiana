@@ -226,11 +226,16 @@ body:not(.is-super-admin) [data-super-admin] { display: none; }
 }
 .full-loading-overlay.show { opacity: 1; pointer-events: all; }
 .full-loading-box {
-  background: var(--surface); border-radius: 12px; padding: 20px 28px;
-  display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.3);
-  font-size: 14px; font-weight: 600; color: var(--text);
+  background: var(--surface); border-radius: 16px; padding: 32px 40px;
+  min-width: 280px; max-width: calc(100vw - 32px);
+  display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center;
+  box-shadow: 0 10px 40px rgba(0,0,0,.3);
+  font-size: 17px; font-weight: 700; color: var(--text);
 }
+.full-loading-sub { font-size: 13px; font-weight: 500; color: var(--text-muted); margin-top: -6px; }
 .spinner-lg { width: 20px; height: 20px; border-width: 3px; border-color: rgba(37,99,235,.25); border-top-color: var(--primary); }
+.full-loading-box .spinner-lg { width: 52px; height: 52px; border-width: 5px; border-color: rgba(37,99,235,.2); border-top-color: var(--primary); }
+@media (max-width: 480px) { .full-loading-box { padding: 26px 20px; font-size: 15px; } }
 
 /* ---- STATS CARDS ---- */
 .stats-grid {
