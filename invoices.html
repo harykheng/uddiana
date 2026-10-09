@@ -95,6 +95,17 @@
     .pi-grand { font-size:11pt; font-weight:bold; border-top:1.5px solid #000; padding-top:3pt; margin-top:2pt; }
     .pi-footer3 { display:grid; grid-template-columns:1fr 1fr; gap:6pt; margin-top:14pt; font-size:9pt; text-align:center; }
     .pi-sign-line { border-top:1px solid #000; margin:28pt auto 0; padding-top:3pt; width:85pt; font-size:9pt; }
+
+    /* Kolom Stok di baris item: tombol + tambah stok cepat, merah kalau qty > stok */
+    .stock-cell { display:flex; align-items:center; gap:3px; }
+    .stock-add-btn {
+      flex-shrink:0; width:24px; height:28px; padding:0; line-height:1;
+      border:1px solid var(--border); border-radius:6px; background:#fff;
+      color:var(--text-muted); font-size:15px; font-weight:700; cursor:pointer;
+    }
+    .stock-add-btn:hover { border-color:var(--primary); color:var(--primary); }
+    input.stock-short { background:#fef2f2 !important; border-color:#dc2626 !important; color:#dc2626; font-weight:700; }
+    .stock-add-btn.stock-short { background:#dc2626; border-color:#dc2626; color:#fff; }
   </style>
 </head>
 <body>
@@ -493,6 +504,51 @@
         onclick="deleteInvoiceFromModal()"
         style="margin-left:auto">🗑 Hapus</button>
       <button class="btn btn-primary" onclick="printCurrentInvoice()">🖨 Cetak PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: TAMBAH STOK CEPAT (dibuka dari kolom Stok di form faktur)
+     Sengaja diletakkan paling bawah supaya tampil DI ATAS modal Buat/Edit
+     Faktur — draft faktur tetap utuh, tidak perlu ditutup lalu dibuat ulang.
+════════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-quick-stock" data-no-overlay-close>
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <h3>➕ Tambah Stok</h3>
+      <button class="modal-close" onclick="closeQuickStock()">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-weight:700;font-size:14px;margin-bottom:10px" id="qs-product-name"></div>
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <div style="flex:1;background:#f8fafc;border-radius:8px;padding:8px 10px">
+          <div style="font-size:11px;color:var(--text-muted)">Stok di sistem</div>
+          <div style="font-size:16px;font-weight:700" id="qs-live-stock">…</div>
+        </div>
+        <div style="flex:1;background:#f8fafc;border-radius:8px;padding:8px 10px">
+          <div style="font-size:11px;color:var(--text-muted)">Dibutuhkan faktur ini</div>
+          <div style="font-size:16px;font-weight:700" id="qs-needed">…</div>
+        </div>
+      </div>
+      <div id="qs-info" style="display:none;font-size:12.5px;padding:8px 10px;border-radius:8px;margin-bottom:12px;line-height:1.45"></div>
+      <div class="form-group">
+        <label>Tambah berapa (pcs)</label>
+        <input type="text" inputmode="numeric" data-number id="qs-qty" placeholder="0" oninput="updateQuickStockPreview()">
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:4px" id="qs-preview"></div>
+      </div>
+      <div class="form-group mb-0">
+        <label>Alasan *</label>
+        <input type="text" id="qs-notes" placeholder="cth: barang ada di gudang, belum diinput">
+      </div>
+      <div style="font-size:11.5px;color:var(--text-muted);margin-top:10px;line-height:1.45">
+        Tercatat sebagai <b>Stok Masuk</b> di riwayat stok produk (sama seperti Sesuaikan Stok di halaman Produk).
+        Kalau barangnya memang datang dari supplier, sebaiknya tetap lewat <b>Pembelian Barang</b> supaya harga modal ikut tercatat.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeQuickStock()">Batal</button>
+      <button class="btn btn-primary" id="btn-save-quick-stock" onclick="saveQuickStock()">Simpan Stok</button>
     </div>
   </div>
 </div>
@@ -982,7 +1038,7 @@
           <option value="">-- Pilih Produk --</option>
         </select>
       </td>
-      <td style="padding:5px 6px"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><div class="stock-cell"><input type="number" id="stock-${id}" readonly value="0" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"><button type="button" class="stock-add-btn" id="stockadd-${id}" style="display:none" title="Tambah stok produk ini tanpa menutup faktur" onclick="openQuickStock('${id}', '')">+</button></div></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="qty-${id}" value="1" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onQtyChange('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="price-${id}" value="0" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onPriceChange('${id}')"></td>
       <td style="padding:5px 6px">
@@ -1425,6 +1481,7 @@
     // Formula bersama di js/utils.js — dipakai sales.html & verify-invoices.html juga
     const total = hitungSubtotalBaris(qty, price, discType, disc, disc2);
     if (sub) sub.value = total > 0 ? total.toLocaleString('id-ID') : '0';
+    markStockShortage(rowId, '');
     if (updateTotal) recalcTotal();
   }
 
@@ -1474,6 +1531,181 @@
       const lastRowId = allRows[allRows.length - 1].id;
       tomSelectInstances[lastRowId]?.setValue(product.id);
       showToast(`Ditambahkan: ${product.name}`, 'success');
+    }
+  }
+
+  // ── TAMBAH STOK CEPAT DARI FORM FAKTUR ─────────────────────
+  // Kasus: stok di sistem 0/kurang padahal barangnya ada. Dulu admin harus tutup
+  // form faktur → tambah stok di Produk → buat ulang faktur dari awal (cache
+  // `products` di halaman ini juga baru segar setelah reload). Sekarang tombol +
+  // di kolom Stok membuka modal kecil DI ATAS form faktur, jadi draft tetap utuh.
+  // Pengecekan stok saat simpan TIDAK dilonggarkan — stok tetap harus ditambah
+  // dulu dan tercatat di stock_movements, bukan faktur boleh membuat stok minus.
+  // prefix: '' = form Buat Faktur, 'e' = modal Edit Faktur.
+  let quickStockCtx = null;  // { productId, rowId, prefix, live }
+
+  function _stockRowsBody(prefix) {
+    return document.getElementById(prefix === 'e' ? 'edit-invoice-items-body' : 'invoice-items-body');
+  }
+
+  // Total qty satu produk di semua baris form (produk sama bisa ada di >1 baris).
+  function _qtyInForm(productId, prefix) {
+    let total = 0;
+    _stockRowsBody(prefix).querySelectorAll('tr[id]').forEach(tr => {
+      if (tr.querySelector('select')?.value !== productId) return;
+      total += Math.round(parseFormattedNumber(document.getElementById(`${prefix}qty-${tr.id}`)?.value) || 0);
+    });
+    return total;
+  }
+
+  function markStockShortage(rowId, prefix) {
+    const stockEl = document.getElementById(`${prefix}stock-${rowId}`);
+    const btn     = document.getElementById(`${prefix}stockadd-${rowId}`);
+    if (!stockEl || !btn) return;
+    const hasProduct = !!document.getElementById(rowId)?.querySelector('select')?.value;
+    const qty   = Math.round(parseFormattedNumber(document.getElementById(`${prefix}qty-${rowId}`)?.value) || 0);
+    const short = hasProduct && qty > (parseInt(stockEl.value) || 0);
+    btn.style.display = hasProduct ? '' : 'none';
+    stockEl.classList.toggle('stock-short', short);
+    btn.classList.toggle('stock-short', short);
+  }
+
+  // Sebarkan stok terbaru ke cache + semua baris yang memakai produk ini, di form
+  // Buat maupun Edit. Stok di modal Edit = stok live + qty yang sudah dipakai
+  // faktur itu sendiri (lihat openEditInvoice), jadi ditambah balik di sini.
+  function applyLiveStock(productId, live) {
+    const p = productById.get(productId);
+    if (p) p.stock_quantity = live;
+    const ep = editProductById.get(productId);
+    if (ep) ep.stock_quantity = live + (editOwnedByProduct[productId] || 0);
+    ['', 'e'].forEach(prefix => {
+      const shown = prefix === 'e' ? ep?.stock_quantity : live;
+      if (shown == null) return;
+      _stockRowsBody(prefix).querySelectorAll('tr[id]').forEach(tr => {
+        if (tr.querySelector('select')?.value !== productId) return;
+        const stockEl = document.getElementById(`${prefix}stock-${tr.id}`);
+        if (stockEl) stockEl.value = shown;
+        markStockShortage(tr.id, prefix);
+      });
+    });
+  }
+
+  function _quickStockAvail(live, productId, prefix) {
+    return prefix === 'e' ? live + (editOwnedByProduct[productId] || 0) : live;
+  }
+
+  async function openQuickStock(rowId, prefix) {
+    const productId = document.getElementById(rowId)?.querySelector('select')?.value;
+    if (!productId) { showToast('Pilih produk dulu', 'error'); return; }
+    const prod = (prefix === 'e' ? editProductById : productById).get(productId);
+    quickStockCtx = { productId, rowId, prefix, live: null };
+
+    document.getElementById('qs-product-name').textContent = prod?.name || '';
+    document.getElementById('qs-live-stock').textContent = '…';
+    document.getElementById('qs-needed').textContent = _qtyInForm(productId, prefix).toLocaleString('id-ID') + ' pcs';
+    document.getElementById('qs-info').style.display = 'none';
+    document.getElementById('qs-qty').value = '';
+    document.getElementById('qs-notes').value = '';
+    document.getElementById('qs-preview').textContent = '';
+    openModal('modal-quick-stock');
+
+    // Stok LIVE, bukan cache halaman: bisa jadi stoknya sudah ditambah dari tab lain.
+    const { data, error } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
+    if (quickStockCtx?.productId !== productId) return;  // modal sudah ditutup / ganti produk
+    if (error) { showToast('Gagal cek stok terbaru: ' + error.message, 'error'); return; }
+    refreshQuickStockModal(data.stock_quantity);
+  }
+
+  function refreshQuickStockModal(live) {
+    const { productId, prefix } = quickStockCtx;
+    quickStockCtx.live = live;
+    applyLiveStock(productId, live);
+
+    const needed = _qtyInForm(productId, prefix);
+    const avail  = _quickStockAvail(live, productId, prefix);
+    const short  = needed - avail;
+    document.getElementById('qs-live-stock').textContent = live.toLocaleString('id-ID') + ' pcs';
+    document.getElementById('qs-needed').textContent = needed.toLocaleString('id-ID') + ' pcs';
+
+    const info = document.getElementById('qs-info');
+    if (short > 0) {
+      Object.assign(info.style, { display: 'block', background: '#fef2f2', color: '#991b1b' });
+      info.textContent = prefix === 'e' && editOwnedByProduct[productId]
+        ? `Kurang ${short.toLocaleString('id-ID')} pcs (faktur ini sudah memakai ${editOwnedByProduct[productId].toLocaleString('id-ID')} pcs, ikut dihitung).`
+        : `Kurang ${short.toLocaleString('id-ID')} pcs untuk faktur ini.`;
+      document.getElementById('qs-qty').value = short.toLocaleString('id-ID');
+    } else {
+      Object.assign(info.style, { display: 'block', background: '#f0fdf4', color: '#166534' });
+      info.textContent = 'Stok di sistem sudah cukup untuk faktur ini — kolom Stok di faktur sudah diperbarui. Tidak perlu menambah stok.';
+    }
+    updateQuickStockPreview();
+  }
+
+  function updateQuickStockPreview() {
+    const el = document.getElementById('qs-preview');
+    if (quickStockCtx?.live == null) { el.textContent = ''; return; }
+    const qty = Math.round(parseFormattedNumber(document.getElementById('qs-qty').value) || 0);
+    el.textContent = qty > 0
+      ? `Stok jadi ${(quickStockCtx.live + qty).toLocaleString('id-ID')} pcs`
+      : '';
+  }
+
+  function closeQuickStock() {
+    quickStockCtx = null;
+    closeModal('modal-quick-stock');
+    // closeModal() melepas kunci scroll body, padahal form faktur di bawahnya masih terbuka
+    if (document.querySelector('.modal-overlay.open')) document.body.style.overflow = 'hidden';
+  }
+
+  async function saveQuickStock() {
+    const btn = document.getElementById('btn-save-quick-stock');
+    if (btn.disabled || !quickStockCtx) return;
+    const { productId } = quickStockCtx;
+    const qty   = Math.round(parseFormattedNumber(document.getElementById('qs-qty').value) || 0);
+    const notes = document.getElementById('qs-notes').value.trim();
+    if (qty <= 0) { showToast('Jumlah harus lebih dari 0', 'error'); return; }
+    if (!notes)   { showToast('Alasan wajib diisi — supaya ketahuan kenapa stok di sistem tadi selisih', 'error'); return; }
+    setLoading(btn, true);
+    try {
+      const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+      if (opnameSesi?.length) {
+        showToast(`Tidak bisa tambah stok — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+        return;
+      }
+
+      const { data: liveProd, error: liveErr } = await supabase
+        .from('products').select('name,stock_quantity').eq('id', productId).single();
+      if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); return; }
+      const before = liveProd.stock_quantity;
+      const after  = before + qty;
+
+      // Update bersyarat stok lama: kalau di jeda ini ada faktur/transaksi lain yang
+      // mengubah stok produk ini, update-nya tidak kena (0 baris) dan tidak menimpa
+      // perubahan transaksi tsb — admin cukup klik Simpan lagi.
+      const { data: updated, error } = await supabase.from('products')
+        .update({ stock_quantity: after })
+        .eq('id', productId).eq('stock_quantity', before)
+        .select('id');
+      if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+      if (!updated?.length) {
+        showToast('Stok produk ini baru saja berubah oleh transaksi lain. Angka sudah diperbarui, cek lalu klik Simpan lagi.', 'error');
+        const { data: fresh } = await supabase.from('products').select('stock_quantity').eq('id', productId).single();
+        if (fresh && quickStockCtx?.productId === productId) refreshQuickStockModal(fresh.stock_quantity);
+        return;
+      }
+
+      const { error: movErr } = await supabase.from('stock_movements').insert({
+        product_id: productId, product_name: liveProd.name, type: 'in',
+        quantity: qty, quantity_before: before, quantity_after: after,
+        notes: `Tambah stok dari form faktur: ${notes}`,
+      });
+      if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
+
+      applyLiveStock(productId, after);
+      closeQuickStock();
+      showToast(`Stok ${liveProd.name} jadi ${after.toLocaleString('id-ID')} pcs`);
+    } finally {
+      setLoading(btn, false);
     }
   }
 
@@ -1691,6 +1923,7 @@
   // Salinan daftar produk khusus modal edit: stok LIVE + qty yang sudah dipakai faktur ini.
   let editProducts = [];
   let editProductById = new Map();
+  let editOwnedByProduct = {};  // { product_id: qty yang sudah dipakai faktur yang sedang diedit }
 
   async function openEditInvoice(id) {
     const inv = allInvoices.find(x => x.id === id);
@@ -1734,6 +1967,7 @@
         .from('products').select('id,stock_quantity').in('id', ownedIds);
       (liveProducts || []).forEach(p => { liveStockById[p.id] = p.stock_quantity; });
     }
+    editOwnedByProduct = ownedByProduct;
     editProducts = products.map(p => ({
       ...p,
       stock_quantity: (liveStockById[p.id] ?? p.stock_quantity) + (ownedByProduct[p.id] || 0),
@@ -1778,7 +2012,7 @@
           ${existingProd ? `<option value="${existingProd.id}" selected>${escapeHtml(existingProd.name)}</option>` : ''}
         </select>
       </td>
-      <td style="padding:5px 6px"><input type="number" id="estock-${id}" readonly value="${existingProd?.stock_quantity || 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><div class="stock-cell"><input type="number" id="estock-${id}" readonly value="${existingProd?.stock_quantity || 0}" style="background:#f8fafc;width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"><button type="button" class="stock-add-btn" id="estockadd-${id}" style="display:none" title="Tambah stok produk ini tanpa menutup faktur" onclick="openQuickStock('${id}', 'e')">+</button></div></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eqty-${id}" value="${existingItem ? existingItem.quantity : '1'}" style="width:55px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onEditQtyChange('${id}')"></td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="eprice-${id}" value="${existingItem ? Number(existingItem.price||0).toLocaleString('id-ID') : '0'}" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="onEditPriceChange('${id}')"></td>
       <td style="padding:5px 6px">
@@ -1809,6 +2043,7 @@
       if (productId) applyDiscountRuleEdit(id, productId, qty, price);
       recalcEditInvoiceRow(id);
     });
+    markStockShortage(id, 'e');
   }
 
   function removeEditItemRow(id) {
@@ -1857,6 +2092,7 @@
     sub = hitungSubtotalBaris(qty, price, discType, disc, disc2);
     const subEl = document.getElementById(`esub-${rowId}`);
     if (subEl) subEl.value = sub > 0 ? sub.toLocaleString('id-ID') : '0';
+    markStockShortage(rowId, 'e');
     if (updateTotal) recalcEditInvoiceTotal();
   }
 
