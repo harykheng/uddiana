@@ -837,17 +837,26 @@
     setLoading(btn, false);
     showSuccess(data || [], customerLabel(selectedCustomer), totalQty);
 
-    // Reset form, toko tetap terpilih (sering ada beberapa retur dari toko yang sama)
-    cart = [];
+    // Semua form dikosongkan, termasuk toko & faktur — retur berikutnya mulai
+    // dari awal lagi supaya tidak salah toko/faktur karena sisa isian sebelumnya
+    resetInputForm();
+    loadHistory();
+  }
+
+  // Balikkan tab Input Retur ke keadaan awal: toko, faktur, pencarian, daftar
+  // retur, alasan, catatan, dan foto semuanya kosong.
+  function resetInputForm() {
     selectedReason = '';
     document.getElementById('reason-other').value = '';
     document.getElementById('reason-other').style.display = 'none';
     document.getElementById('retur-notes').value = '';
     document.querySelectorAll('#reason-chips .rt-chip').forEach(b => b.classList.remove('active'));
-    clearPhoto();
+    document.getElementById('product-search').value = '';
+    // clear(true) = tanpa memicu onChange; reset-nya dijalankan langsung di bawah
+    if (customerTS) customerTS.clear(true);
+    onCustomerChange('');   // kosongkan faktur, barang, daftar retur, foto
     renderCart();
-    refreshReturnable(customerId);
-    loadHistory();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async function refreshReturnable(customerId) {
