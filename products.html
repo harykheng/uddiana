@@ -200,6 +200,7 @@
           <button class="btn btn-ghost btn-sm" onclick="openBulkPhotoModal()">📷 Foto Massal</button>
           <button class="btn btn-ghost btn-sm" onclick="openBulkRenameModal()">✏️ Edit Nama/SKU Massal</button>
           <button class="btn btn-ghost btn-sm" onclick="cetakProdukTerpilih()" title="Buat brosur PDF cuma dari produk yang dicentang">🖨️ Buat PDF</button>
+          <button class="btn btn-ghost btn-sm" onclick="exportXlsTerpilih()" title="Export XLS cuma produk yang dicentang">⬇️ Export XLS</button>
           <button class="btn btn-primary btn-sm" onclick="openBulkPriceModal()">💰 Update Harga Massal</button>
         </div>
       </div>
@@ -1265,6 +1266,21 @@
   // ── EXPORT XLS ────────────────────────────────────────────
   function exportXls() {
     const toExport = currentFiltered.length ? currentFiltered : allProducts;
+    const label = currentFiltered.length < allProducts.length ? ` (filter aktif)` : '';
+    tulisXlsProduk(toExport, 'produk_uddiana', label);
+  }
+
+  // Export cuma produk yang dicentang — urutan sesuai urutan dicentang (sama
+  // seperti Buat PDF). Diambil dari allProducts, bukan currentFiltered, karena
+  // centangan tetap tersimpan walau filter/pencarian sudah diganti.
+  function exportXlsTerpilih() {
+    if (!selectedProductIds.size) return;
+    const byId = new Map(allProducts.map(p => [p.id, p]));
+    const toExport = [...selectedProductIds].map(id => byId.get(id)).filter(Boolean);
+    tulisXlsProduk(toExport, 'produk_terpilih', ' (terpilih)');
+  }
+
+  function tulisXlsProduk(toExport, prefix, label) {
     if (!toExport.length) { showToast('Tidak ada produk untuk diekspor', 'error'); return; }
 
     const rows = toExport.map(p => ({
@@ -1288,8 +1304,7 @@
     XLSX.utils.book_append_sheet(wb, ws, 'Produk');
     const now = new Date();
     const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
-    XLSX.writeFile(wb, `produk_uddiana_${stamp}.xlsx`);
-    const label = currentFiltered.length < allProducts.length ? ` (filter aktif)` : '';
+    XLSX.writeFile(wb, `${prefix}_${stamp}.xlsx`);
     showToast(`✅ Exported ${rows.length} produk${label}`);
   }
 
