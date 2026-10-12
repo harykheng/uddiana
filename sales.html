@@ -145,6 +145,10 @@
       border: none; cursor: pointer; font-size: 14px; font-weight: 700;
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
+    .bonus-toggle { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; user-select: none; }
+    .bonus-toggle input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
+    .item-row.is-bonus { background: #fffbeb; border-color: #f59e0b; }
+    .item-row.is-bonus .item-label { color: #b45309; }
     .item-product-sel { width: 100%; margin-bottom: 10px; border: 1.5px solid var(--border);border-radius: 8px;font-size: 14px;color: var(--text);outline: none;transition: border-color .2s;background: #fff;}
     .item-fields { display: grid; grid-template-columns: 80px 1fr; gap: 10px; align-items: end; }
     .item-field label { font-size: 11px; font-weight: 600; color: var(--muted); display: block; margin-bottom: 4px; }
@@ -644,6 +648,25 @@
   </div>
 </div>
 
+<!-- MODAL: PRODUK SUDAH DIINPUT (duplikat di baris item) -->
+<!-- Sengaja tanpa tombol tutup & tanpa tutup lewat overlay: sales wajib memilih salah satu,
+     jadi baris kembar tidak bisa lolos begitu saja. Ditaruh paling akhir supaya tampil
+     di atas modal Edit Faktur (urutan DOM menentukan tumpukan). -->
+<div class="modal-overlay" id="modal-duplikat" data-no-overlay-close>
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-title">⚠️ Produk ini sudah diinput</div>
+    <div style="padding:0 16px 16px">
+      <div id="dup-info" style="font-size:14px;line-height:1.5;margin-bottom:14px;"></div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-primary btn-full" onclick="dupPilih('bonus')">🎁 Jadikan Bonus</button>
+        <button class="btn btn-ghost btn-full" onclick="dupPilih('gabung')" style="border:1.5px solid var(--border);">➕ Gabung qty ke <span id="dup-lama-label"></span></button>
+        <button class="btn btn-ghost btn-full" onclick="dupPilih('hapus')" style="border:1.5px solid #fecaca;color:#dc2626;">🗑️ Salah input, hapus baris ini</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: CUSTOMER BARU -->
 <div class="modal-overlay" id="modal-new-customer">
   <div class="modal">
@@ -899,7 +922,8 @@
   // Pakai basePrice (harga katalog), bukan harga di input yang sudah kena diskon,
   // supaya syarat min_amount tidak berubah-ubah mengikuti diskonnya sendiri.
   function cartRows(scopeSel) {
-    return [...document.querySelectorAll(`${scopeSel} .item-row`)].map(row => ({
+    // Baris bonus tidak dihitung: qty-nya bukan pembelian, jangan sampai memicu diskon grup
+    return [...document.querySelectorAll(`${scopeSel} .item-row`)].filter(row => row.dataset.bonus !== '1').map(row => ({
       productId: row.dataset.productId || null,
       qty:       parseFloat(row.querySelector('.item-qty-input')?.value) || 0,
       basePrice: Number(row.dataset.basePrice) || 0,
@@ -1539,25 +1563,127 @@
     if (items.length === 0) {
       addItem();
     } else {
-      items.forEach(it => {
-        addItem();
-        // Setelah addItem(), set product, qty, price di row terakhir
-        const rows = document.querySelectorAll('.item-row');
-        const lastRow = rows[rows.length - 1];
-        const sel = lastRow.querySelector('.item-product-sel');
-        if (sel && sel.tomselect && it.product_id) {
-          sel.tomselect.setValue(it.product_id);
-        }
-        lastRow.querySelector('.item-qty-input').value = it.quantity;
-        lastRow.querySelector('.item-price-input').value = it.price;
-        recalcItem(lastRow.id.replace('item-', ''));
-      });
+      // Faktur yang ditolak bisa berisi baris kembar yang sah (bonus), jadi modal duplikat
+      // dimatikan selama penyalinan. Subtotal 0 = harga sudah dijadikan Rp 0 admin = bonus.
+      suppressDupCheck = true;
+      try {
+        items.forEach(it => {
+          addItem();
+          // Setelah addItem(), set product, qty, price di row terakhir
+          const rows = document.querySelectorAll('.item-row');
+          const lastRow = rows[rows.length - 1];
+          const sel = lastRow.querySelector('.item-product-sel');
+          if (sel && sel.tomselect && it.product_id) {
+            sel.tomselect.setValue(it.product_id);
+          }
+          lastRow.querySelector('.item-qty-input').value = it.quantity;
+          lastRow.querySelector('.item-price-input').value = it.price;
+          if (Number(it.subtotal) === 0) setRowBonus(lastRow, true);
+          else recalcItem(lastRow.id.replace('item-', ''));
+        });
+      } finally {
+        suppressDupCheck = false;
+      }
     }
 
     recalcTotal();
     switchTab('tab-new');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     showToast('Data faktur ditolak sudah di-copy ke form baru');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // BONUS & PRODUK KEMBAR
+  // Bonus (mis. beli 12 gratis 1) diinput sebagai baris kedua produk yang sama atau
+  // produk lain, supaya stok tetap terpotong. Admin yang menjadikan harganya Rp 0 saat
+  // verifikasi. Di sini baris bonus cuma DITANDAI (badge + baris di catatan faktur) —
+  // tidak ada kolom baru di database, harga & subtotal tidak diubah.
+  // Baris reguler kembar (bukan bonus) ditanyakan lewat modal supaya double input
+  // tidak lolos diam-diam.
+  // ─────────────────────────────────────────────────────────────────────────
+  const BONUS_NOTE_PREFIX = 'BONUS (harga Rp 0): ';
+  let suppressDupCheck = false;   // true saat form diisi otomatis (salin faktur ditolak, muat edit)
+  let dupPending = null;          // { row, lama } selama modal-duplikat terbuka
+
+  function recalcRowsOf(row) {
+    if (row.closest('#edit-items-list')) recalcEditItem(); else recalcItem();
+  }
+
+  function setRowBonus(row, on) {
+    row.dataset.bonus = on ? '1' : '0';
+    row.classList.toggle('is-bonus', on);
+    const cb = row.querySelector('.bonus-cb');
+    if (cb) cb.checked = on;
+    recalcRowsOf(row);   // bonus tidak ikut hitungan syarat diskon grup (lihat cartRows)
+  }
+
+  function onBonusToggle(cb) {
+    const row = cb.closest('.item-row');
+    setRowBonus(row, cb.checked);
+    // Dilepas dari bonus → jadi baris reguler lagi, cek kembar seperti produk baru dipilih
+    if (!cb.checked) cekProdukKembar(row);
+  }
+
+  function hapusBarisItem(row) {
+    const m = row.id.match(/^(edit-)?item-(\d+)$/);
+    if (!m) return;
+    if (m[1]) removeEditItem(m[2]); else removeItem(m[2]);
+  }
+
+  // Dipanggil setelah produk dipilih di sebuah baris
+  function cekProdukKembar(row) {
+    if (suppressDupCheck || row.dataset.bonus === '1') return;
+    const pid = row.dataset.productId;
+    if (!pid) return;
+    const lama = [...row.parentElement.querySelectorAll('.item-row')]
+      .find(r => r !== row && r.dataset.productId === pid && r.dataset.bonus !== '1');
+    if (!lama) return;
+
+    const nama = productById.get(pid)?.name || editProductById.get(pid)?.name || 'Produk ini';
+    const labelLama = lama.querySelector('.item-label')?.textContent || 'baris lain';
+    const qtyLama = lama.querySelector('.item-qty-input').value;
+    dupPending = { row, lama };
+    document.getElementById('dup-info').innerHTML =
+      `<b>${escapeHtml(nama)}</b> sudah ada di <b>${escapeHtml(labelLama)}</b> (qty ${escapeHtml(qtyLama)}).<br>` +
+      `Baris yang baru kamu pilih ini untuk apa?`;
+    document.getElementById('dup-lama-label').textContent = labelLama;
+    openModal('modal-duplikat');
+  }
+
+  function dupPilih(aksi) {
+    if (!dupPending) { closeModal('modal-duplikat'); return; }
+    const { row, lama } = dupPending;
+    dupPending = null;
+    closeModal('modal-duplikat');
+    // closeModal membuka kunci scroll body, padahal modal Edit Faktur mungkin masih terbuka di bawahnya
+    if (document.getElementById('modal-edit').classList.contains('open')) document.body.style.overflow = 'hidden';
+
+    if (aksi === 'bonus') {
+      setRowBonus(row, true);
+    } else if (aksi === 'gabung') {
+      const qtyLama = lama.querySelector('.item-qty-input');
+      let total = (parseFloat(qtyLama.value) || 0) + (parseFloat(row.querySelector('.item-qty-input').value) || 0);
+      const max = parseInt(qtyLama.max);
+      if (qtyLama.max !== '' && !isNaN(max) && total > max) {
+        total = max;
+        showToast(`Qty digabung dibatasi sesuai stok (${max})`, 'warning');
+      }
+      qtyLama.value = total;
+      hapusBarisItem(row);
+      recalcRowsOf(lama);
+    } else {
+      hapusBarisItem(row);
+    }
+  }
+
+  // Tulis ulang baris BONUS di catatan faktur. Baris lama dibuang dulu supaya edit
+  // faktur berkali-kali tidak menumpuk baris yang sama.
+  function gabungCatatanBonus(notes, bonusItems) {
+    const bersih = (notes || '').split('\n')
+      .filter(l => !l.startsWith(BONUS_NOTE_PREFIX)).join('\n').trim();
+    if (!bonusItems.length) return bersih;
+    const baris = BONUS_NOTE_PREFIX + bonusItems.join(', ');
+    return bersih ? bersih + '\n' + baris : baris;
   }
 
   function addItem() {
@@ -1568,7 +1694,10 @@
     div.innerHTML = `
       <div class="item-header">
         <span class="item-label">Item ${id}</span>
-        <button class="btn-remove-item" onclick="removeItem(${id})" title="Hapus">✕</button>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <label class="bonus-toggle"><input type="checkbox" class="bonus-cb" onchange="onBonusToggle(this)"> 🎁 Bonus</label>
+          <button class="btn-remove-item" onclick="removeItem(${id})" title="Hapus">✕</button>
+        </div>
       </div>
       <select class="item-product-sel">
         <option value="">— Pilih Produk —</option>
@@ -1639,6 +1768,7 @@
     if (parseInt(qtyInput.value) > stock) qtyInput.value = stock;
     const id = row.id.replace('item-', '');
     recalcItem(id);
+    cekProdukKembar(row);
   }
 
   // Satu baris: diskon, peringatan stok, subtotal. Tidak memanggil recalcTotal —
@@ -1722,6 +1852,9 @@ function recalcTotal() {
 
     const rows = document.querySelectorAll('.item-row');
     const items = [];
+    const regularSeen = new Set();     // produk di baris reguler (non-bonus) — tidak boleh kembar
+    const neededByProduct = {};        // total qty per produk, reguler + bonus
+    const bonusItems = [];             // untuk baris BONUS di catatan faktur
     for (const row of rows) {
       const sel = row.querySelector('.item-product-sel');
       const qty      = parseFloat(row.querySelector('.item-qty-input').value) || 0;
@@ -1730,6 +1863,17 @@ function recalcTotal() {
       if (!sel.value) continue;
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
       const opt = sel.options[sel.selectedIndex];
+      const isBonus = row.dataset.bonus === '1';
+      if (!isBonus) {
+        if (regularSeen.has(sel.value)) {
+          showToast(`"${opt.text.split(' (')[0]}" diinput lebih dari sekali. Gabungkan qty-nya, atau tandai salah satunya 🎁 Bonus`, 'error');
+          btn.disabled = false; btn.textContent = 'Kirim Faktur'; return;
+        }
+        regularSeen.add(sel.value);
+      } else {
+        bonusItems.push(`${opt.text.split(' (Stok:')[0].trim()} ${qty} ${productById.get(sel.value)?.unit || 'pcs'}`);
+      }
+      neededByProduct[sel.value] = (neededByProduct[sel.value] || 0) + qty;
       const stock = parseInt(productById.get(sel.value)?.stock_quantity) || 0;
       if (stock === 0) { showToast(`Stok "${opt.text.split(' (')[0]}" habis`, 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
       if (qty > stock) { showToast(`Stok "${opt.text.split(' (')[0]}" tidak cukup (stok: ${stock})`, 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
@@ -1751,7 +1895,19 @@ function recalcTotal() {
 
     if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
 
+    // Cek per baris di atas tidak cukup: produk yang sama di beberapa baris (reguler + bonus)
+    // masing-masing bisa lolos, padahal totalnya melebihi stok.
+    for (const [pid, need] of Object.entries(neededByProduct)) {
+      const p = productById.get(pid);
+      const stock = parseInt(p?.stock_quantity) || 0;
+      if (need > stock) {
+        showToast(`Stok "${p?.name || 'produk'}" tidak cukup untuk total ${need} (stok: ${stock})`, 'error');
+        btn.disabled = false; btn.textContent = 'Kirim Faktur'; return;
+      }
+    }
+
     const total = items.reduce((s, i) => s + i.subtotal, 0);
+    const finalNotes = gabungCatatanBonus(notes, bonusItems);
 
     showFullLoading('Menyimpan faktur & memperbarui stok...');
 
@@ -1771,7 +1927,7 @@ function recalcTotal() {
       price_mode: priceMode,
       total: total,
       status: 'pending',
-      notes: notes || null,
+      notes: finalNotes || null,
       created_by_id: currentUser.session.user.id,
       sales_name: currentUser.profile.name,
       verification_status: 'pending'
@@ -1883,7 +2039,8 @@ function recalcTotal() {
       if (items.length === 0) {
         addEditItem();
       } else {
-        items.forEach(it => addEditItem(it.product_id, it.quantity));
+        // Subtotal 0 = harga sudah dijadikan Rp 0 admin = baris bonus
+        items.forEach(it => addEditItem(it.product_id, it.quantity, Number(it.subtotal) === 0));
       }
     } finally {
       editItemsLoading = false;
@@ -1893,7 +2050,7 @@ function recalcTotal() {
     openModal('modal-edit');
   }
 
-  function addEditItem(productId = null, qty = 1) {
+  function addEditItem(productId = null, qty = 1, isBonus = false) {
     const id = ++editItemCount;
     // Produk sudah dipilih langsung di HTML, bukan lewat ts.setValue() — setValue
     // ikut merender ulang daftar dropdown, terasa kalau faktur berisi puluhan item.
@@ -1905,7 +2062,10 @@ function recalcTotal() {
     div.innerHTML = `
       <div class="item-header">
         <span class="item-label">Item ${id}</span>
-        <button class="btn-remove-item" onclick="removeEditItem(${id})" title="Hapus">✕</button>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <label class="bonus-toggle"><input type="checkbox" class="bonus-cb" onchange="onBonusToggle(this)"> 🎁 Bonus</label>
+          <button class="btn-remove-item" onclick="removeEditItem(${id})" title="Hapus">✕</button>
+        </div>
       </div>
       <select class="item-product-sel">
         <option value="">— Pilih Produk —</option>
@@ -1934,6 +2094,11 @@ function recalcTotal() {
           style="font-size:15px;font-weight:700;color:var(--primary);text-align:right;border:none;background:transparent;width:150px;pointer-events:none;">
       </div>`;
     document.getElementById('edit-items-list').appendChild(div);
+    if (isBonus) {
+      div.dataset.bonus = '1';
+      div.classList.add('is-bonus');
+      div.querySelector('.bonus-cb').checked = true;
+    }
 
     const sel = div.querySelector('.item-product-sel');
     const ts = createProductTomSelect(sel, editProducts, () => updateEditItemPrice(sel, id));
@@ -1977,6 +2142,7 @@ function recalcTotal() {
     const qtyInput = row.querySelector('.item-qty-input');
     qtyInput.max = stock;
     recalcEditItem(id);
+    if (!editItemsLoading) cekProdukKembar(row);
   }
 
   function recalcEditItem(id) {
@@ -2051,6 +2217,8 @@ function recalcTotal() {
     // Kumpulkan item
     const rows = document.querySelectorAll('#edit-items-list .item-row');
     const items = [];
+    const regularSeen = new Set();   // produk di baris reguler (non-bonus) — tidak boleh kembar
+    const bonusItems = [];           // untuk baris BONUS di catatan faktur
     for (const row of rows) {
       const sel      = row.querySelector('.item-product-sel');
       const qty      = parseFloat(row.querySelector('.item-qty-input').value) || 0;
@@ -2059,6 +2227,15 @@ function recalcTotal() {
       if (!sel.value) continue;
       if (qty <= 0)   { showToast('Qty harus lebih dari 0', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
       const opt = sel.options[sel.selectedIndex];
+      if (row.dataset.bonus === '1') {
+        bonusItems.push(`${opt.text.split(' (')[0].trim()} ${qty} ${editProductById.get(sel.value)?.unit || 'pcs'}`);
+      } else {
+        if (regularSeen.has(sel.value)) {
+          showToast(`"${opt.text.split(' (')[0]}" diinput lebih dari sekali. Gabungkan qty-nya, atau tandai salah satunya 🎁 Bonus`, 'error');
+          btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return;
+        }
+        regularSeen.add(sel.value);
+      }
       const basePrice = Number(row.dataset.basePrice) || price;
       items.push({
         product_id:      sel.value,
@@ -2075,6 +2252,7 @@ function recalcTotal() {
     if (!items.length) { showToast('Tambah minimal 1 produk', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
 
     const total = items.reduce((s, i) => s + i.subtotal, 0);
+    const finalNotes = gabungCatatanBonus(notes, bonusItems);
 
     // Validasi stok LIVE dulu sebelum ada langkah destruktif apapun (cancel/hapus item lama).
     // Kalau ini dilewat dan validasi cuma nunggu trigger DB gagal di step insert terakhir,
@@ -2132,7 +2310,7 @@ function recalcTotal() {
         customer_address: customer?.address || null,
         invoice_date:     date,
         payment_term:     term,
-        notes:            notes || null,
+        notes:            finalNotes || null,
         total:            total,
         status:           'pending',
         verification_status: 'pending'
