@@ -216,6 +216,7 @@
         </div>
         <p style="font-size:12px;color:var(--text-muted);margin:-8px 0 14px">
           Akun <strong>Gudang</strong> cuma bisa membuka halaman Retur Toko (input retur barang dari toko, tanpa harga) — tidak bisa membuat faktur. Sales tidak bisa input retur.
+          Kolom <strong>Harga</strong>: akun sales <strong>🧳 Canvas</strong> memakai harga canvas produk (diisi di Edit Produk), qty wajib kelipatan 12, tanpa diskon otomatis — produk yang belum punya harga canvas tidak tampil di HP-nya.
         </p>
 
         <div class="card">
@@ -227,13 +228,14 @@
                   <th>Nama</th>
                   <th>Email</th>
                   <th>Role</th>
+                  <th>Harga</th>
                   <th>Status</th>
                   <th>Tgl Dibuat</th>
                   <th>Aksi</th>
                 </tr>
               </thead>
               <tbody id="sales-table">
-                <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+                <tr><td colspan="8" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
               </tbody>
             </table>
           </div>
@@ -498,7 +500,7 @@
   function renderSalesTable() {
     const tbody = document.getElementById('sales-table');
     if (!allAccounts.length) {
-      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">👥</div><h4>Belum ada akun</h4><p>Tambah akun sales atau gudang baru</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">👥</div><h4>Belum ada akun</h4><p>Tambah akun sales atau gudang baru</p></div></td></tr>`;
       return;
     }
     tbody.innerHTML = allAccounts.map((s, i) => `
@@ -507,6 +509,9 @@
         <td><strong>${escapeHtml(s.name)}</strong></td>
         <td class="text-muted">${escapeHtml(s.email)}</td>
         <td><span class="badge ${s.role === 'gudang' ? 'badge-warning' : 'badge-info'}">${ROLE_LABEL[s.role] || s.role}</span></td>
+        <td>${s.role === 'sales'
+          ? `<button class="btn btn-ghost btn-sm" onclick="togglePriceTier('${s.id}', '${s.price_tier || 'regular'}')" title="Klik untuk ganti">${s.price_tier === 'canvas' ? '🧳 Canvas' : '💼 Reguler'}</button>`
+          : '<span class="text-muted">—</span>'}</td>
         <td>
           <button class="status-toggle ${s.is_active ? 'active' : 'inactive'}" onclick="toggleActive('${s.id}', ${s.is_active})">
             ${s.is_active ? '✅ Aktif' : '🔴 Nonaktif'}
@@ -578,6 +583,18 @@
     const { error } = await supabase.from('user_profiles').update({ is_active: !currentStatus }).eq('id', id);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast(currentStatus ? 'Akun dinonaktifkan' : 'Akun diaktifkan');
+    loadSalesAccounts();
+  }
+
+  async function togglePriceTier(id, current) {
+    const next = current === 'canvas' ? 'regular' : 'canvas';
+    const msg = next === 'canvas'
+      ? 'Jadikan akun ini sales CANVAS?\n\nDi HP-nya cuma tampil produk yang punya harga canvas, harga memakai harga canvas, qty wajib kelipatan 12, tanpa diskon otomatis.'
+      : 'Kembalikan akun ini ke harga REGULER?';
+    if (!confirm(msg)) return;
+    const { error } = await supabase.from('user_profiles').update({ price_tier: next }).eq('id', id);
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+    showToast(next === 'canvas' ? 'Akun dijadikan sales canvas' : 'Akun kembali ke harga reguler');
     loadSalesAccounts();
   }
 

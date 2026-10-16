@@ -222,7 +222,7 @@ Saat edit subtotal → back-calc: `Math.round(subtotal / (qty * (1 - disc%)))`
 
 **Core:** `categories`, `products`, `customers`, `invoices`, `invoice_items`, `stock_movements`  
 **Transactions:** `purchases`, `purchase_items`, `stock_transfers`, `stock_transfer_items`  
-**Auth:** `user_profiles` (role: `'admin'` | `'sales'` | `'super_admin'` | `'gudang'`) — role cuma boleh diubah super_admin (trigger `guard_user_profile_role`, migration43)  
+**Auth:** `user_profiles` (role: `'admin'` | `'sales'` | `'super_admin'` | `'gudang'`; `price_tier`: `'regular'` | `'canvas'`) — role & price_tier cuma boleh diubah super_admin (trigger `guard_user_profile_role` migration43, `guard_user_profile_price_tier` migration44)  
 **Returns:** `returns`, `return_items` — `returns.source` (`'admin'` | `'gudang'`), `created_by_id`, `photo_path` (bucket privat `return-photos`). **RLS aktif** (migration43): baca bebas, tulis langsung cuma admin/super_admin, gudang lewat RPC `create_store_return()`, sales tidak bisa sama sekali  
 **Settings:** `app_settings`, `sales_targets`  
 **Wishlist:** `wishlist_items`  
@@ -233,7 +233,7 @@ Saat edit subtotal → back-calc: `Math.round(subtotal / (qty * (1 - disc%)))`
 - `status`: `'pending'` | `'paid'` | `'cancelled'`
 - `verification_status`: `NULL` | `'pending'` | `'approved'` | `'rejected'`
 - `payment_term`: `'cod'` | `'14_days'` | `'15_days'` | `'30_days'` *(7_days dihapus)*
-- `price_mode`: `'regular'` | `'shopee'` | `'custom'`
+- `price_mode`: `'regular'` | `'shopee'` | `'custom'` | `'canvas'` (faktur dari akun sales canvas, migration44) — `sales.html` biasa menyimpan `'normal'`
 - `paid_amount`: akumulasi pembayaran parsial
 - `cash_paid`, `transfer_paid`: tracking per metode (migration6)
 - `additional_charges`: JSONB `[{name, type:'nominal'|'percent', value, amount}]`
@@ -336,6 +336,7 @@ git push -u origin feat/nama-fitur
 
 ### sales.html
 - Desain mobile-first dengan top nav (bukan sidebar)
+- **Harga Canvas** (migration44): akun sales dengan `user_profiles.price_tier = 'canvas'` (diatur super_admin di `settings.html` tab Akun Sales, kolom **Harga**) — untuk sales canvasing barang khusus yang jualan lusinan dengan harga lebih murah. Produknya produk yang **sama** (bukan SKU terpisah) supaya stok tetap satu. Di `loadProducts()` produk tanpa `price_canvas` dibuang dan `price` diganti `price_canvas`, jadi seluruh halaman (tab Produk, harga lusin, `basePrice`) otomatis pakai harga canvas. Qty diinput dalam pcs tapi produk satuan `pcs` **wajib kelipatan 12** (`wajibLusin()`: stepper per 12, error merah, submit & simpan edit ditolak) — baris 🎁 Bonus & produk bersatuan lain dikecualikan. Aturan diskon otomatis **tidak dimuat** sama sekali. Faktur tersimpan `price_mode = 'canvas'` (simpan edit ikut menulis `price_mode` dari tier akun saat itu). Edit faktur ditolak kalau ada barangnya yang sudah tidak punya harga canvas (supaya tidak jadi baris kosong yang ikut terhapus)
 - Tab: Hari Ini, Buat Faktur, Riwayat, Produk, Customer, Absen, Wishlist
 - **Layar loading awal** (`#init-loading`, statis di HTML jadi muncul sebelum JS jalan) menutup halaman sampai `init()` selesai — termasuk jadwal Hari Ini — supaya tidak tampil tab Buat Faktur dulu lalu loncat. Semua query awal yang tidak saling bergantung dijalankan paralel di satu `Promise.all`. Dibuka di `finally` (plus pengaman 20 detik) supaya tidak pernah macet menutupi halaman. CSS `.full-loading-overlay` untuk `showFullLoading()` didefinisikan sendiri di halaman ini karena `css/style.css` tidak dimuat
 - **Tab 📅 Hari Ini** *(masih uji coba — cuma tampil untuk akun yang dipilih di `jadwal-kunjungan.html`, key `app_settings.jadwal_tab_visible_for`: `''` = belum ke siapa pun, `<user id>` = satu akun mis. akun test sales, `'all'` = semua sales. Akun lain: tombol tab disembunyikan, data jadwal tidak dimuat, tab default tetap Buat Faktur)* (jadwal kunjungan, dibuka otomatis kalau sales punya jadwal di `visit_schedules`): daftar toko jadwal hari itu untuk sales yang login + pilihan hari lain (intip jadwal berikutnya). Status tiap toko dihitung **di browser** dari faktur lewat `computeVisitStatus()` di `js/jadwal.js`, tidak disimpan:
@@ -382,6 +383,11 @@ git push -u origin feat/nama-fitur
 - Foto dikecilkan di browser (maks 1200px, WebP/JPEG, pola sama dengan foto produk) → bucket privat `return-photos` (1 MB, webp/jpeg). Diunggah sebelum RPC; kalau RPC gagal, foto dihapus lagi (policy owner delete)
 - Riwayat: retur milik akun yang login (`created_by_id`), dikelompokkan per pengajuan (`created_at` + toko — satu transaksi, jadi sama persis), nomor RTR + nomor faktur + status per retur + alasan kalau ditolak
 - Akun gudang dibuat super_admin di `settings.html` tab **👥 Akun Sales & Gudang** (pilih Jenis Akun saat tambah). `allSales` di halaman itu tetap cuma role sales (dipakai Target Omzet)
+
+### Harga Canvas di halaman admin
+- `products.html`: field **🧳 Harga Canvas / pcs** di form produk (0 = tidak dijual canvas, pratinjau harga lusin), tampil `🧳 Rp X/lsn` di kolom harga, filter **Punya / Belum Ada Harga Canvas**, kolom `Harga Canvas` di Export XLS, kolom `harga_canvas` **opsional** di import CSV — kalau kolomnya tidak ada di file, harga canvas tersimpan tidak disentuh (beda dengan kolom lain yang jadi 0)
+- `verify-invoices.html`: faktur canvas **tidak menimpa** `products.price` / `price_verified_at` saat Edit & Setujui maupun Setujui biasa (harga di faktur itu harga canvas). Ganti produk di faktur canvas = harga canvas; qty pcs wajib kelipatan 12 kecuali baris berharga 0 (bonus)
+- `invoices.html`: label "🧳 Canvas" di daftar; edit faktur canvas: ganti produk = harga canvas, aturan diskon otomatis tidak dipakai
 
 ### profit-loss.html
 - Rekap kas: gunakan `cash_paid`/`transfer_paid` langsung (bukan `payment_method × total`)
@@ -441,4 +447,5 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration36.sql` | Tabel `product_cost_logs` + trigger `log_product_cost_change` di `products` — catat tiap perubahan `products.cost` (lama→baru, sumber, siapa, kapan). Sumber ditandai lewat GUC transaction-local `app.cost_source` (`increase_stock_on_purchase` → `purchase`, `edit_purchase()` ditulis ulang + `set_config()` → `purchase_edit`, sisanya `manual`). Termasuk backfill 1 baris awal per produk. Jalankan setelah migration34 |
 | `supabase_migration34.sql` | **Wajib untuk Edit PO.** Fungsi `edit_purchase()` — seluruh rangkaian edit pembelian jadi satu transaksi (sebelumnya 4 panggilan terpisah dari browser: koneksi putus di tengah = stok berkurang + item PO hilang). Sekaligus `increase_stock_on_purchase()` cuma menulis `products.cost` kalau PO itu memang pembelian terbaru untuk produk tsb — sebelumnya edit PO lama menarik mundur harga modal |
 | `supabase_migration43.sql` | **Wajib untuk Retur Toko.** Role `gudang`, kolom `returns.source`/`created_by_id`/`photo_path`, RPC `create_store_return()` (faktur dipilih karyawan atau dicari otomatis; `p_invoice_id` — versi awal 5 parameter di-DROP, aman dijalankan ulang), **RLS di `returns` & `return_items`** (sales tidak bisa menulis retur), trigger `guard_user_profile_role` (role akun cuma bisa diubah super_admin — `settings.html` sekarang menyimpan profil akun baru setelah sesi super_admin dipulihkan), bucket privat `return-photos`. Jalankan setelah migration22 |
+| `supabase_migration44.sql` | **Wajib untuk Harga Canvas.** Kolom `products.price_canvas` (per pcs, default 0) + `user_profiles.price_tier` (`regular`/`canvas`) + trigger `guard_user_profile_price_tier` (cuma super_admin yang boleh mengubah tier — `user_profiles` tidak pakai RLS). **Jalankan SEBELUM merge** — `sales.html`, `invoices.html`, `verify-invoices.html` meminta kolom `price_canvas` secara eksplisit; tanpa kolom itu query produk gagal dan daftar produk kosong untuk SEMUA sales |
 | `supabase_migration42.sql` | **Wajib untuk Jadwal Kunjungan.** Tabel `visit_schedules` + setting `visit_target_per_day` (default 12) + `jadwal_tab_visible_for` (default kosong = tab Hari Ini belum tampil ke siapa pun). Tanpa ini tab Hari Ini di `sales.html` kosong dan `jadwal-kunjungan.html` menampilkan pesan error |

@@ -591,7 +591,7 @@
 
   async function loadProducts() {
     const { data } = await fetchAll(() => supabase.from('products')
-      .select('id,name,sku,price,price_shopee,cost,stock_quantity,unit')
+      .select('id,name,sku,price,price_shopee,price_canvas,cost,stock_quantity,unit')
       .eq('is_active', true).order('name'));
     products = data || [];
     productById = new Map(products.map(p => [p.id, p]));
@@ -1889,6 +1889,7 @@
   // faktur 50 item = 2.500× baca baris tiap ketik qty. Qty & harga tidak diubah
   // oleh penulisan diskon, jadi data di awal tetap berlaku sampai akhir.
   function reapplyAllDiscountsEdit() {
+    if (editIsCanvas) { recalcEditInvoiceTotal(); return; }
     const allRowData = _getAllEditRowData();
     allRowData.forEach(({ rowId, productId, qty, price }) => {
       if (isDiscManual(rowId)) return;
@@ -1920,6 +1921,9 @@
   let editInvoiceItems = [];
   let editTomSelectInstances = {};
   let editInvoiceCustomerId = null;
+  // Faktur dari sales canvas (price_mode 'canvas'): ganti produk = harga canvas,
+  // aturan diskon otomatis tidak dipakai (sama seperti di sales.html)
+  let editIsCanvas = false;
   // Salinan daftar produk khusus modal edit: stok LIVE + qty yang sudah dipakai faktur ini.
   let editProducts = [];
   let editProductById = new Map();
@@ -1930,6 +1934,7 @@
     if (!inv) return;
     editInvoiceId = id;
     editInvoiceCustomerId = inv.customer_id || null;
+    editIsCanvas = inv.price_mode === 'canvas';
     editItemRowCount = 0;
     Object.values(editTomSelectInstances).forEach(ts => ts.destroy());
     editTomSelectInstances = {};
@@ -2035,12 +2040,12 @@
     editTomSelectInstances[id] = createProductTomSelect(sel, editProducts, () => {
       const productId = sel.value;
       const prod     = editProductById.get(productId);
-      const price    = parseFloat(prod?.price || 0);
+      const price    = parseFloat((editIsCanvas ? prod?.price_canvas : prod?.price) || 0);
       const qty      = parseFormattedNumber(document.getElementById(`eqty-${id}`)?.value) || 1;
       document.getElementById(`estock-${id}`).value = prod?.stock_quantity || 0;
       document.getElementById(`eprice-${id}`).value = price > 0 ? price.toLocaleString('id-ID') : '0';
       setDiscAuto(id, true);
-      if (productId) applyDiscountRuleEdit(id, productId, qty, price);
+      if (productId && !editIsCanvas) applyDiscountRuleEdit(id, productId, qty, price);
       recalcEditInvoiceRow(id);
     });
     markStockShortage(id, 'e');
@@ -2479,7 +2484,7 @@
 
     const statusMap = { paid:['Lunas','success'], pending:['Belum Lunas','warning'], cancelled:['Dibatalkan','danger'] };
     const terminMap = { cod:'COD', '14_days':'14 Hari', '15_days':'15 Hari', '30_days':'30 Hari' };
-    const modeMap   = { regular:'Harga Biasa', shopee:'Harga Shopee', custom:'Custom' };
+    const modeMap   = { regular:'Harga Biasa', shopee:'Harga Shopee', custom:'Custom', canvas:'🧳 Canvas' };
     const [statusLabel, statusColor] = statusMap[inv.status] || ['—','gray'];
 
     const sortedItems = (items||[]).slice().sort((a,b) => (a.product_name||'').localeCompare(b.product_name||'', 'id'));

@@ -391,6 +391,10 @@
 <!-- TAB: BUAT FAKTUR -->
 <div class="tab-content active" id="tab-new">
 
+  <div id="canvas-banner" style="display:none;margin-bottom:12px;padding:10px 14px;border-radius:10px;background:#ede9fe;color:#5b21b6;font-size:12.5px;line-height:1.5;">
+    🧳 <b>Mode Harga Canvas</b> — harga yang dipakai harga canvas, qty wajib kelipatan 12 (12, 24, 36…), tanpa diskon otomatis. Produk yang belum punya harga canvas tidak tampil.
+  </div>
+
   <div class="card">
     <div class="card-header">Info Faktur</div>
     <div class="card-body">
@@ -707,6 +711,10 @@
   let products = [];
   let customers = [];
   let priceMode = 'normal';
+  // Akun canvas (user_profiles.price_tier = 'canvas', diatur super_admin di settings.html):
+  // harga = products.price_canvas, produk tanpa harga canvas disembunyikan, qty produk
+  // satuan pcs wajib kelipatan 12 (bonus dikecualikan), diskon otomatis tidak dipakai.
+  let isCanvas = false;
   let itemCount = 0;
   let allInvoices = [];
 
@@ -731,6 +739,9 @@
 
     const { session, profile } = auth;
     currentUser = { session, profile };
+    isCanvas = profile.price_tier === 'canvas';
+    priceMode = isCanvas ? 'canvas' : 'normal';
+    if (isCanvas) document.getElementById('canvas-banner').style.display = '';
 
     document.getElementById('user-initial').textContent = profile.name.charAt(0).toUpperCase();
     document.getElementById('user-name-nav').textContent = profile.name;
@@ -875,8 +886,15 @@
   }
 
   async function loadProducts() {
-    const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit').eq('is_active', true).order('name'));
+    const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,price_canvas,cost,stock_quantity,unit').eq('is_active', true).order('name'));
     products = data || [];
+    // Akun canvas: price diganti harga canvas di sini, jadi seluruh halaman (tab Produk,
+    // harga lusin, basePrice baris item) otomatis memakai harga canvas tanpa cabang lain.
+    if (isCanvas) {
+      products = products
+        .filter(p => Number(p.price_canvas) > 0)
+        .map(p => ({ ...p, price_regular: p.price, price: Number(p.price_canvas) }));
+    }
     productById = new Map(products.map(p => [p.id, p]));
   }
 
@@ -885,6 +903,8 @@
   let discountGroupMembers   = [];   // [{ group_id, product_id }]
 
   async function loadDiscountRules() {
+    // Harga canvas sudah harga khusus — aturan diskon dibuat untuk harga reguler
+    if (isCanvas) return;
     // Aturan grup varian ikut diambil. Sebelumnya di-filter .is('group_id', null),
     // jadi diskon grup tidak pernah berlaku di halaman sales sama sekali — padahal
     // invoices.html sudah menerapkannya. Syarat grup dihitung dari TOTAL qty semua
@@ -1706,7 +1726,7 @@
       <div class="item-fields" style="display:grid;grid-template-columns:80px 1fr;gap:10px;align-items:start;">
         <div class="item-field">
           <label>Qty</label>
-          <input type="number" class="item-qty-input" value="1" min="1" oninput="recalcItem(${id})">
+          <input type="number" class="item-qty-input" value="${isCanvas ? 12 : 1}" min="1" oninput="recalcItem(${id})">
           <div class="qty-error" style="font-size:11px;color:#dc2626;min-height:16px;margin-top:3px;"></div>
         </div>
         <div class="item-field">
@@ -1763,12 +1783,20 @@
     row.querySelector('.item-stock-input').value = `${stock} ${prod.unit || 'pcs'}`;
     row.dataset.productId = prod.id;
     row.dataset.basePrice = prod.price || 0;
+    row.dataset.unit = prod.unit || 'pcs';
     const qtyInput = row.querySelector('.item-qty-input');
     qtyInput.max = stock;
     if (parseInt(qtyInput.value) > stock) qtyInput.value = stock;
     const id = row.id.replace('item-', '');
     recalcItem(id);
     cekProdukKembar(row);
+  }
+
+  // Akun canvas jualan lusinan: produk satuan pcs wajib kelipatan 12. Baris bonus
+  // (gratis 1-2 pcs) dan produk bersatuan lain (box, lusin, dll.) dikecualikan.
+  function wajibLusin(row) {
+    return isCanvas && !!row.dataset.productId && row.dataset.bonus !== '1'
+      && (row.dataset.unit || 'pcs') === 'pcs';
   }
 
   // Satu baris: diskon, peringatan stok, subtotal. Tidak memanggil recalcTotal —
@@ -1783,10 +1811,17 @@
     const basePrice = Number(row.dataset.basePrice) || 0;
     if (productId && basePrice > 0) applyItemDiscount(row, productId, basePrice, qty, customerId, rows);
 
+    const lusinan = wajibLusin(row);
+    qtyInput.step = lusinan ? 12 : 1;
+    qtyInput.min  = lusinan ? 12 : 1;
+
     const errEl = row.querySelector('.qty-error');
     if (errEl) {
       if (qtyInput.max !== '' && qty > max) {
         errEl.textContent = max === 0 ? '⚠️ Stok habis' : `⚠️ Melebihi stok (maks ${max})`;
+        qtyInput.style.borderColor = '#dc2626';
+      } else if (lusinan && qty % 12 !== 0) {
+        errEl.textContent = `⚠️ Harus kelipatan 12 (12, 24, 36…) — ${qty} pcs = ${Math.floor(qty / 12)} lsn + ${qty % 12}`;
         qtyInput.style.borderColor = '#dc2626';
       } else {
         errEl.textContent = '';
@@ -1863,6 +1898,10 @@ function recalcTotal() {
       if (!sel.value) continue;
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
       const opt = sel.options[sel.selectedIndex];
+      if (wajibLusin(row) && qty % 12 !== 0) {
+        showToast(`Qty "${opt.text.split(' (')[0]}" harus kelipatan 12 (sekarang ${qty})`, 'error');
+        btn.disabled = false; btn.textContent = 'Kirim Faktur'; return;
+      }
       const isBonus = row.dataset.bonus === '1';
       if (!isBonus) {
         if (regularSeen.has(sel.value)) {
@@ -2005,6 +2044,17 @@ function recalcTotal() {
     // (karena saat simpan, stok akan di-restore dulu sebelum item baru dimasukkan)
     editProducts = products.map(p => ({ ...p }));
     editProductById = new Map(editProducts.map(p => [p.id, p]));
+    // Akun canvas cuma memuat produk yang punya harga canvas. Barang faktur yang harga
+    // canvas-nya sudah dihapus admin akan jadi baris kosong dan ikut terhapus saat simpan
+    // — jadi edit ditolak, bukan diam-diam membuang barang.
+    if (isCanvas) {
+      const hilang = (inv.invoice_items || []).filter(it => !editProductById.has(it.product_id));
+      if (hilang.length) {
+        showToast(`${hilang.length} barang di faktur ini belum punya harga canvas — minta admin mengisinya atau mengedit faktur ini`, 'error');
+        editingInvoiceId = null;
+        return;
+      }
+    }
     (inv.invoice_items || []).forEach(it => {
       const p = editProductById.get(it.product_id);
       if (p) p.stock_quantity += it.quantity;
@@ -2050,8 +2100,9 @@ function recalcTotal() {
     openModal('modal-edit');
   }
 
-  function addEditItem(productId = null, qty = 1, isBonus = false) {
+  function addEditItem(productId = null, qty = null, isBonus = false) {
     const id = ++editItemCount;
+    if (qty == null) qty = isCanvas ? 12 : 1;
     // Produk sudah dipilih langsung di HTML, bukan lewat ts.setValue() — setValue
     // ikut merender ulang daftar dropdown, terasa kalau faktur berisi puluhan item.
     const existingProd = productId ? editProductById.get(productId) : null;
@@ -2139,6 +2190,7 @@ function recalcTotal() {
     row.querySelector('.item-stock-input').value = `${stock} ${prod.unit || 'pcs'}`;
     row.dataset.productId = prod.id;
     row.dataset.basePrice = prod.price || 0;
+    row.dataset.unit = prod.unit || 'pcs';
     const qtyInput = row.querySelector('.item-qty-input');
     qtyInput.max = stock;
     recalcEditItem(id);
@@ -2227,6 +2279,10 @@ function recalcTotal() {
       if (!sel.value) continue;
       if (qty <= 0)   { showToast('Qty harus lebih dari 0', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
       const opt = sel.options[sel.selectedIndex];
+      if (wajibLusin(row) && qty % 12 !== 0) {
+        showToast(`Qty "${opt.text.split(' (')[0]}" harus kelipatan 12 (sekarang ${qty})`, 'error');
+        btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return;
+      }
       if (row.dataset.bonus === '1') {
         bonusItems.push(`${opt.text.split(' (')[0].trim()} ${qty} ${editProductById.get(sel.value)?.unit || 'pcs'}`);
       } else {
@@ -2312,6 +2368,8 @@ function recalcTotal() {
         payment_term:     term,
         notes:            finalNotes || null,
         total:            total,
+        // Harga baris dihitung ulang dari tier akun sekarang, jadi mode harga ikut
+        price_mode:       priceMode,
         status:           'pending',
         verification_status: 'pending'
       }).eq('id', editingInvoiceId);

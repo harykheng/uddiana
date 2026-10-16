@@ -435,7 +435,7 @@
   }
 
   async function loadProducts() {
-    const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,cost,stock_quantity,unit,price_verified_at').eq('is_active', true).order('name'));
+    const { data } = await fetchAll(() => supabase.from('products').select('id,name,sku,price,price_shopee,price_canvas,cost,stock_quantity,unit,price_verified_at').eq('is_active', true).order('name'));
     allProducts = data || [];
     productById = new Map(allProducts.map(p => [p.id, p]));
   }
@@ -559,7 +559,7 @@
         <div><span class="text-muted">Customer:</span> <strong>${escapeHtml(inv.store_name || '—')}</strong></div>
         <div><span class="text-muted">Tanggal:</span> ${formatDate(inv.invoice_date)}</div>
         <div><span class="text-muted">Termin:</span> ${{cod:'COD','14_days':'14 Hari','30_days':'30 Hari'}[inv.payment_term] || inv.payment_term || '—'}</div>
-        <div><span class="text-muted">Mode Harga:</span> ${inv.price_mode || '—'}</div>
+        <div><span class="text-muted">Mode Harga:</span> ${inv.price_mode === 'canvas' ? '<strong style="color:#6d28d9">🧳 Canvas</strong>' : (inv.price_mode || '—')}</div>
         ${inv.notes ? `<div style="grid-column:1/-1"><span class="text-muted">Catatan:</span> ${escapeHtml(inv.notes)}</div>` : ''}
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -616,7 +616,8 @@
       // untuk semua produk (dulu 1 query per item, faktur 60 item = 60 kali bolak-balik)
       const productIds = [...new Set((inv?.invoice_items || []).map(i => i.product_id).filter(Boolean))];
       let priceErr = null;
-      if (productIds.length) {
+      // Faktur canvas tidak mengonfirmasi harga reguler, jadi tidak ditandai
+      if (productIds.length && inv?.price_mode !== 'canvas') {
         ({ error: priceErr } = await supabase.from('products')
           .update({ price_verified_at: new Date().toISOString() }).in('id', productIds));
       }
@@ -790,7 +791,9 @@
   function updateEditProduct(sel, idx) {
     const row = sel.closest('.edit-item-row');
     const prod = productById.get(sel.value);
-    if (prod) row.querySelector('.edit-price').value = Number(prod.price || 0).toLocaleString('id-ID');
+    // Faktur canvas pakai harga canvas, bukan harga reguler
+    const isCanvasInv = allInvoices.find(x => x.id === currentInvoiceId)?.price_mode === 'canvas';
+    if (prod) row.querySelector('.edit-price').value = Number((isCanvasInv ? prod.price_canvas : prod.price) || 0).toLocaleString('id-ID');
     // Produknya diganti — diskon milik produk lama tidak berlaku lagi
     if (sel.value !== row.dataset.originalProductId) {
       row.dataset.disc = '0'; row.dataset.disc2 = '0'; row.dataset.discType = 'percent';
@@ -842,6 +845,7 @@
     }
 
     const inv = allInvoices.find(x => x.id === currentInvoiceId);
+    const isCanvasInv = inv?.price_mode === 'canvas';
     const rows = document.querySelectorAll('.edit-item-row');
 
     // ── PASS 1: kumpulkan & validasi semua baris DULU, belum ada tulis apapun ke DB.
@@ -865,6 +869,12 @@
       const productName = opt.text || '';
 
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); setLoading(btn, false); return; }
+      // Faktur canvas jualan lusinan: produk satuan pcs wajib kelipatan 12.
+      // Baris berharga 0 (bonus) dikecualikan, sama seperti di sales.html.
+      if (isCanvasInv && price > 0 && (productById.get(productId)?.unit || 'pcs') === 'pcs' && qty % 12 !== 0) {
+        showToast(`Faktur canvas: qty "${productName}" harus kelipatan 12 (sekarang ${qty})`, 'error');
+        setLoading(btn, false); return;
+      }
 
       parsedRows.push({ itemId, originalQty, originalProductId, productId, qty, price, sub, cost, productName, discType, disc, disc2 });
     }
@@ -920,10 +930,11 @@
       await supabase.from('invoice_items').update(itemPayload).eq('id', r.itemId);
       total += r.sub;
 
-      // Selalu update harga jual produk sesuai harga di faktur
-      const productUpdate = { price: r.price, price_verified_at: new Date().toISOString() };
+      // Update harga jual produk sesuai harga di faktur — KECUALI faktur canvas: harganya
+      // harga canvas, kalau ditulis ke products.price harga reguler semua sales ikut berubah
+      const productUpdate = isCanvasInv ? {} : { price: r.price, price_verified_at: new Date().toISOString() };
       if (r.cost !== null && r.cost > 0) productUpdate.cost = r.cost;
-      await supabase.from('products').update(productUpdate).eq('id', r.productId);
+      if (Object.keys(productUpdate).length) await supabase.from('products').update(productUpdate).eq('id', r.productId);
     }
 
     const { data: { session } } = await supabase.auth.getSession();

@@ -184,6 +184,11 @@
           <option value="out">Stok Habis</option>
           <option value="ok">Stok Normal</option>
         </select>
+        <select id="filter-canvas" onchange="renderProducts()" title="Produk dengan harga canvas tampil di HP sales canvas">
+          <option value="">Semua Harga Canvas</option>
+          <option value="yes">🧳 Punya Harga Canvas</option>
+          <option value="no">Belum Ada Harga Canvas</option>
+        </select>
         <div id="filter-opname-wrap" style="display:none">
           <select id="filter-opname" onchange="renderProducts()">
             <option value="">Semua Opname</option>
@@ -316,6 +321,14 @@
         </div>
       </div>
       <div class="form-row">
+        <div class="form-group">
+          <label>🧳 Harga Canvas / pcs (Rp)</label>
+          <input type="text" inputmode="numeric" data-number id="product-price-canvas" placeholder="0 = tidak dijual canvas" oninput="updateCanvasLusinHint()">
+          <div id="product-canvas-hint" style="font-size:11px;color:var(--text-muted);margin-top:3px">Kosong / 0 = tidak tampil di HP sales canvas</div>
+        </div>
+        <div class="form-group"></div>
+      </div>
+      <div class="form-row">
         <div class="form-group col-harga-modal">
           <label>Harga Modal (Rp)</label>
           <input type="text" inputmode="numeric" data-number id="product-cost" placeholder="0">
@@ -374,7 +387,7 @@
     </div>
     <div class="modal-body">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <p style="font-size:13px;color:var(--text-muted)">Kolom: <code>nama, sku <span style="font-weight:400">(opsional)</span>, kategori, satuan, harga_biasa, harga_shopee, harga_modal, stok, min_stok, deskripsi</code></p>
+        <p style="font-size:13px;color:var(--text-muted)">Kolom: <code>nama, sku <span style="font-weight:400">(opsional)</span>, kategori, satuan, harga_biasa, harga_shopee, harga_canvas <span style="font-weight:400">(opsional)</span>, harga_modal, stok, min_stok, deskripsi</code></p>
         <button class="btn btn-ghost btn-sm" onclick="downloadTemplate()">📄 Download Template</button>
       </div>
       <div style="padding:9px 12px;background:#eff6ff;border-radius:7px;font-size:12px;color:#1e40af;margin-bottom:12px">
@@ -632,6 +645,7 @@
     const search = document.getElementById('search-input').value.toLowerCase();
     const stockFilter = document.getElementById('filter-stock').value;
     const opnameFilter = document.getElementById('filter-opname')?.value || '';
+    const canvasFilter = document.getElementById('filter-canvas')?.value || '';
     const searchWords = search.split(/\s+/).filter(Boolean);
     let filtered = allProducts.filter(p => {
       const haystack = `${p.name} ${p.sku||''} ${p.description||''}`.toLowerCase();
@@ -643,7 +657,10 @@
       let matchOpname = true;
       if (opnameFilter === 'done') matchOpname = activeOpnameSession && p.last_opname_session_id === activeOpnameSession.id;
       if (opnameFilter === 'not') matchOpname = !activeOpnameSession || p.last_opname_session_id !== activeOpnameSession.id;
-      return matchSearch && matchStock && matchOpname;
+      let matchCanvas = true;
+      if (canvasFilter === 'yes') matchCanvas = Number(p.price_canvas) > 0;
+      if (canvasFilter === 'no')  matchCanvas = !(Number(p.price_canvas) > 0);
+      return matchSearch && matchStock && matchOpname && matchCanvas;
     });
 
     // Sort
@@ -693,6 +710,7 @@
         <td class="text-right">
           <div>${formatCurrency(p.price)}</div>
           <div class="col-lusin-hint" style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(Math.ceil((p.price * 12) / 100) * 100)}/lsn</div>
+          ${p.price_canvas > 0 ? `<div style="font-size:11px;color:#6d28d9;margin-top:2px" title="Harga canvas">🧳 ${formatCurrency(Math.ceil((p.price_canvas * 12) / 100) * 100)}/lsn</div>` : ''}
         </td>
         <td class="text-right col-hide-mobile">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
         ${isSuperAdmin ? `<td class="text-right">${formatCurrency(p.cost)}</td>` : ''}
@@ -986,10 +1004,19 @@
     renderProducts();
   }
 
+  // Harga lusin canvas mengikuti aturan harga lusin di seluruh ERP (Math.ceil ke 100)
+  function updateCanvasLusinHint() {
+    const v = parseFormattedNumber(document.getElementById('product-price-canvas').value) || 0;
+    document.getElementById('product-canvas-hint').textContent = v > 0
+      ? `= ${formatCurrency(Math.ceil((v * 12) / 100) * 100)} / lusin di HP sales canvas`
+      : 'Kosong / 0 = tidak tampil di HP sales canvas';
+  }
+
   function openAddProduct() {
     document.getElementById('product-id').value = '';
     ['product-name','product-sku','product-desc'].forEach(id => document.getElementById(id).value = '');
-    ['product-price','product-price-shopee','product-cost'].forEach(id => document.getElementById(id).value = '');
+    ['product-price','product-price-shopee','product-price-canvas','product-cost'].forEach(id => document.getElementById(id).value = '');
+    updateCanvasLusinHint();
     document.getElementById('product-stock').value = '0';
     document.getElementById('product-min-stock').value = '0';
     if (categoryTomSelect) categoryTomSelect.setValue('', true);
@@ -1008,6 +1035,8 @@
     document.getElementById('product-unit').value = p.unit;
     document.getElementById('product-price').value = Number(p.price || 0).toLocaleString('id-ID');
     document.getElementById('product-price-shopee').value = Number(p.price_shopee || 0).toLocaleString('id-ID');
+    document.getElementById('product-price-canvas').value = Number(p.price_canvas || 0).toLocaleString('id-ID');
+    updateCanvasLusinHint();
     document.getElementById('product-cost').value = Number(p.cost || 0).toLocaleString('id-ID');
     document.getElementById('product-stock').value = '0';
     document.getElementById('product-min-stock').value = p.min_stock || 0;
@@ -1026,6 +1055,8 @@
     document.getElementById('product-unit').value = p.unit;
     document.getElementById('product-price').value = Number(p.price || 0).toLocaleString('id-ID');
     document.getElementById('product-price-shopee').value = Number(p.price_shopee || 0).toLocaleString('id-ID');
+    document.getElementById('product-price-canvas').value = Number(p.price_canvas || 0).toLocaleString('id-ID');
+    updateCanvasLusinHint();
     document.getElementById('product-cost').value = Number(p.cost || 0).toLocaleString('id-ID');
     document.getElementById('product-stock').value = p.stock_quantity || 0;
     document.getElementById('product-min-stock').value = p.min_stock || 0;
@@ -1075,6 +1106,7 @@
       unit: document.getElementById('product-unit').value,
       price,
       price_shopee: parseFormattedNumber(document.getElementById('product-price-shopee').value),
+      price_canvas: parseFormattedNumber(document.getElementById('product-price-canvas').value) || 0,
       cost: parseFormattedNumber(document.getElementById('product-cost').value),
       stock_quantity: parseInt(document.getElementById('product-stock').value) || 0,
       min_stock: parseInt(document.getElementById('product-min-stock').value) || 0,
@@ -1291,6 +1323,7 @@
       'Harga Biasa':   p.price,
       'Harga Lusin':   Math.ceil((p.price * 12) / 100) * 100,
       'Harga Shopee':  p.price_shopee || 0,
+      'Harga Canvas':  p.price_canvas || 0,
       'Harga Modal':   p.cost || 0,
       'Stok':          p.stock_quantity,
       'Min Stok':      p.min_stock,
@@ -1299,7 +1332,7 @@
 
     const ws = XLSX.utils.json_to_sheet(rows);
     // Lebar kolom
-    ws['!cols'] = [8,30,16,8,14,14,14,14,8,8,30].map(w => ({ wch: w }));
+    ws['!cols'] = [8,30,16,8,14,14,14,14,14,8,8,30].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Produk');
     const now = new Date();
@@ -1322,10 +1355,10 @@
   }
 
   function downloadTemplate() {
-    const headers = [['sku','nama','kategori','satuan','harga_biasa','harga_shopee','harga_modal','stok','min_stok','deskripsi']];
-    const example = [['PROD-001','Contoh Produk','Elektronik','pcs',50000,0,30000,100,10,'Deskripsi opsional']];
+    const headers = [['sku','nama','kategori','satuan','harga_biasa','harga_shopee','harga_canvas','harga_modal','stok','min_stok','deskripsi']];
+    const example = [['PROD-001','Contoh Produk','Elektronik','pcs',50000,0,0,30000,100,10,'Deskripsi opsional']];
     const ws = XLSX.utils.aoa_to_sheet([...headers, ...example]);
-    ws['!cols'] = [10,25,14,8,12,12,12,8,8,25].map(w => ({ wch: w }));
+    ws['!cols'] = [10,25,14,8,12,12,12,12,8,8,25].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
     XLSX.writeFile(wb, 'template_import_produk.csv', { bookType: 'csv' });
@@ -1485,6 +1518,7 @@
     const seenInFile = new Set();
     const updatePayloads = [];
     const insertPayloads = [];
+    const hasCanvasCol = importRows.some(r => 'harga_canvas' in r);
 
     for (const row of importRows) {
       try {
@@ -1518,6 +1552,9 @@
           min_stock:    parseInt(row.min_stok)       || 0,
           description:  row.deskripsi || null,
         };
+        // Kolom harga_canvas opsional: kalau tidak ada di file, harga canvas yang sudah
+        // tersimpan tidak disentuh (bukan di-reset jadi 0 seperti kolom lain).
+        if (hasCanvasCol) base.price_canvas = parseFloat(row.harga_canvas) || 0;
 
         if (existingBySku.has(sku.toLowerCase())) {
           // Produk lama: perbarui data katalognya saja. stock_quantity & is_active sengaja
