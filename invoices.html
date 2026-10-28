@@ -586,7 +586,24 @@
     const auth = await requireAdmin(); if (!auth) return;
     document.getElementById('inv-date').value = todayISO();
     document.getElementById('pay-date').value  = todayISO();
-    await Promise.all([loadProducts(), loadCustomers(), loadSales(), loadInvoices(), loadDiscountRules()]);
+    await Promise.all([loadProducts(), loadCustomers(), loadSales(), loadInvoices(), loadDiscountRules(), loadCompanyPhone()]);
+  }
+
+  // Nomor kantor di kop print faktur. Sumbernya sama dengan nomor WA katalog
+  // (app_settings.catalog_whatsapp_number, diedit di settings.html tab Katalog
+  // Toko) — disimpan "628xxx" untuk wa.me, dicetak "08xx-xxxx-xxxx" supaya
+  // gampang dibaca toko. Gagal/belum diisi = baris telepon tidak dicetak.
+  let companyPhone = '';
+  async function loadCompanyPhone() {
+    try {
+      const { data } = await supabase.from('app_settings')
+        .select('value').eq('key', 'catalog_whatsapp_number').maybeSingle();
+      let digits = String(data?.value || '').replace(/\D/g, '');
+      if (digits.startsWith('62')) digits = '0' + digits.slice(2);
+      companyPhone = digits.replace(/^(\d{4})(\d{4})(\d+)$/, '$1-$2-$3');
+    } catch (e) {
+      companyPhone = '';
+    }
   }
 
   async function loadProducts() {
@@ -2734,6 +2751,7 @@
           <div style="flex-shrink:0;max-width:48%">
             <div style="font-size:12pt;font-weight:bold;">FAKTUR NO: ${escapeHtml(inv.invoice_number)}</div>
             <div class="pi-company-name">DIANA KOSMETIK</div>
+            ${companyPhone ? `<div style="font-size:9pt;">Telp/WA: ${escapeHtml(companyPhone)}</div>` : ''}
             <div style="font-size:9pt;margin-top:1pt;">Tanggal Cetak: <strong>${formatDate(todayISO())}</strong></div>
             ${inv.sales_name ? `<div style="font-size:9pt;margin-top:1pt;margin-bottom:10pt;">Sales: <strong>${escapeHtml(inv.sales_name)}</strong></div>` : ''}
           </div>
