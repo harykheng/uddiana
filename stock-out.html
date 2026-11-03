@@ -8,6 +8,9 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
   <style>
+    /* Kolom nilai (harga modal) cuma untuk super_admin */
+    body.show-nilai th.col-nilai, body.show-nilai td.col-nilai { display: table-cell !important; }
+    body.show-nilai div.col-nilai { display: block !important; }
     .ts-wrapper .ts-control { border:1px solid var(--border); border-radius:6px; padding:4px 8px; box-shadow:none; min-height:unset; font-size:12.5px; }
     .ts-wrapper.focus .ts-control,.ts-wrapper.single.input-active .ts-control { border-color:var(--primary); }
     .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; }
@@ -92,6 +95,7 @@
       <div class="card">
         <div class="card-header">
           <h3>Riwayat Keluar Barang <span id="transfer-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+          <span id="transfer-value-summary" class="text-muted" style="font-size:13px"></span>
         </div>
         <div class="table-wrap">
           <table>
@@ -101,13 +105,14 @@
                 <th>Tanggal</th>
                 <th>Alasan</th>
                 <th>Jml Produk</th>
+                <th class="col-nilai" style="display:none">Nilai (Modal)</th>
                 <th>Catatan</th>
                 <th>Status</th>
                 <th>Aksi</th>
               </tr>
             </thead>
             <tbody id="transfer-table">
-              <tr><td colspan="7" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+              <tr><td colspan="8" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
             </tbody>
           </table>
         </div>
@@ -155,6 +160,7 @@
               <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:45%">Produk</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:12%">Stok</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:15%">Qty Keluar</th>
+              <th class="col-nilai" style="display:none;padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:16%;text-align:right">Nilai (Modal)</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Keterangan Item</th>
               <th style="width:8%"></th>
             </tr>
@@ -163,6 +169,12 @@
         </table>
       </div>
       <button class="btn btn-ghost btn-sm" onclick="addTrRow()" style="margin-bottom:8px">+ Tambah Barang</button>
+      <div class="invoice-summary col-nilai" style="display:none">
+        <div class="invoice-summary-row total">
+          <span>TOTAL NILAI BARANG KELUAR (HARGA MODAL)</span>
+          <span id="tr-total-value" style="color:var(--primary)">Rp 0</span>
+        </div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-create-transfer')">Batal</button>
@@ -197,8 +209,19 @@
   let trRowCount = 0;
   const handleSearch = debounce(() => renderTransfers(), 350);
 
+  // Nilai barang keluar = qty × harga modal. Harga modal cuma ditampilkan ke
+  // super_admin, sama seperti products.html. Harga modal tiap item disimpan
+  // database saat barang keluar (stock_transfer_items.cost_price, migration45).
+  let trIsSuperAdmin = false;
+
+  function transferValue(items) {
+    return (items || []).reduce((s, i) => s + Number(i.quantity || 0) * Number(i.cost_price || 0), 0);
+  }
+
   async function init() {
     const auth = await requireAdmin(); if (!auth) return;
+    trIsSuperAdmin = auth.profile.role === 'super_admin';
+    if (trIsSuperAdmin) document.body.classList.add('show-nilai');
     document.getElementById('tr-date').value = todayISO();
     await loadProducts();
     await loadTransfers();
@@ -206,14 +229,14 @@
 
   async function loadProducts() {
     const { data } = await fetchAll(() => supabase.from('products')
-      .select('id,name,stock_quantity,unit').eq('is_active', true).order('name'));
+      .select('id,name,stock_quantity,unit,cost').eq('is_active', true).order('name'));
     products = data || [];
   }
 
   async function loadTransfers() {
     const from = document.getElementById('filter-from').value;
     const to   = document.getElementById('filter-to').value;
-    let q = supabase.from('stock_transfers').select('*').order('created_at', { ascending: false });
+    let q = supabase.from('stock_transfers').select('*, stock_transfer_items(quantity,cost_price)').order('created_at', { ascending: false });
     if (from) q = q.gte('transfer_date', from);
     if (to)   q = q.lte('transfer_date', to);
     const { data, error } = await q;
@@ -231,9 +254,11 @@
     );
 
     document.getElementById('transfer-count').textContent = filtered.length;
+    const totalValue = filtered.filter(t => t.status !== 'cancelled').reduce((s, t) => s + transferValue(t.stock_transfer_items), 0);
+    document.getElementById('transfer-value-summary').textContent = trIsSuperAdmin ? `Total nilai: ${formatCurrency(totalValue)}` : '';
     const tbody = document.getElementById('transfer-table');
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📤</div><h4>Belum ada keluar barang</h4></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📤</div><h4>Belum ada keluar barang</h4></div></td></tr>`;
       return;
     }
 
@@ -246,7 +271,8 @@
         <td><strong style="color:var(--primary)">${escapeHtml(t.transfer_number)}</strong></td>
         <td>${formatDate(t.transfer_date)}</td>
         <td><span class="badge badge-warning">${escapeHtml(t.reason)}</span></td>
-        <td class="text-center">—</td>
+        <td class="text-center">${(t.stock_transfer_items || []).length || '—'}</td>
+        <td class="col-nilai text-right font-bold" style="display:none">${formatCurrency(transferValue(t.stock_transfer_items))}</td>
         <td class="text-muted">${escapeHtml(t.notes||'—')}</td>
         <td>${badge}</td>
         <td><button class="btn btn-ghost btn-sm" onclick="viewTransfer('${t.id}')">👁 Detail</button></td>
@@ -268,6 +294,7 @@
     document.getElementById('tr-items-body').innerHTML = '';
     trRowCount = 0;
     addTrRow();
+    recalcTrTotal();
     openModal('modal-create-transfer');
   }
 
@@ -284,9 +311,10 @@
         </select>
       </td>
       <td style="padding:5px 6px"><input type="number" id="trstock-${id}" readonly value="0" style="background:#f8fafc;width:65px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
-      <td style="padding:5px 6px"><input type="number" id="trqty-${id}" value="1" min="1" style="width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td style="padding:5px 6px"><input type="number" id="trqty-${id}" value="1" min="1" oninput="recalcTrRow('${id}')" style="width:70px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td class="col-nilai" id="trval-${id}" style="display:none;padding:5px 8px;text-align:right;font-weight:600;white-space:nowrap">—</td>
       <td style="padding:5px 6px"><input type="text" id="trnote-${id}" placeholder="(opsional)" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
-      <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
+      <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcTrTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
     const selEl = tr.querySelector('select');
@@ -301,6 +329,29 @@
   function onTrProductSelect(sel, rowId) {
     const opt = sel.options[sel.selectedIndex];
     document.getElementById(`trstock-${rowId}`).value = opt.dataset.stock || 0;
+    recalcTrRow(rowId);
+  }
+
+  // Perkiraan di form pakai harga modal produk saat ini; angka yang tersimpan
+  // diambil database saat simpan (trigger fill_transfer_item_cost).
+  function recalcTrRow(rowId) {
+    const tr = document.getElementById(rowId);
+    const cell = document.getElementById(`trval-${rowId}`);
+    if (!tr || !cell) return;
+    const prod = products.find(p => p.id === tr.querySelector('select')?.value);
+    const qty = parseInt(document.getElementById(`trqty-${rowId}`)?.value) || 0;
+    cell.textContent = prod ? formatCurrency(qty * Number(prod.cost || 0)) : '—';
+    recalcTrTotal();
+  }
+
+  function recalcTrTotal() {
+    let total = 0;
+    document.querySelectorAll('#tr-items-body tr').forEach(tr => {
+      const prod = products.find(p => p.id === tr.querySelector('select')?.value);
+      const qty = parseInt(tr.querySelector('[id^="trqty-"]')?.value) || 0;
+      if (prod) total += qty * Number(prod.cost || 0);
+    });
+    document.getElementById('tr-total-value').textContent = formatCurrency(total);
   }
 
   async function saveTransfer() {
@@ -381,6 +432,8 @@
       <tr>
         <td style="padding:8px 10px">${escapeHtml(i.product_name)}</td>
         <td style="padding:8px 10px;text-align:right;font-weight:700">${i.quantity}</td>
+        ${trIsSuperAdmin ? `<td style="padding:8px 10px;text-align:right">${formatCurrency(i.cost_price || 0)}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700">${formatCurrency(Number(i.quantity) * Number(i.cost_price || 0))}</td>` : ''}
         <td style="padding:8px 10px;color:var(--text-muted)">${escapeHtml(i.notes||'—')}</td>
       </tr>`).join('');
 
@@ -398,11 +451,19 @@
           <tr style="background:#f8fafc">
             <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Produk</th>
             <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Qty Keluar</th>
+            ${trIsSuperAdmin ? `<th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Harga Modal</th>
+            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Nilai</th>` : ''}
             <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Keterangan</th>
           </tr>
         </thead>
         <tbody>${itemsHtml}</tbody>
-      </table>`;
+      </table>
+      ${trIsSuperAdmin ? `<div class="invoice-summary" style="margin-top:12px">
+        <div class="invoice-summary-row total">
+          <span>TOTAL NILAI (HARGA MODAL)</span>
+          <span style="color:var(--primary)">${formatCurrency(transferValue(items))}</span>
+        </div>
+      </div>` : ''}`;
 
     document.getElementById('btn-cancel-transfer').style.display = tr.status === 'cancelled' ? 'none' : 'inline-flex';
     openModal('modal-view-transfer');

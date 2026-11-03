@@ -199,6 +199,7 @@
           <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Batal</button>
           <button class="btn btn-ghost btn-sm" onclick="openBulkPhotoModal()">📷 Foto Massal</button>
           <button class="btn btn-ghost btn-sm" onclick="openBulkRenameModal()">✏️ Edit Nama/SKU Massal</button>
+          <button class="btn btn-ghost btn-sm" onclick="openBulkStockModal()">📦 Set Stok Massal</button>
           <button class="btn btn-ghost btn-sm" onclick="cetakProdukTerpilih()" title="Buat brosur PDF cuma dari produk yang dicentang">🖨️ Buat PDF</button>
           <button class="btn btn-ghost btn-sm" onclick="exportXlsTerpilih()" title="Export XLS cuma produk yang dicentang">⬇️ Export XLS</button>
           <button class="btn btn-primary btn-sm" onclick="openBulkPriceModal()">💰 Update Harga Massal</button>
@@ -440,6 +441,49 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-adjust')">Batal</button>
       <button class="btn btn-primary" id="btn-save-adjust" onclick="saveAdjustment()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: SET STOK MASSAL -->
+<div class="modal-overlay" id="modal-bulk-stock" data-no-overlay-close>
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <h3>📦 Set Stok Massal</h3>
+      <button class="modal-close" onclick="closeModal('modal-bulk-stock')">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--text-muted);margin:0 0 12px">
+        Isi <strong>stok baru</strong> (dalam pcs/satuan) per produk. Kolom yang dikosongkan atau sama dengan stok sekarang tidak diubah.
+        Tiap perubahan tercatat di riwayat pergerakan stok.
+      </p>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <span style="font-size:12.5px;color:var(--text-muted)">Isi semua dengan</span>
+        <input type="text" inputmode="numeric" data-number id="bulk-stock-fill" placeholder="0" style="width:110px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="fillAllBulkStock()">Terapkan</button>
+      </div>
+      <div class="table-wrap" style="max-height:50vh;overflow:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Produk</th>
+              <th class="text-right" style="width:110px">Stok Sekarang</th>
+              <th style="width:130px">Stok Baru</th>
+              <th class="text-right" style="width:90px">Selisih</th>
+            </tr>
+          </thead>
+          <tbody id="bulk-stock-rows"></tbody>
+        </table>
+      </div>
+      <div class="form-group mb-0" style="margin-top:14px">
+        <label>Alasan *</label>
+        <input type="text" id="bulk-stock-notes" placeholder="cth. Hasil hitung fisik gudang, koreksi input">
+      </div>
+      <div id="bulk-stock-summary" style="font-size:12.5px;color:var(--text-muted);margin-top:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-bulk-stock')">Batal</button>
+      <button class="btn btn-primary" id="btn-bulk-stock-save" onclick="submitBulkStock()">Simpan Stok</button>
     </div>
   </div>
 </div>
@@ -843,6 +887,155 @@
       failCount ? 'warning' : 'success'
     );
     loadProducts();
+  }
+
+  // ── SET STOK MASSAL ────────────────────────────────────────
+  // Sama seperti "Set Stok Baru" di Sesuaikan Stok, tapi untuk banyak produk
+  // sekaligus. Tiap baris disimpan bersyarat .eq('stock_quantity', stokYangTampil):
+  // kalau stok produk itu berubah sejak modal dibuka (terjual, PO masuk, dsb),
+  // baris itu TIDAK ditimpa — angka stok sekarang disegarkan dan admin cek ulang.
+  let bulkStockRows = [];   // [{ id, name, unit, shown }]
+
+  function openBulkStockModal() {
+    if (!selectedProductIds.size) return;
+    const byId = new Map(allProducts.map(p => [p.id, p]));
+    bulkStockRows = [...selectedProductIds].map(id => byId.get(id)).filter(Boolean)
+      .map(p => ({ id: p.id, name: p.name, sku: p.sku, unit: p.unit || 'pcs', shown: Number(p.stock_quantity) || 0 }));
+    document.getElementById('bulk-stock-fill').value = '';
+    document.getElementById('bulk-stock-notes').value = '';
+    renderBulkStockRows();
+    openModal('modal-bulk-stock');
+  }
+
+  function bulkStockLabel(qty, unit) {
+    return unit === 'pcs' && qty >= 12 ? `${qty} <span class="text-muted" style="font-size:11px">(${toLosinDisplay(qty)})</span>` : `${qty}`;
+  }
+
+  function renderBulkStockRows() {
+    const tbody = document.getElementById('bulk-stock-rows');
+    tbody.innerHTML = bulkStockRows.map(r => `
+      <tr data-id="${r.id}" ${r.conflict ? 'style="background:#fef9c3"' : ''}>
+        <td style="padding:6px 8px">
+          <div style="font-weight:600;font-size:13px">${escapeHtml(r.name)}</div>
+          <div class="text-muted" style="font-size:11px">${escapeHtml(r.sku || '')}${r.conflict ? ' · <span style="color:#92400e">⚠️ stok berubah sejak dibuka — cek lagi</span>' : ''}</div>
+        </td>
+        <td class="text-right" id="bstock-cur-${r.id}" style="padding:6px 8px">${bulkStockLabel(r.shown, r.unit)}</td>
+        <td style="padding:6px 8px">
+          <input type="text" inputmode="numeric" data-number id="bstock-new-${r.id}" placeholder="${r.shown}"
+            value="${r.draft ?? ''}" oninput="onBulkStockInput('${r.id}')"
+            style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        </td>
+        <td class="text-right" id="bstock-diff-${r.id}" style="padding:6px 8px;font-weight:600"></td>
+      </tr>`).join('');
+    bulkStockRows.forEach(r => onBulkStockInput(r.id));
+  }
+
+  function bulkStockNewValue(id) {
+    const raw = document.getElementById(`bstock-new-${id}`)?.value.trim() ?? '';
+    if (raw === '') return null;
+    const n = Math.round(parseFormattedNumber(raw));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function onBulkStockInput(id) {
+    const r = bulkStockRows.find(x => x.id === id);
+    if (!r) return;
+    r.draft = document.getElementById(`bstock-new-${id}`)?.value ?? '';
+    const v = bulkStockNewValue(id);
+    const cell = document.getElementById(`bstock-diff-${id}`);
+    if (v === null || v === r.shown) { cell.textContent = '—'; cell.style.color = 'var(--text-muted)'; }
+    else {
+      const d = v - r.shown;
+      cell.textContent = (d > 0 ? '+' : '') + d.toLocaleString('id-ID');
+      cell.style.color = d > 0 ? '#16a34a' : '#dc2626';
+    }
+    const changed = bulkStockRows.filter(x => { const nv = bulkStockNewValue(x.id); return nv !== null && nv !== x.shown; }).length;
+    document.getElementById('bulk-stock-summary').textContent = `${changed} dari ${bulkStockRows.length} produk akan diubah`;
+  }
+
+  function fillAllBulkStock() {
+    const raw = document.getElementById('bulk-stock-fill').value.trim();
+    if (raw === '') { showToast('Isi angka stok dulu', 'error'); return; }
+    const v = Math.round(parseFormattedNumber(raw));
+    if (!(v >= 0)) { showToast('Stok tidak boleh minus', 'error'); return; }
+    bulkStockRows.forEach(r => {
+      const el = document.getElementById(`bstock-new-${r.id}`);
+      if (el) { el.value = v.toLocaleString('id-ID'); onBulkStockInput(r.id); }
+    });
+  }
+
+  async function submitBulkStock() {
+    const btn = document.getElementById('btn-bulk-stock-save');
+    if (btn.disabled) return;
+
+    const changes = [];
+    for (const r of bulkStockRows) {
+      const v = bulkStockNewValue(r.id);
+      if (v === null || v === r.shown) continue;
+      if (v < 0) { showToast(`Stok "${r.name}" tidak boleh minus`, 'error'); return; }
+      changes.push({ ...r, newStock: v });
+    }
+    if (!changes.length) { showToast('Tidak ada stok yang diubah', 'warning'); return; }
+    const notes = document.getElementById('bulk-stock-notes').value.trim();
+    if (!notes) { showToast('Alasan wajib diisi', 'error'); document.getElementById('bulk-stock-notes').focus(); return; }
+    if (!confirm(`Set stok baru untuk ${changes.length} produk?`)) return;
+
+    setLoading(btn, true);
+    showFullLoading(`Menyimpan stok ${changes.length} produk...`);
+    let ok = 0, conflicts = 0;
+    const failed = [];
+    try {
+      const { data: opnameSesi } = await supabase.from('opname_sessions').select('id,name').eq('status','active').limit(1);
+      if (opnameSesi?.length) {
+        showToast(`Tidak bisa ubah stok — sedang ada sesi stock opname "${opnameSesi[0].name}" berlangsung`, 'error');
+        return;
+      }
+
+      for (const c of changes) {
+        const { data: upd, error } = await supabase.from('products')
+          .update({ stock_quantity: c.newStock })
+          .eq('id', c.id).eq('stock_quantity', c.shown)
+          .select('id');
+        if (error) { failed.push(`${c.name}: ${error.message}`); continue; }
+        const row = bulkStockRows.find(x => x.id === c.id);
+        if (!upd?.length) {
+          // Stok berubah sejak modal dibuka — ambil angka terbaru, jangan ditimpa
+          const { data: live } = await supabase.from('products').select('stock_quantity').eq('id', c.id).single();
+          if (row && live) { row.shown = Number(live.stock_quantity) || 0; row.conflict = true; }
+          conflicts++;
+          continue;
+        }
+        const { error: movErr } = await supabase.from('stock_movements').insert({
+          product_id: c.id, product_name: c.name, type: 'adjustment',
+          quantity: Math.abs(c.newStock - c.shown),
+          quantity_before: c.shown, quantity_after: c.newStock,
+          notes: `Set stok massal: ${notes}`,
+        });
+        if (movErr) failed.push(`${c.name}: stok tersimpan, riwayat gagal dicatat (${movErr.message})`);
+        ok++;
+        // Baris yang sudah tersimpan keluar dari modal
+        bulkStockRows = bulkStockRows.filter(x => x.id !== c.id);
+      }
+
+      await loadProducts();
+    } finally {
+      hideFullLoading();
+      setLoading(btn, false);
+    }
+
+    if (failed.length) console.warn('Set stok massal:', failed);
+    if (!conflicts && !failed.length) {
+      closeModal('modal-bulk-stock');
+      clearSelection();
+      showToast(`Stok ${ok} produk berhasil diperbarui ✅`);
+      return;
+    }
+    // Ada yang belum tersimpan → modal tetap terbuka berisi baris yang tersisa
+    renderBulkStockRows();
+    const parts = [`${ok} produk tersimpan`];
+    if (conflicts) parts.push(`${conflicts} stoknya berubah sejak dibuka (ditandai kuning, cek lalu simpan lagi)`);
+    if (failed.length) parts.push(`${failed.length} gagal: ${failed[0]}`);
+    showToast(parts.join(' · '), 'warning');
   }
 
   function openBulkRenameModal() {
