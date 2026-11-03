@@ -8,6 +8,12 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.css">
   <style>
+    .po-photo-grid { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; }
+    .po-photo-item { position:relative; width:88px; height:88px; border-radius:8px; overflow:hidden; border:1px solid var(--border); background:#f1f5f9; }
+    .po-photo-item img { width:100%; height:100%; object-fit:cover; display:block; cursor:zoom-in; }
+    .po-photo-item .po-photo-del { position:absolute; top:3px; right:3px; width:22px; height:22px; border-radius:50%; border:none; background:rgba(15,23,42,.75); color:#fff; font-size:12px; line-height:22px; padding:0; cursor:pointer; }
+    .po-photo-add { width:88px; height:88px; border:1.5px dashed #94a3b8; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; font-size:11.5px; font-weight:600; color:#475569; background:#f8fafc; cursor:pointer; text-align:center; }
+    .po-photo-add input { display:none; }
     .ts-wrapper .ts-control { border:1px solid var(--border); border-radius:6px; padding:4px 8px; box-shadow:none; min-height:unset; font-size:12.5px; }
     .ts-wrapper.focus .ts-control,.ts-wrapper.single.input-active .ts-control { border-color:var(--primary); }
     .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; }
@@ -139,6 +145,11 @@
         <div class="form-group" style="margin-top:10px;margin-bottom:0">
           <label>Catatan / No. Surat Jalan</label>
           <input type="text" id="po-notes" placeholder="Nomor surat jalan atau catatan lainnya">
+        </div>
+        <div class="form-group" style="margin-top:10px;margin-bottom:0">
+          <label>Foto Faktur Supplier <span class="text-muted" style="font-weight:400">(opsional, bisa lebih dari 1 — maks <span class="po-max-photos"></span>)</span></label>
+          <div class="po-photo-grid" id="po-photo-grid"></div>
+          <div id="po-photo-status" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
         </div>
       </div>
 
@@ -325,7 +336,7 @@
         ? '<span class="badge badge-danger">Dibatalkan</span>'
         : '<span class="badge badge-success">Diterima</span>';
       return `<tr ${faded}>
-        <td><strong style="color:var(--primary)">${escapeHtml(p.purchase_number)}</strong></td>
+        <td><strong style="color:var(--primary)">${escapeHtml(p.purchase_number)}</strong>${p.photo_paths?.length ? ` <span title="${p.photo_paths.length} foto faktur" style="font-size:11.5px;color:var(--text-muted);white-space:nowrap">📷 ${p.photo_paths.length}</span>` : ''}</td>
         <td>${escapeHtml(p.supplier_name || '—')}</td>
         <td>${formatDate(p.purchase_date)}</td>
         <td class="text-center">—</td>
@@ -354,6 +365,7 @@
     document.getElementById('po-supplier').value = '';
     document.getElementById('po-date').value = todayISO();
     document.getElementById('po-notes').value = '';
+    clearNewPoPhotos();
     document.getElementById('po-items-body').innerHTML = '';
     Object.values(poTomSelectInstances).forEach(ts => ts.destroy());
     poTomSelectInstances = {};
@@ -495,15 +507,37 @@
     if (!valid) { setLoading(btn, false); return; }
     if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); setLoading(btn, false); return; }
 
+    if (newPoPhotos.some(p => !p.blob)) {
+      showToast('Tunggu foto selesai diproses dulu', 'error'); setLoading(btn, false); return;
+    }
+
+    // Foto diunggah dulu supaya path-nya ikut tersimpan di PO. Kalau PO gagal
+    // disimpan, foto yang terlanjur terunggah dihapus lagi.
+    let photoPaths = [];
+    if (newPoPhotos.length) {
+      showFullLoading(`Mengunggah ${newPoPhotos.length} foto faktur...`);
+      const up = await uploadPoPhotos(newPoPhotos.map(p => p.blob));
+      if (up.error) {
+        hideFullLoading(); setLoading(btn, false);
+        showToast('Gagal mengunggah foto: ' + up.error + '. Coba lagi, atau hapus fotonya untuk simpan tanpa foto.', 'error');
+        return;
+      }
+      photoPaths = up.paths;
+    }
+
     showFullLoading('Menyimpan pembelian & memperbarui stok...');
     const { data: poData, error: poErr } = await supabase.from('purchases').insert({
       supplier_name: document.getElementById('po-supplier').value.trim() || null,
       purchase_date: document.getElementById('po-date').value,
       notes: document.getElementById('po-notes').value.trim() || null,
       total_cost: totalCost,
+      ...(photoPaths.length ? { photo_paths: photoPaths } : {}),
     }).select().single();
 
-    if (poErr) { setLoading(btn, false); hideFullLoading(); showToast('Gagal: ' + poErr.message, 'error'); return; }
+    if (poErr) {
+      await removePoPhotoFiles(photoPaths);
+      setLoading(btn, false); hideFullLoading(); showToast('Gagal: ' + poErr.message, 'error'); return;
+    }
 
     const { error: itemsErr } = await supabase.from('purchase_items').insert(
       items.map(i => ({ ...i, purchase_id: poData.id }))
@@ -513,13 +547,246 @@
     hideFullLoading();
     if (itemsErr) {
       await supabase.from('purchases').delete().eq('id', poData.id);
+      await removePoPhotoFiles(photoPaths);
       showToast('Gagal simpan item: ' + itemsErr.message, 'error');
       return;
     }
 
     showToast(`${poData.purchase_number} berhasil disimpan, stok diperbarui`);
+    clearNewPoPhotos();
     closeModal('modal-create-po');
     loadPurchases();
+  }
+
+  // ── FOTO FAKTUR SUPPLIER ───────────────────────────────────
+  // Beberapa foto per PO (faktur/nota/surat jalan supplier). Dikecilkan di
+  // browser sebelum diunggah — maks 1600px supaya tulisan faktur tetap terbaca,
+  // WebP (JPEG kalau browser tidak bisa WebP). Bucket privat purchase-photos
+  // (migration44), dibuka lewat signed URL.
+  const PO_PHOTO_BUCKET = 'purchase-photos';
+  const PO_MAX_PHOTOS = 10;
+  let newPoPhotos = [];   // [{ id, blob|null, url|null }] — foto di form Buat PO
+  let poPhotoSeq = 0;
+  document.querySelectorAll('.po-max-photos').forEach(el => el.textContent = PO_MAX_PHOTOS);
+
+  async function readPoImage(file) {
+    try {
+      return await createImageBitmap(file, { imageOrientation: 'from-image' });
+    } catch (_) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        await new Promise((ok, fail) => { img.onload = ok; img.onerror = fail; img.src = url; });
+        return img;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+  }
+
+  async function shrinkPoImage(src, maxSide, quality) {
+    const w0 = src.width || src.naturalWidth, h0 = src.height || src.naturalHeight;
+    const scale = Math.min(1, maxSide / Math.max(w0, h0));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(w0 * scale));
+    canvas.height = Math.max(1, Math.round(h0 * scale));
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
+    let blob = await new Promise(res => canvas.toBlob(res, 'image/webp', quality));
+    if (!blob || blob.type !== 'image/webp') {
+      blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', quality));
+    }
+    return blob;
+  }
+
+  async function compressPoPhoto(file) {
+    const src = await readPoImage(file);
+    let blob = await shrinkPoImage(src, 1600, 0.8);
+    if (blob && blob.size > 1800 * 1024) blob = await shrinkPoImage(src, 1300, 0.7);
+    if (!blob) throw new Error('Gagal memproses foto');
+    return blob;
+  }
+
+  // Unggah berurutan. Kalau satu gagal, yang sudah terunggah dihapus lagi
+  // supaya tidak ada file yatim di storage.
+  async function uploadPoPhotos(blobs) {
+    const paths = [];
+    const month = todayISO().slice(0, 7);
+    for (const blob of blobs) {
+      const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
+      const path = `${month}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error } = await supabase.storage.from(PO_PHOTO_BUCKET).upload(path, blob, { contentType: blob.type });
+      if (error) {
+        await removePoPhotoFiles(paths);
+        return { error: error.message };
+      }
+      paths.push(path);
+    }
+    return { paths };
+  }
+
+  async function removePoPhotoFiles(paths) {
+    if (!paths?.length) return;
+    const { error } = await supabase.storage.from(PO_PHOTO_BUCKET).remove(paths);
+    if (error) console.warn('Gagal menghapus foto PO dari storage:', error.message);
+  }
+
+  // Form Buat PO
+  function photoAddTile(onchange, disabled) {
+    if (disabled) return '';
+    return `<label class="po-photo-add">📷<span>Tambah Foto</span>
+      <input type="file" accept="image/*" multiple onchange="${onchange}(this)"></label>`;
+  }
+
+  function renderNewPoPhotos() {
+    const grid = document.getElementById('po-photo-grid');
+    grid.innerHTML = newPoPhotos.map(p => `
+      <div class="po-photo-item">
+        ${p.url ? `<img src="${p.url}" alt="Foto faktur" onclick="window.open(this.src,'_blank')">`
+                : `<div style="display:flex;align-items:center;justify-content:center;height:100%"><span class="spinner"></span></div>`}
+        <button type="button" class="po-photo-del" title="Hapus foto" onclick="removeNewPoPhoto(${p.id})">✕</button>
+      </div>`).join('') + photoAddTile('onNewPoPhotos', newPoPhotos.length >= PO_MAX_PHOTOS);
+    const ready = newPoPhotos.filter(p => p.blob);
+    const kb = Math.round(ready.reduce((s, p) => s + p.blob.size, 0) / 1024);
+    document.getElementById('po-photo-status').textContent = newPoPhotos.length
+      ? `${newPoPhotos.length} foto${ready.length < newPoPhotos.length ? ' (sedang diproses...)' : ''} · ${kb} KB`
+      : '';
+  }
+
+  async function onNewPoPhotos(input) {
+    const files = [...(input.files || [])];
+    input.value = '';
+    if (!files.length) return;
+    const slot = PO_MAX_PHOTOS - newPoPhotos.length;
+    if (files.length > slot) showToast(`Maksimal ${PO_MAX_PHOTOS} foto per PO — ${files.length - slot} foto tidak ditambahkan`, 'error');
+    const entries = files.slice(0, Math.max(0, slot)).map(f => ({ id: ++poPhotoSeq, blob: null, url: null, file: f }));
+    newPoPhotos.push(...entries);
+    renderNewPoPhotos();
+    for (const e of entries) {
+      try {
+        const blob = await compressPoPhoto(e.file);
+        if (!newPoPhotos.includes(e)) continue;   // sudah dihapus saat diproses
+        e.blob = blob;
+        e.url = URL.createObjectURL(blob);
+      } catch (_) {
+        newPoPhotos = newPoPhotos.filter(x => x !== e);
+        showToast(`Foto "${e.file.name}" tidak bisa dibaca — coba foto lain`, 'error');
+      }
+      delete e.file;
+      renderNewPoPhotos();
+    }
+  }
+
+  function removeNewPoPhoto(id) {
+    const p = newPoPhotos.find(x => x.id === id);
+    if (p?.url) URL.revokeObjectURL(p.url);
+    newPoPhotos = newPoPhotos.filter(x => x.id !== id);
+    renderNewPoPhotos();
+  }
+
+  function clearNewPoPhotos() {
+    newPoPhotos.forEach(p => p.url && URL.revokeObjectURL(p.url));
+    newPoPhotos = [];
+    renderNewPoPhotos();
+  }
+
+  // Modal Detail PO — lihat, tambah, hapus foto PO yang sudah tersimpan
+  let viewPoPhotoBusy = false;
+  async function renderViewPoPhotos() {
+    const grid = document.getElementById('view-po-photos');
+    const status = document.getElementById('view-po-photo-status');
+    if (!grid || !currentPo) return;
+    const poId = currentPo.po.id;
+    const paths = currentPo.po.photo_paths || [];
+    let urls = {};
+    if (paths.length) {
+      status.textContent = 'Memuat foto...';
+      const { data, error } = await supabase.storage.from(PO_PHOTO_BUCKET).createSignedUrls(paths, 3600);
+      if (currentPo?.po.id !== poId) return;   // modal sudah pindah ke PO lain
+      if (error) { status.textContent = 'Gagal memuat foto: ' + error.message; }
+      (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; });
+    }
+    grid.innerHTML = paths.map((path, i) => `
+      <div class="po-photo-item">
+        ${urls[path] ? `<img src="${urls[path]}" alt="Foto faktur ${i + 1}" loading="lazy" onclick="window.open(this.src,'_blank')">`
+                     : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:11px;color:var(--text-muted)">tidak ada</div>`}
+        <button type="button" class="po-photo-del" title="Hapus foto" onclick="deleteViewPoPhoto(${i})">✕</button>
+      </div>`).join('') + photoAddTile('onViewPoPhotos', paths.length >= PO_MAX_PHOTOS);
+    if (!paths.length) status.textContent = 'Belum ada foto faktur.';
+    else if (Object.keys(urls).length) status.textContent = `${paths.length} foto · klik untuk perbesar`;
+  }
+
+  async function onViewPoPhotos(input) {
+    const files = [...(input.files || [])];
+    input.value = '';
+    if (!files.length || !currentPo || viewPoPhotoBusy) return;
+    const po = currentPo.po;
+    const slot = PO_MAX_PHOTOS - (po.photo_paths || []).length;
+    if (files.length > slot) showToast(`Maksimal ${PO_MAX_PHOTOS} foto per PO — ${files.length - slot} foto tidak ditambahkan`, 'error');
+    const pick = files.slice(0, Math.max(0, slot));
+    if (!pick.length) return;
+
+    viewPoPhotoBusy = true;
+    showFullLoading(`Mengunggah ${pick.length} foto faktur...`);
+    try {
+      const blobs = [];
+      for (const f of pick) {
+        try { blobs.push(await compressPoPhoto(f)); }
+        catch (_) { showToast(`Foto "${f.name}" tidak bisa dibaca — dilewati`, 'error'); }
+      }
+      if (!blobs.length) return;
+      const up = await uploadPoPhotos(blobs);
+      if (up.error) { showToast('Gagal mengunggah foto: ' + up.error, 'error'); return; }
+
+      // Ambil daftar foto terbaru dari database (bisa saja diubah admin lain di tab lain)
+      const { data: live, error: liveErr } = await supabase.from('purchases').select('photo_paths').eq('id', po.id).single();
+      if (liveErr) { await removePoPhotoFiles(up.paths); showToast('Gagal: ' + liveErr.message, 'error'); return; }
+      const next = [...(live.photo_paths || []), ...up.paths];
+      const { error } = await supabase.from('purchases').update({ photo_paths: next }).eq('id', po.id);
+      if (error) { await removePoPhotoFiles(up.paths); showToast('Gagal menyimpan foto: ' + error.message, 'error'); return; }
+
+      po.photo_paths = next;
+      const cached = allPurchases.find(x => x.id === po.id);
+      if (cached) cached.photo_paths = next;
+      renderPurchases();
+      await renderViewPoPhotos();
+      showToast(`${up.paths.length} foto faktur ditambahkan`);
+    } finally {
+      hideFullLoading();
+      viewPoPhotoBusy = false;
+    }
+  }
+
+  async function deleteViewPoPhoto(index) {
+    if (!currentPo || viewPoPhotoBusy) return;
+    const po = currentPo.po;
+    const path = (po.photo_paths || [])[index];
+    if (!path) return;
+    if (!confirm('Hapus foto faktur ini? Tindakan ini tidak bisa dibatalkan.')) return;
+
+    viewPoPhotoBusy = true;
+    showFullLoading('Menghapus foto...');
+    try {
+      const { data: live, error: liveErr } = await supabase.from('purchases').select('photo_paths').eq('id', po.id).single();
+      if (liveErr) { showToast('Gagal: ' + liveErr.message, 'error'); return; }
+      const next = (live.photo_paths || []).filter(p => p !== path);
+      const { error } = await supabase.from('purchases').update({ photo_paths: next }).eq('id', po.id);
+      if (error) { showToast('Gagal menghapus foto: ' + error.message, 'error'); return; }
+      // File dihapus SETELAH baris PO tidak lagi menunjuk ke sana
+      await removePoPhotoFiles([path]);
+
+      po.photo_paths = next;
+      const cached = allPurchases.find(x => x.id === po.id);
+      if (cached) cached.photo_paths = next;
+      renderPurchases();
+      await renderViewPoPhotos();
+      showToast('Foto dihapus');
+    } finally {
+      hideFullLoading();
+      viewPoPhotoBusy = false;
+    }
   }
 
   // ── VIEW & PRINT ───────────────────────────────────────────
@@ -582,7 +849,13 @@
           <span>TOTAL MODAL</span>
           <span style="color:var(--primary)">${formatCurrency(po.total_cost)}</span>
         </div>
+      </div>
+      <div style="margin-top:18px">
+        <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">📷 Foto Faktur Supplier</div>
+        <div class="po-photo-grid" id="view-po-photos"></div>
+        <div id="view-po-photo-status" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
       </div>`;
+    renderViewPoPhotos();
 
     document.getElementById('btn-cancel-po').style.display = po.status === 'cancelled' ? 'none' : 'inline-flex';
     openModal('modal-view-po');
@@ -699,7 +972,7 @@
 
     // Cek status TERBARU langsung dari DB (bukan cache) — supaya kalau PO ini baru saja
     // dibatalkan oleh admin lain (stok sudah dikurangi via trigger), tidak dikurangi dua kali.
-    const { data: livePo } = await supabase.from('purchases').select('status').eq('id', id).single();
+    const { data: livePo } = await supabase.from('purchases').select('status,photo_paths').eq('id', id).single();
     const needsStockReversal = livePo && livePo.status !== 'cancelled';
 
     if (needsStockReversal && items?.length) {
@@ -747,6 +1020,9 @@
     // 2. Hapus purchase_items lalu purchase
     await supabase.from('purchase_items').delete().eq('purchase_id', id);
     const { error } = await supabase.from('purchases').delete().eq('id', id);
+
+    // File foto dihapus SETELAH baris PO-nya terhapus
+    if (!error) await removePoPhotoFiles(livePo?.photo_paths || po.photo_paths || []);
 
     hideFullLoading();
     if (error) { showToast('Gagal hapus: ' + error.message, 'error'); return; }

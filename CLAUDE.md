@@ -33,6 +33,7 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 ├── supabase_migration5.sql    ← Migration 5: wishlist_items table
 ├── supabase_migration6.sql    ← Migration 6: cash_paid & transfer_paid di invoices
 ├── supabase_migration7.sql    ← Migration 7: role super_admin di user_profiles
+├── supabase_migration44.sql   ← Migration 44: foto faktur supplier di purchases (bucket purchase-photos)
 ├── reset_demo_data.sql        ← Reset semua data demo (jalankan di Supabase SQL Editor)
 ├── split-csv.html             ← Tool pecah file CSV besar (public, no auth)
 ├── setup.html         ← Dipakai sekali untuk buat akun admin pertama
@@ -384,6 +385,12 @@ git push -u origin feat/nama-fitur
 - Riwayat: retur milik akun yang login (`created_by_id`), dikelompokkan per pengajuan (`created_at` + toko — satu transaksi, jadi sama persis), nomor RTR + nomor faktur + status per retur + alasan kalau ditolak
 - Akun gudang dibuat super_admin di `settings.html` tab **👥 Akun Sales & Gudang** (pilih Jenis Akun saat tambah). `allSales` di halaman itu tetap cuma role sales (dipakai Target Omzet)
 
+### purchases.html
+- **Foto Faktur Supplier** (migration44): form Buat Pembelian bisa lampirkan **beberapa foto** (maks 10/PO) — faktur, nota, atau surat jalan supplier. Dikecilkan di browser (maks 1600px, WebP/JPEG; lebih besar dari foto retur supaya tulisan faktur terbaca) → bucket **privat** `purchase-photos` (2 MB/file, baca/tulis/hapus cuma admin+super_admin lewat `current_app_role()`). Path disimpan di `purchases.photo_paths text[]`
+- Foto diunggah **sebelum** insert PO; kalau insert PO / item gagal, foto yang terlanjur terunggah dihapus lagi (`removePoPhotoFiles()`)
+- Modal **Detail PO**: thumbnail (signed URL 1 jam, klik = buka ukuran penuh), **+ Tambah Foto** & ✕ hapus per foto — untuk foto yang lupa dilampirkan saat input. Daftar foto diambil ulang dari database sebelum ditulis supaya tidak menimpa perubahan dari tab lain; file dihapus **setelah** baris PO tidak lagi menunjuknya. Hapus PO = file fotonya ikut dihapus
+- Daftar PO: badge `📷 N` di sebelah nomor PO
+
 ### profit-loss.html
 - Rekap kas: gunakan `cash_paid`/`transfer_paid` langsung (bukan `payment_method × total`)
 - Fallback untuk faktur lama yang belum punya kolom baru
@@ -442,4 +449,5 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 | `supabase_migration36.sql` | Tabel `product_cost_logs` + trigger `log_product_cost_change` di `products` — catat tiap perubahan `products.cost` (lama→baru, sumber, siapa, kapan). Sumber ditandai lewat GUC transaction-local `app.cost_source` (`increase_stock_on_purchase` → `purchase`, `edit_purchase()` ditulis ulang + `set_config()` → `purchase_edit`, sisanya `manual`). Termasuk backfill 1 baris awal per produk. Jalankan setelah migration34 |
 | `supabase_migration34.sql` | **Wajib untuk Edit PO.** Fungsi `edit_purchase()` — seluruh rangkaian edit pembelian jadi satu transaksi (sebelumnya 4 panggilan terpisah dari browser: koneksi putus di tengah = stok berkurang + item PO hilang). Sekaligus `increase_stock_on_purchase()` cuma menulis `products.cost` kalau PO itu memang pembelian terbaru untuk produk tsb — sebelumnya edit PO lama menarik mundur harga modal |
 | `supabase_migration43.sql` | **Wajib untuk Retur Toko.** Role `gudang`, kolom `returns.source`/`created_by_id`/`photo_path`, RPC `create_store_return()` (faktur dipilih karyawan atau dicari otomatis; `p_invoice_id` — versi awal 5 parameter di-DROP, aman dijalankan ulang), **RLS di `returns` & `return_items`** (sales tidak bisa menulis retur), trigger `guard_user_profile_role` (role akun cuma bisa diubah super_admin — `settings.html` sekarang menyimpan profil akun baru setelah sesi super_admin dipulihkan), bucket privat `return-photos`. Jalankan setelah migration22 |
+| `supabase_migration44.sql` | **Wajib untuk Foto Faktur Supplier** di `purchases.html`. Kolom `purchases.photo_paths text[]` + bucket privat `purchase-photos` (policy admin/super_admin). Jalankan setelah migration43 (pakai `current_app_role()`) |
 | `supabase_migration42.sql` | **Wajib untuk Jadwal Kunjungan.** Tabel `visit_schedules` + setting `visit_target_per_day` (default 12) + `jadwal_tab_visible_for` (default kosong = tab Hari Ini belum tampil ke siapa pun). Tanpa ini tab Hari Ini di `sales.html` kosong dan `jadwal-kunjungan.html` menampilkan pesan error |
