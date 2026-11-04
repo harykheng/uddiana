@@ -346,12 +346,15 @@
       </div>`).join('');
   }
 
-  function openConfirmPayment(id) {
+  async function openConfirmPayment(id) {
     const inv = allClaims.find(x => x.id === id);
     if (!inv) return;
     currentClaimId = id;
     const alreadyPaid = Number(inv.paid_amount || 0);
     const newTotal    = alreadyPaid + Number(inv.payment_claimed_amount);
+    // Tagihan = total dikurangi retur approved — sama dengan aturan lunas di database.
+    const retur       = (await fetchReturnTotals([id]))[id] || 0;
+    const tagihan     = Number(inv.total) - retur;
     document.getElementById('confirm-payment-body').innerHTML = `
       <div style="display:grid;gap:10px;font-size:13px">
         <div style="display:flex;justify-content:space-between"><span class="text-muted">Faktur</span><strong>${escapeHtml(inv.invoice_number)}</strong></div>
@@ -368,12 +371,13 @@
           <span style="font-weight:600">Dilaporkan (${inv.payment_claimed_method === 'cash' ? '💵 Cash' : '🏦 Transfer'})</span>
           <strong style="color:#16a34a;font-size:16px">${formatCurrency(inv.payment_claimed_amount)}</strong>
         </div>
-        ${newTotal >= Number(inv.total)
+        ${retur > 0 ? `<div style="display:flex;justify-content:space-between"><span class="text-muted">Retur disetujui</span><span style="color:#16a34a">-${formatCurrency(retur)}</span></div>` : ''}
+        ${newTotal >= tagihan
           ? `<div style="background:#dcfce7;border-radius:8px;padding:10px;text-align:center;font-weight:700;color:#166534">✅ Akan lunas setelah dikonfirmasi</div>`
-          : `<div style="background:#fffbeb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#92400e">⚠️ Masih ada sisa ${formatCurrency(Number(inv.total) - newTotal)}</div>`}
+          : `<div style="background:#fffbeb;border-radius:8px;padding:10px;text-align:center;font-size:12px;color:#92400e">⚠️ Masih ada sisa ${formatCurrency(tagihan - newTotal)}</div>`}
       </div>`;
     document.getElementById('btn-confirm-claim').textContent =
-      newTotal >= Number(inv.total) ? '✅ Konfirmasi Lunas' : '✅ Konfirmasi Pembayaran';
+      newTotal >= tagihan ? '✅ Konfirmasi Lunas' : '✅ Konfirmasi Pembayaran';
     openModal('modal-confirm-payment');
   }
 
@@ -385,27 +389,20 @@
     showFullLoading(`Mengonfirmasi pembayaran ${inv.invoice_number}...`);
     try {
 
-    const alreadyPaid  = Number(inv.paid_amount || 0);
-    const claimAmount  = Number(inv.payment_claimed_amount);
-    const newTotalPaid = alreadyPaid + claimAmount;
-    const isFullyPaid  = newTotalPaid >= Number(inv.total);
-    const prevCash     = Number(inv.cash_paid || 0);
-    const prevTransfer = Number(inv.transfer_paid || 0);
-
-    const { error } = await supabase.from('invoices').update({
-      paid_amount:   newTotalPaid,
-      status:        isFullyPaid ? 'paid' : 'pending',
-      payment_date:  document.getElementById('confirm-payment-date')?.value || inv.payment_claimed_date || new Date().toISOString().split('T')[0],
-      payment_method: inv.payment_claimed_method,
-      cash_paid:     inv.payment_claimed_method === 'cash'     ? prevCash + claimAmount     : prevCash,
-      transfer_paid: inv.payment_claimed_method === 'transfer' ? prevTransfer + claimAmount : prevTransfer,
-      payment_claimed_at:     null,
-      payment_claimed_date:   null,
-      payment_claimed_amount: null,
-      payment_claimed_method: null,
-      payment_claimed_by_name: null,
-      payment_claimed_note:   null,
-    }).eq('id', currentClaimId);
+    // Dicatat lewat RPC (migration47): status lunas dihitung di database dari
+    // total - retur approved - sudah dibayar (sebelumnya retur tidak dikurangi,
+    // jadi klaim sebesar tagihan setelah retur tidak dianggap lunas), dan klaim
+    // sales dikosongkan dalam transaksi yang sama.
+    const { data: res, error } = await supabase.rpc('record_invoice_payment', {
+      p_invoice_id:  currentClaimId,
+      p_amount:      Number(inv.payment_claimed_amount),
+      p_method:      inv.payment_claimed_method,
+      p_date:        document.getElementById('confirm-payment-date')?.value || inv.payment_claimed_date || null,
+      p_notes:       inv.payment_claimed_note || null,
+      p_source:      'verify',
+      p_clear_claim: true,
+    });
+    const isFullyPaid = !!res?.lunas;
 
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     closeModal('modal-confirm-payment');

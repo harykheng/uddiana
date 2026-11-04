@@ -442,38 +442,18 @@
     setLoading(btn, true);
     const notes = document.getElementById('pay-notes').value.trim();
 
-    // Ambil data faktur LIVE dari DB, bukan dari cache di browser — kalau faktur ini
-    // sudah dibayar/diubah di tempat lain sejak halaman dimuat, angka cash_paid/
-    // transfer_paid/paid_amount yang ditulis bisa salah kalau pakai data basi.
-    const { data: liveInv, error: fetchErr } = await supabase.from('invoices')
-      .select('total,paid_amount,cash_paid,transfer_paid,status')
-      .eq('id', currentPayId).single();
-    if (fetchErr || !liveInv) {
-      setLoading(btn, false);
-      showToast('Gagal ambil data faktur terbaru: ' + (fetchErr?.message || 'tidak ditemukan'), 'error');
-      return;
-    }
-    if (liveInv.status === 'paid' || liveInv.status === 'cancelled') {
-      setLoading(btn, false);
-      showToast('Faktur ini sudah lunas/dibatalkan di tempat lain', 'error');
-      closeModal('modal-pay');
-      loadData();
-      return;
-    }
-
-    const sisa         = Math.max(0, Number(liveInv.total || 0) - Number(liveInv.paid_amount || 0));
-    const prevCash      = Number(liveInv.cash_paid     || 0);
-    const prevTransfer  = Number(liveInv.transfer_paid || 0);
-
-    const { error } = await supabase.from('invoices').update({
-      status: 'paid',
-      paid_amount: Number(liveInv.total || 0),
-      payment_method: currentPayMethod,
-      payment_date: new Date().toISOString().split('T')[0],
-      payment_notes: notes || null,
-      cash_paid:     currentPayMethod === 'cash'     ? prevCash + sisa     : prevCash,
-      transfer_paid: currentPayMethod === 'transfer' ? prevTransfer + sisa : prevTransfer,
-    }).eq('id', currentPayId);
+    // Lunasi seluruh sisa lewat RPC (migration47). p_amount NULL = database yang
+    // menghitung sisanya dari data live: total - retur approved - sudah dibayar.
+    // Sebelumnya di sini paid_amount di-set = total (retur tidak dikurangi), jadi
+    // kas tercatat lebih besar dari uang yang benar-benar masuk.
+    const { error } = await supabase.rpc('record_invoice_payment', {
+      p_invoice_id: currentPayId,
+      p_amount:     null,
+      p_method:     currentPayMethod,
+      p_date:       null,   // database pakai tanggal hari ini WIB
+      p_notes:      notes || null,
+      p_source:     'piutang',
+    });
     setLoading(btn, false);
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     showToast('✅ Faktur berhasil dilunasi');

@@ -2442,38 +2442,92 @@
 
     if (!amount || amount <= 0) { showToast('Masukkan jumlah pembayaran', 'error'); return; }
 
-    // Find existing paid_amount
-    const inv = allInvoices.find(x => x.id === id);
-    const alreadyPaid   = Number(inv?.paid_amount || 0);
-    const newTotalPaid  = alreadyPaid + amount;
-    // Lunas kalau bayaran KALI INI menutup sisa tagihan. Sebelumnya dibandingkan
-    // newTotalPaid (kumulatif) terhadap sisa — begitu bayaran pertama melewati separuh,
-    // berapapun bayaran kedua langsung menandai faktur Lunas dan sisanya hilang.
-    const isFullyPaid   = amount >= sisaTagihan;
-
-    // Akumulasi per metode pembayaran (untuk laporan laba rugi)
-    const prevCash     = Number(inv?.cash_paid     || 0);
-    const prevTransfer = Number(inv?.transfer_paid || 0);
-
-    const updateData = {
-      paid_amount:    newTotalPaid,
-      payment_method: currentPayMethod,
-      payment_date:   date || todayISO(),
-      payment_notes:  notes || null,
-      cash_paid:     currentPayMethod === 'cash'     ? prevCash + amount     : prevCash,
-      transfer_paid: currentPayMethod === 'transfer' ? prevTransfer + amount : prevTransfer,
-    };
-    if (isFullyPaid) updateData.status = 'paid';
-
+    // Dicatat lewat RPC (migration47): sisa tagihan, status lunas, dan akumulasi
+    // cash/transfer dihitung di database dari riwayat pembayaran. Tiap pembayaran
+    // tersimpan sebagai baris sendiri di invoice_payments, jadi bisa dibatalkan
+    // tanpa menghapus cicilan sebelumnya.
     setLoading(btn, true);
-    const { error } = await supabase.from('invoices').update(updateData).eq('id', id);
+    const { data: res, error } = await supabase.rpc('record_invoice_payment', {
+      p_invoice_id: id,
+      p_amount:     amount,
+      p_method:     currentPayMethod,
+      p_date:       date || todayISO(),
+      p_notes:      notes || null,
+      p_source:     'invoices',
+    });
     setLoading(btn, false);
 
     if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
 
-    showToast(isFullyPaid ? 'Faktur berhasil dilunasi ✓' : `Pembayaran ${formatCurrency(amount)} tercatat, sisa ${formatCurrency(sisaTagihan - amount)}`);
+    showToast(res?.lunas
+      ? 'Faktur berhasil dilunasi ✓'
+      : `Pembayaran ${formatCurrency(amount)} tercatat, sisa ${formatCurrency(res?.sisa ?? (sisaTagihan - amount))}`);
     closeModal('modal-payment');
     loadInvoices();
+  }
+
+  // ── RIWAYAT & BATALKAN PEMBAYARAN ──────────────────────────
+  const PAY_SOURCE_LABEL = { invoices: 'Faktur', piutang: 'Piutang', verify: 'Klaim sales', backfill: 'Data lama' };
+
+  async function loadPaymentHistory(inv) {
+    const box = document.getElementById('view-payment-history');
+    if (!box) return;
+    const { data, error } = await supabase.from('invoice_payments')
+      .select('*').eq('invoice_id', inv.id)
+      .order('payment_date', { ascending: true }).order('created_at', { ascending: true });
+    if (error) {
+      box.innerHTML = `<div class="text-muted" style="font-size:12px;margin-top:12px">Riwayat pembayaran belum tersedia (jalankan supabase_migration47.sql).</div>`;
+      return;
+    }
+    const rows = data || [];
+    if (!rows.length) { box.innerHTML = ''; return; }
+
+    // Tombol cuma tampilan — database (void_invoice_payment) tetap menolak selain super_admin.
+    const canVoid = document.body.classList.contains('is-super-admin') && inv.status !== 'cancelled';
+    box.innerHTML = `
+      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="padding:8px 12px;background:#f8fafc;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Riwayat Pembayaran</div>
+        <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          ${rows.map(p => {
+            const voided = !!p.voided_at;
+            const who = p.source === 'backfill'
+              ? '<span class="text-muted">Data lama (sebelum riwayat dicatat)</span>'
+              : `${escapeHtml(p.created_by_name || '—')} <span class="text-muted">· ${escapeHtml(PAY_SOURCE_LABEL[p.source] || p.source)}</span>`;
+            return `<tr style="border-top:1px solid var(--border);${voided ? 'opacity:.6' : ''}">
+              <td style="padding:8px 12px;white-space:nowrap">${formatDate(p.payment_date)}</td>
+              <td style="padding:8px 12px;white-space:nowrap">${p.method === 'cash' ? '💵 Cash' : '🏦 Transfer'}</td>
+              <td style="padding:8px 12px;text-align:right;font-weight:700;white-space:nowrap;${voided ? 'text-decoration:line-through' : ''}">${formatCurrency(p.amount)}</td>
+              <td style="padding:8px 12px">${who}
+                ${p.notes ? `<div class="text-muted" style="font-size:12px">${escapeHtml(p.notes)}</div>` : ''}
+                ${voided ? `<div style="font-size:12px;color:#dc2626">Dibatalkan ${escapeHtml(p.voided_by_name || '')} · ${formatDate(p.voided_at)} — ${escapeHtml(p.void_reason || '')}</div>` : ''}
+              </td>
+              <td style="padding:8px 12px;text-align:right;white-space:nowrap">
+                ${canVoid && !voided ? `<button class="btn btn-ghost btn-sm" onclick="voidPayment('${p.id}','${inv.id}')">↩️ Batalkan</button>` : ''}
+              </td>
+            </tr>`;
+          }).join('')}
+        </table>
+        </div>
+      </div>`;
+  }
+
+  async function voidPayment(paymentId, invoiceId) {
+    const reason = prompt('Batalkan pembayaran ini?\n\nSisa tagihan dihitung ulang tanpa pembayaran ini. Pembayaran lain (cicilan) tidak berubah.\n\nAlasan pembatalan (wajib):');
+    if (reason === null) return;
+    if (!reason.trim()) { showToast('Alasan pembatalan wajib diisi', 'error'); return; }
+    showFullLoading('Membatalkan pembayaran...');
+    try {
+      const { data: res, error } = await supabase.rpc('void_invoice_payment', { p_payment_id: paymentId, p_reason: reason.trim() });
+      if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
+      showFullLoading('Memuat ulang data...');
+      await Promise.all([loadInvoices(), viewInvoice(invoiceId)]);
+      showToast(res?.status === 'paid'
+        ? 'Pembayaran dibatalkan — faktur masih lunas dari pembayaran lain'
+        : `Pembayaran dibatalkan — faktur kembali Belum Lunas (sudah dibayar ${formatCurrency(res?.paid_amount || 0)})`);
+    } finally {
+      hideFullLoading();
+    }
   }
 
   // ── VIEW & PRINT ───────────────────────────────────────────
@@ -2583,12 +2637,14 @@
         ${retur.list.map(r => `<div style="color:#166534">• ${escapeHtml(r.return_number || '—')} · ${formatDate(r.return_date)} · ${formatCurrency(r.total_return_value)}</div>`).join('')}
       </div>` : ''}
       ${paymentInfo}
+      <div id="view-payment-history"></div>
       ${inv.notes ? `<div style="margin-top:10px;padding:10px 12px;background:#fffbeb;border-radius:7px;font-size:13px;color:var(--text-muted)">📝 ${escapeHtml(inv.notes)}</div>` : ''}
       ${inv.printed_at ? `<div style="margin-top:8px;font-size:12px;color:#94a3b8">🖨️ Sudah dicetak ${inv.print_count}x · terakhir ${formatDate(inv.printed_at)}</div>` : ''}
     `;
 
     const cancelBtn = document.getElementById('btn-cancel-invoice');
     cancelBtn.style.display = inv.status === 'cancelled' ? 'none' : 'inline-flex';
+    await loadPaymentHistory(inv);
     if (triggerBtn) { triggerBtn.disabled = false; triggerBtn.textContent = '👁'; }
   }
 
