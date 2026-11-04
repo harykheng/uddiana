@@ -369,7 +369,7 @@ git push -u origin feat/nama-fitur
 
 ### retur.html
 - Print layout mirip invoice (3 kolom TTD)
-- **Nilai retur = harga yang benar-benar ditagih**, bukan harga katalog: `netUnitPrice(item)` di `utils.js` = `subtotal / quantity` baris faktur (sudah termasuk diskon %/nominal/bertingkat, subtotal edit manual, bonus Rp 0). Harga sebelum diskon ditampilkan dicoret di tabel pilih barang. **JANGAN** pakai `invoice_items.price` untuk nilai retur
+- **Nilai retur = harga yang benar-benar ditagih**, bukan harga katalog: `netUnitPrice(item)` di `utils.js` = `subtotal / quantity` baris faktur (sudah termasuk diskon %/nominal/bertingkat, subtotal edit manual, bonus Rp 0). Subtotal tiap baris retur dibulatkan **naik** ke kelipatan 100 lewat `returLineSubtotal(qty, harga)` (sama seperti subtotal faktur; dibulatkan ke rupiah utuh dulu supaya 11.666,67 × 3 tidak jadi 35.100) — dipakai saat buat retur, edit qty retur, dan di RPC gudang. Harga sebelum diskon ditampilkan dicoret di tabel pilih barang. **JANGAN** pakai `invoice_items.price` untuk nilai retur
 - Retur **pending selalu tampil** di tabel walau di luar filter tanggal (default filter = bulan berjalan), dan diurutkan paling atas
 - Retur dari gudang ditandai **🏬 Gudang** (+ 📷 kalau ada foto) di tabel; detail menampilkan siapa yang input + foto barang (signed URL 1 jam dari bucket privat `return-photos`). Disetujui/ditolak dengan tombol yang sama seperti retur buatan admin
 

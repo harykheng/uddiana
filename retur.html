@@ -870,7 +870,7 @@ create table if not exists return_items (
       const chk = document.getElementById(`chk-${i}`);
       const qtyInput = document.getElementById(`qty-retur-${i}`);
       if (chk?.checked && qtyInput) {
-        total += parseInt(qtyInput.value||0) * parseFloat(qtyInput.dataset.price||0);
+        total += returLineSubtotal(parseInt(qtyInput.value||0), parseFloat(qtyInput.dataset.price||0));
       }
     });
     document.getElementById('retur-total-val').textContent = formatRupiah(total);
@@ -908,7 +908,7 @@ create table if not exists return_items (
           sku:          it.products?.sku  || it.sku || '-',
           quantity:     qty,
           unit_price:   price,
-          subtotal:     Math.round(qty * price * 100) / 100
+          subtotal:     returLineSubtotal(qty, price)
         });
       }
     });
@@ -1284,7 +1284,7 @@ create table if not exists return_items (
       const it     = editReturItems[i];
       const newQty = Math.max(1, parseInt(document.getElementById(`edit-qty-${i}`).value) || 1);
       const oldQty = it.quantity;
-      const newSub = newQty * (it.unit_price || 0);
+      const newSub = returLineSubtotal(newQty, it.unit_price);
       totalValue  += newSub;
       rowsData.push({ it, newQty, oldQty, newSub });
       if (ret.status === 'approved' && newQty !== oldQty) {
