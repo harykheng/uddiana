@@ -2754,7 +2754,11 @@
     const { inv, items } = currentInvoice;
     // Faktur yang barangnya sebagian diretur harus tercetak dengan tagihan sesudah retur,
     // bukan nilai faktur asli — kalau tidak, lembar yang dipegang toko beda dengan tagihan.
-    const printRetur = (await fetchReturnTotals([inv.id]))[inv.id] || 0;
+    const returDetail = await fetchReturnDetail(inv.id);   // retur approved saja
+    const printRetur  = returDetail.total;
+    // Qty retur per produk dibagikan ke baris faktur sesuai urutan cetak, supaya
+    // produk yang muncul di 2 baris (mis. reguler + bonus) tidak dua-duanya ditandai penuh.
+    const returBudget = { ...returDetail.qtyByProduct };
 
     const terminMap = {
       cod: 'COD (Bayar di Tempat)',
@@ -2775,10 +2779,16 @@
           ? `<td style="text-align:center">${discType === 'percent' ? disc + '%' + (disc2 > 0 ? '+' + disc2 + '%' : '') : '-' + fmtNum(disc) + '/pcs'}</td>`
           : `<td style="text-align:center">—</td>`;
       }
+      const returQty = item.product_id ? Math.min(Number(item.quantity) || 0, returBudget[item.product_id] || 0) : 0;
+      if (returQty > 0) returBudget[item.product_id] -= returQty;
+      // Teks polos tanpa warna/ikon — dicetak dot matrix
+      const returMark = returQty > 0
+        ? `<div style="font-size:8pt">(diretur ${returQty} pcs${returQty >= Number(item.quantity) ? ' - semua' : ''})</div>`
+        : '';
       return `
         <tr>
           <td style="text-align:center">${no++}</td>
-          <td>${escapeHtml(item.product_name)}</td>
+          <td>${escapeHtml(item.product_name)}${returMark}</td>
           <td style="text-align:center">${item.quantity}</td>
           <td style="text-align:right">${fmtNum(item.price)}</td>
           ${discCell}
@@ -2854,7 +2864,7 @@
             ${chargesRows}
             <div class="pi-total-row${printRetur > 0 ? '' : ' pi-grand'}"><span>TOTAL</span><span>${formatCurrency(inv.total)}</span></div>
             ${printRetur > 0 ? `
-            <div class="pi-total-row"><span>Retur</span><span>- ${formatCurrency(printRetur)}</span></div>
+            <div class="pi-total-row"><span>Retur${returDetail.list.length ? ` (${returDetail.list.map(r => escapeHtml(r.return_number || '')).filter(Boolean).join(', ')})` : ''}</span><span>- ${formatCurrency(printRetur)}</span></div>
             <div class="pi-total-row pi-grand"><span>TAGIHAN</span><span>${formatCurrency(Number(inv.total) - printRetur)}</span></div>` : ''}
           </div>
         </div>

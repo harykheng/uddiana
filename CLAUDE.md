@@ -432,6 +432,8 @@ Nama perusahaan di print: **DIANA KOSMETIK**.
 `@page { size: 8.5in 11.5in; margin: 0.3in 0.4in; }` — Continuous Form Epson LQ-310.  
 **JANGAN** pakai `<img>` logo di print area — browser tidak load gambar dari `display:none`.
 
+Faktur yang punya retur **approved**: tiap barang yang diretur diberi teks `(diretur N pcs)` di bawah nama barang (qty retur per produk dibagi ke baris sesuai urutan cetak, lewat `fetchReturnDetail()`), dan baris total menampilkan `Retur (RTR-...)` lalu `TAGIHAN`. Teks polos tanpa warna/ikon karena dicetak dot matrix.
+
 ## Pending Migrations
 
 | File | Keterangan |
