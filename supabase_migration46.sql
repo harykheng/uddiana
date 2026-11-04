@@ -9,7 +9,8 @@
 -- yang benar-benar ditagih (sudah termasuk diskon %/nominal, diskon bertingkat,
 -- subtotal yang diedit manual, dan baris bonus Rp 0). Fallback ke price kalau
 -- subtotal kosong (data sangat lama). retur.html memakai rumus yang sama
--- (netUnitPrice() di js/utils.js).
+-- (netUnitPrice() di js/utils.js). Subtotal tiap baris retur dibulatkan NAIK
+-- ke kelipatan 100, sama seperti subtotal faktur (returLineSubtotal()).
 --
 -- Migration ini cuma memperbaiki retur BARU dari gudang (create_store_return).
 -- Retur lama yang sudah tersimpan TIDAK diubah otomatis — lihat query audit di
@@ -159,9 +160,16 @@ BEGIN
     WHERE i.id IN (SELECT DISTINCT (a->>'invoice_id')::uuid FROM jsonb_array_elements(v_alloc) a)
     ORDER BY i.invoice_date DESC, i.created_at DESC
   LOOP
-    SELECT coalesce(sum(x.quantity * x.unit_price), 0) INTO v_total
-    FROM jsonb_to_recordset(v_alloc) AS x(invoice_id uuid, quantity integer, unit_price numeric)
-    WHERE x.invoice_id = v_inv.id;
+    -- Total = jumlah subtotal per baris retur (dikelompokkan sama seperti INSERT
+    -- return_items di bawah), tiap baris dibulatkan naik ke kelipatan 100.
+    SELECT coalesce(sum(g.sub), 0) INTO v_total
+    FROM (
+      SELECT ceil(round(sum(x.quantity) * x.unit_price) / 100.0) * 100 AS sub
+      FROM jsonb_to_recordset(v_alloc)
+           AS x(invoice_id uuid, product_id uuid, product_name text, sku text, quantity integer, unit_price numeric)
+      WHERE x.invoice_id = v_inv.id
+      GROUP BY x.product_id, x.product_name, x.sku, x.unit_price
+    ) g;
 
     -- return_number diisi trigger generate_return_number (migration22)
     INSERT INTO returns (
@@ -177,7 +185,7 @@ BEGIN
 
     INSERT INTO return_items (return_id, product_id, product_name, sku, quantity, unit_price, subtotal)
     SELECT v_ret_id, x.product_id, x.product_name, x.sku,
-           sum(x.quantity), x.unit_price, sum(x.quantity) * x.unit_price
+           sum(x.quantity), x.unit_price, ceil(round(sum(x.quantity) * x.unit_price) / 100.0) * 100
     FROM jsonb_to_recordset(v_alloc)
          AS x(invoice_id uuid, product_id uuid, product_name text, sku text, quantity integer, unit_price numeric)
     WHERE x.invoice_id = v_inv.id
@@ -195,15 +203,18 @@ REVOKE ALL ON FUNCTION create_store_return(uuid, jsonb, text, text, text, uuid) 
 GRANT EXECUTE ON FUNCTION create_store_return(uuid, jsonb, text, text, text, uuid) TO authenticated;
 
 -- ============================================================
--- AUDIT (read-only, jalankan terpisah): retur lama yang nilainya kebesaran.
--- Membandingkan harga retur dengan harga net per pcs di faktur aslinya.
+-- AUDIT (read-only, jalankan terpisah): baris retur lama yang nilainya beda
+-- dari aturan baru (harga net faktur, subtotal dibulatkan naik ke 100).
+-- selisih > 0 = retur kebesaran (toko dipotong terlalu banyak)
+-- selisih < 0 = retur kekecilan (cuma beda pembulatan, biasanya < Rp 100)
 -- ============================================================
 -- SELECT r.return_number, r.status, r.invoice_number, ri.product_name, ri.quantity,
---        ri.unit_price                                   AS harga_retur,
---        round(ii.subtotal / nullif(ii.quantity, 0), 2) AS harga_net_faktur,
---        ri.subtotal - ri.quantity * round(ii.subtotal / nullif(ii.quantity, 0), 2) AS kelebihan
+--        ri.unit_price AS harga_retur, ri.subtotal AS subtotal_retur,
+--        ceil(round(ri.quantity * round(ii.subtotal / nullif(ii.quantity, 0), 2)) / 100.0) * 100 AS subtotal_benar,
+--        ri.subtotal - ceil(round(ri.quantity * round(ii.subtotal / nullif(ii.quantity, 0), 2)) / 100.0) * 100 AS selisih
 -- FROM return_items ri
 -- JOIN returns r        ON r.id = ri.return_id
 -- JOIN invoice_items ii ON ii.invoice_id = r.invoice_id AND ii.product_id = ri.product_id
--- WHERE ri.unit_price > round(ii.subtotal / nullif(ii.quantity, 0), 2) + 1
--- ORDER BY r.return_date DESC;
+-- WHERE r.status <> 'rejected'
+--   AND ri.subtotal <> ceil(round(ri.quantity * round(ii.subtotal / nullif(ii.quantity, 0), 2)) / 100.0) * 100
+-- ORDER BY selisih DESC, r.return_date DESC;

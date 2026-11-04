@@ -307,6 +307,14 @@ function netUnitPrice(item) {
   return Number(item?.price || 0);
 }
 
+// Subtotal satu baris retur — dibulatkan NAIK ke kelipatan 100, sama seperti
+// subtotal di faktur. Dibulatkan ke rupiah utuh dulu supaya sisa desimal harga
+// net (cth 35.000/3 = 11.666,67 × 3 = 35.000,01) tidak ikut naik jadi 35.100.
+// Rumus sama dengan RPC create_store_return (migration46).
+function returLineSubtotal(qty, unitPrice) {
+  return Math.ceil(Math.round(Number(qty || 0) * Number(unitPrice || 0)) / 100) * 100;
+}
+
 async function fetchReturnTotals(invoiceIds) {
   const map = {};
   const ids = (invoiceIds || []).filter(Boolean);
