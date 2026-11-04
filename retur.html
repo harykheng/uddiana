@@ -808,7 +808,9 @@ create table if not exists return_items (
       const prodName = it.products?.name || it.product_name || '-';
       const sku      = it.products?.sku  || it.sku || '-';
       const qty      = it.quantity || 0;
-      const price    = Number(it.unit_price || it.price || 0);
+      // Harga retur = harga net per pcs di faktur (setelah diskon), bukan harga katalog.
+      const price    = netUnitPrice(it);
+      const hargaAsli = Number(it.price || 0);
       const pid      = it.product_id || '';
       // Jatah baris ini: tidak melebihi qty barisnya sendiri, dan tidak melebihi
       // sisa jatah produk yang belum terpakai baris sebelumnya.
@@ -832,7 +834,7 @@ create table if not exists return_items (
             data-product-name="${escapeHtml(prodName)}" data-sku="${escapeHtml(sku)}"
             oninput="clampQty(this); recalcTotal()" disabled>
         </td>
-        <td style="text-align:right;">${formatRupiah(price)}</td>
+        <td style="text-align:right;">${formatRupiah(price)}${hargaAsli > price + 1 ? `<div style="font-size:11px;color:var(--text-muted);text-decoration:line-through">${formatRupiah(hargaAsli)}</div>` : ''}</td>
       </tr>`;
     }).join('');
 
@@ -906,7 +908,7 @@ create table if not exists return_items (
           sku:          it.products?.sku  || it.sku || '-',
           quantity:     qty,
           unit_price:   price,
-          subtotal:     qty * price
+          subtotal:     Math.round(qty * price * 100) / 100
         });
       }
     });

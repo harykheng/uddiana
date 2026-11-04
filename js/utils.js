@@ -295,6 +295,18 @@ function createProductTomSelect(sel, productList, onChange) {
 //  lolos semua, jadi retur yang DITOLAK pun ikut memotong tagihan.)
 
 // Map { invoice_id: total_nilai_retur } untuk sekumpulan faktur.
+// Harga per pcs yang benar-benar ditagih di satu baris faktur: subtotal / qty.
+// Sudah termasuk diskon item (%/nominal/bertingkat), subtotal yang diedit manual,
+// dan baris bonus Rp 0. Dipakai untuk nilai retur — JANGAN pakai invoice_items.price
+// (harga sebelum diskon). Rumus sama dengan RPC create_store_return (migration46).
+function netUnitPrice(item) {
+  const qty = Number(item?.quantity || 0);
+  if (item?.subtotal != null && qty > 0) {
+    return Math.round((Number(item.subtotal) / qty) * 100) / 100;
+  }
+  return Number(item?.price || 0);
+}
+
 async function fetchReturnTotals(invoiceIds) {
   const map = {};
   const ids = (invoiceIds || []).filter(Boolean);
