@@ -167,6 +167,11 @@
           <option value="paid">Lunas</option>
           <option value="cancelled">Dibatalkan</option>
         </select>
+        <select id="filter-print" onchange="loadInvoices()">
+          <option value="">Semua Cetak</option>
+          <option value="unprinted">🖨️ Belum Dicetak</option>
+          <option value="printed">Sudah Dicetak</option>
+        </select>
         <select id="filter-sales" onchange="reloadInvoiceList()">
           <option value="">Semua Sales</option>
         </select>
@@ -675,7 +680,11 @@
     const dateFrom = document.getElementById('filter-date-from').value;
     const dateTo   = document.getElementById('filter-date-to').value;
     const sales    = document.getElementById('filter-sales').value;
+    const print    = document.getElementById('filter-print').value;
     if (status)   q = q.eq('status', status);
+    // Faktur batal tidak perlu dicetak, jadi tidak ikut "Belum Dicetak"
+    if (print === 'unprinted') q = q.is('printed_at', null).neq('status', 'cancelled');
+    if (print === 'printed')   q = q.not('printed_at', 'is', null);
     if (dateFrom) q = q.gte('invoice_date', dateFrom);
     if (dateTo)   q = q.lte('invoice_date', dateTo);
     if (withSales && sales) q = q.eq('sales_name', sales);
@@ -918,10 +927,11 @@
       return `<tr ${faded}>
         <td>
           <strong style="color:var(--primary)">${escapeHtml(inv.invoice_number)}</strong>
-          ${inv.sales_name || inv.printed_at ? `
-          <div style="margin-top:3px;display:flex;align-items:center;gap:4px">
+          ${inv.sales_name || inv.printed_at || inv.status !== 'cancelled' ? `
+          <div style="margin-top:3px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
             ${inv.sales_name ? `<span class="badge-sales">👤 ${escapeHtml(inv.sales_name)}</span>` : ''}
-            ${inv.printed_at ? `<span class="tippy" data-tip="Dicetak ${inv.print_count}x · terakhir ${formatDate(inv.printed_at)}" style="font-size:11px;color:#94a3b8">🖨️ ${inv.print_count}x</span>` : ''}
+            ${inv.printed_at ? `<span class="tippy" data-tip="Dicetak ${inv.print_count}x · terakhir ${formatDate(inv.printed_at)}" style="font-size:11px;color:#94a3b8">🖨️ ${inv.print_count}x</span>`
+              : inv.status !== 'cancelled' ? `<span style="font-size:11px;font-weight:700;color:#c2410c;background:#ffedd5;border:1px solid #fdba74;border-radius:4px;padding:1px 6px;white-space:nowrap">⚠️ Belum dicetak</span>` : ''}
           </div>` : ''}
         </td>
         <td>${escapeHtml(inv.customer_name)}</td>
@@ -957,6 +967,7 @@
     ['search-input','filter-date-from','filter-date-to'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('filter-status').value = '';
     document.getElementById('filter-sales').value = '';
+    document.getElementById('filter-print').value = '';
     loadInvoices();
   }
 
