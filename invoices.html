@@ -1079,6 +1079,7 @@
           <span id="discplus-${id}" style="font-size:10px;color:var(--text-muted);flex-shrink:0">+</span>
           <input type="text" inputmode="numeric" data-number id="disc2-${id}" value="0" style="width:30px;flex-shrink:0;padding:6px 3px;border:1px solid var(--border);border-radius:6px;font-size:11.5px" oninput="onDiscManual('${id}')" placeholder="0">
         </div>
+        <div id="disceq-${id}" style="font-size:10px;color:#64748b;margin-top:2px;white-space:nowrap" title="Pembanding: % ↔ Rp per pcs"></div>
       </td>
       <td style="padding:5px 6px"><input type="text" inputmode="numeric" data-number id="sub-${id}" value="0" style="width:90px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)" oninput="recalcRowFromSubtotal('${id}')" onchange="onSubtotalBlur('${id}')" title="Ubah total baris ini → diskon (% / Rp) menyesuaikan, harga satuan tetap"></td>
       <td style="padding:5px 4px"><button onclick="removeItemRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
@@ -1489,6 +1490,18 @@
     recalcRow(rowId);
   }
 
+  // Label pembanding % ↔ Rp/pcs di bawah kolom diskon. prefix: 'disc' (buat faktur) / 'edisc' (edit).
+  function updateDiscEq(rowId, prefix) {
+    const e = prefix === 'edisc' ? 'e' : '';
+    const eqEl = document.getElementById(`${prefix}eq-${rowId}`);
+    if (!eqEl) return;
+    const price    = parseFormattedNumber(document.getElementById(`${e}price-${rowId}`)?.value);
+    const discType = document.getElementById(`${e}disctype-${rowId}`)?.value || 'percent';
+    const disc     = parseFormattedNumber(document.getElementById(`${prefix}-${rowId}`)?.value);
+    const disc2    = discType === 'percent' ? parseFormattedNumber(document.getElementById(`${prefix}2-${rowId}`)?.value) : 0;
+    eqEl.textContent = labelSetaraDiskon(price, discType, disc, disc2);
+  }
+
   function toggleDisc2(rowId, discType, prefix) {
     const show = discType === 'percent';
     const plusEl  = document.getElementById(`${prefix}plus-${rowId}`);
@@ -1509,6 +1522,7 @@
     // Formula bersama di js/utils.js — dipakai sales.html & verify-invoices.html juga
     const total = hitungSubtotalBaris(qty, price, discType, disc, disc2);
     if (sub) sub.value = total > 0 ? total.toLocaleString('id-ID') : '0';
+    updateDiscEq(rowId, 'disc');
     markStockShortage(rowId, '');
     if (updateTotal) recalcTotal();
   }
@@ -1568,6 +1582,7 @@
       }
       if (priceEl) priceEl.value = newPrice > 0 ? newPrice.toLocaleString('id-ID') : '0';
     }
+    updateDiscEq(rowId, 'disc');
     recalcTotal();
   }
 
@@ -2095,12 +2110,14 @@
           <span id="ediscplus-${id}" style="font-size:10px;color:var(--text-muted);flex-shrink:0">+</span>
           <input type="text" inputmode="numeric" data-number id="edisc2-${id}" value="${existingItem ? formatPersen(existingItem.item_discount2) : '0'}" style="width:30px;flex-shrink:0;padding:6px 3px;border:1px solid var(--border);border-radius:6px;font-size:11.5px" oninput="onEditDiscManual('${id}')" placeholder="0">
         </div>
+        <div id="edisceq-${id}" style="font-size:10px;color:#64748b;margin-top:2px;white-space:nowrap" title="Pembanding: % ↔ Rp per pcs"></div>
       </td>
       <td style="padding:5px 6px"><input type="text" id="esub-${id}" readonly value="${existingItem ? Number(existingItem.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:90px;padding:6px 8px;border:1.5px solid var(--primary);border-radius:6px;font-size:12.5px;font-weight:600;color:var(--primary)"></td>
       <td style="padding:5px 4px"><button onclick="removeEditItemRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
     toggleDisc2(id, existingItem?.discount_type || 'percent', 'edisc');
+    updateDiscEq(id, 'edisc');
     const sel = tr.querySelector('select');
     editTomSelectInstances[id] = createProductTomSelect(sel, editProducts, () => {
       const productId = sel.value;
@@ -2160,6 +2177,7 @@
     if (discType === 'percent') { disc = Math.min(disc, 100); disc2 = Math.min(disc2, 100); } else { disc2 = 0; }
     let sub;
     sub = hitungSubtotalBaris(qty, price, discType, disc, disc2);
+    updateDiscEq(rowId, 'edisc');
     const subEl = document.getElementById(`esub-${rowId}`);
     if (subEl) subEl.value = sub > 0 ? sub.toLocaleString('id-ID') : '0';
     markStockShortage(rowId, 'e');

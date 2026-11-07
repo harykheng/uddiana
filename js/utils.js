@@ -398,6 +398,27 @@ function cariPersenUntukSubtotal(qty, price, tier1, target) {
   return Math.round(exact * 10000) / 10000;
 }
 
+// Potongan per pcs dalam rupiah (belum dibulatkan ke 100) untuk diskon % atau Rp.
+function potonganPerPcs(price, discType, disc, disc2) {
+  const p = Number(price) || 0;
+  const d1 = Math.max(0, Number(disc) || 0);
+  if (discType === 'nominal') return Math.min(p, d1);
+  const a = Math.min(d1, 100), b = Math.min(Math.max(0, Number(disc2) || 0), 100);
+  return p - p * (1 - a / 100) * (1 - b / 100);
+}
+
+// Pembanding diskon: diisi % → tampil Rp/pcs, diisi Rp → tampil setara %.
+// Kosong kalau harga atau diskon 0. Dipakai invoices.html & discounts.html.
+function labelSetaraDiskon(price, discType, disc, disc2) {
+  const p = Number(price) || 0;
+  const pot = potonganPerPcs(p, discType, disc, disc2);
+  if (p <= 0 || pot <= 0) return '';
+  if (discType === 'nominal') {
+    return '≈ ' + (pot / p * 100).toLocaleString('id-ID', { maximumFractionDigits: 2 }) + '%';
+  }
+  return '= Rp ' + Math.round(pot).toLocaleString('id-ID') + '/pcs';
+}
+
 // Diskon % bisa desimal (1,25). Input data-number memakai titik = ribuan, jadi
 // nilai mentah 1.25 terbaca 125 — selalu tampilkan ke input lewat fungsi ini.
 function formatPersen(n) {

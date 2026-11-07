@@ -52,6 +52,7 @@
     .store-disc-wrap { display:flex; gap:3px; align-items:center; }
     .store-disc-wrap select { width:46px !important; flex-shrink:0; padding:6px 2px !important; }
     .store-row-err td { background:#fef2f2; }
+    .store-equiv, .disc-equiv { font-size:10.5px; color:#64748b; margin-top:3px; white-space:nowrap; }
     .store-shared { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px 12px; font-size:12px; color:#92400e; margin-top:12px; }
     .cust-link { background:none; border:none; padding:0; cursor:pointer; }
   </style>
@@ -316,7 +317,7 @@
         <label id="rule-disc-label">Nilai Diskon (%)</label>
         <div style="position:relative">
           <span id="rule-disc-prefix" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;pointer-events:none;display:none">Rp</span>
-          <input type="text" id="rule-disc-value" inputmode="numeric" data-number value="0" style="padding-right:32px">
+          <input type="text" id="rule-disc-value" inputmode="numeric" data-number value="0" style="padding-right:32px" oninput="updateRuleEquiv()">
           <span id="rule-disc-suffix" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;pointer-events:none">%</span>
         </div>
       </div>
@@ -324,10 +325,12 @@
       <div class="form-group mb-0" id="rule-disc2-wrap" style="margin-top:10px">
         <label>Tier 2 (opsional) <span style="font-weight:400;color:var(--text-muted)">— contoh 20%+5%</span></label>
         <div style="position:relative">
-          <input type="text" id="rule-disc-value2" inputmode="numeric" data-number value="0" style="padding-right:32px">
+          <input type="text" id="rule-disc-value2" inputmode="numeric" data-number value="0" style="padding-right:32px" oninput="updateRuleEquiv()">
           <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;pointer-events:none">%</span>
         </div>
       </div>
+
+      <div id="rule-disc-equiv" style="display:none;margin-top:10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 12px;font-size:12.5px;color:#166534"></div>
 
       <div class="form-group" style="margin-top:14px;margin-bottom:0">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
@@ -421,6 +424,7 @@
     if (!auth) return;
     updateSidebarUser(auth.profile);
     await Promise.all([loadProducts(), loadGroups(), loadCustomers(), loadRules()]);
+    renderRules();   // ulang: pembanding %↔Rp butuh harga produk, yang bisa termuat setelah aturan
   }
 
   async function loadCustomers() {
@@ -463,7 +467,7 @@
     selProd.innerHTML = '<option value="">— Pilih Produk —</option>' +
       allProducts.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
     if (productSelect) { try { productSelect.destroy(); } catch(e){} }
-    productSelect = new TomSelect(selProd, { placeholder: '— Cari & pilih produk —', maxOptions: 300, dropdownParent: 'body' });
+    productSelect = new TomSelect(selProd, { placeholder: '— Cari & pilih produk —', maxOptions: 300, dropdownParent: 'body', onChange: () => updateRuleEquiv() });
 
     // group-products select (multi)
     const selGrpProd = document.getElementById('group-products');
@@ -706,6 +710,10 @@
       const discLabel = r.discount_type === 'percent'
         ? `<span class="badge badge-disc-pct">${formatPersen(r.discount_value)}%${r.discount_value2 > 0 ? '+' + formatPersen(r.discount_value2) + '%' : ''}</span>`
         : `<span class="badge badge-disc-nom">${formatCurrency(r.discount_value)}/pcs</span>`;
+      // Pembanding %↔Rp cuma untuk aturan produk (grup: harga tiap varian bisa beda)
+      const setara = !isGroup && productById.has(r.product_id)
+        ? labelSetaraDiskon(productById.get(r.product_id).price, r.discount_type, r.discount_value, r.discount_value2) : '';
+      const discCell = discLabel + (setara ? `<div class="disc-equiv">${setara}</div>` : '');
 
       const minQtyLabel = isGroup ? 'Total grup' : '';
       const minQtyLusin = r.min_qty > 0 ? (r.min_qty / 12) : 0;
@@ -730,7 +738,7 @@
           <td>${r.description ? escapeHtml(r.description) : '<span class="text-muted">—</span>'}</td>
           <td style="text-align:center">${minQty}</td>
           <td style="text-align:right">${minAmt}</td>
-          <td style="text-align:center">${discLabel}</td>
+          <td style="text-align:center">${discCell}</td>
           <td style="text-align:center">${status}</td>
           <td>
             <div class="table-actions">
@@ -760,6 +768,7 @@
     document.getElementById('target-hint').textContent = isGroup
       ? 'Diskon berlaku jika total qty semua varian dalam grup memenuhi syarat.'
       : 'Diskon berlaku jika qty produk ini memenuhi syarat.';
+    updateRuleEquiv();
     document.getElementById('min-qty-label').textContent = isGroup ? 'Min. Qty Total Grup (lusin)' : 'Min. Qty (lusin)';
     document.getElementById('min-qty-hint').textContent  = isGroup
       ? '0 = tanpa syarat qty (dihitung total semua varian grup). Contoh: 6 = 6 lusin (72 pcs)'
@@ -777,6 +786,29 @@
     input.style.paddingRight = isNominal ? '12px' : '32px';
     document.getElementById('rule-disc2-wrap').style.display = isNominal ? 'none' : 'block';
     if (isNominal) document.getElementById('rule-disc-value2').value = '0';
+    updateRuleEquiv();
+  }
+
+  // Pembanding di modal aturan: % → potongan Rp & harga jadi, Rp → setara %.
+  // Butuh harga produk, jadi cuma untuk target Produk Tunggal.
+  function updateRuleEquiv() {
+    const el = document.getElementById('rule-disc-equiv');
+    if (!el) return;
+    const target = document.querySelector('input[name="rule-target"]:checked')?.value || 'product';
+    const prod   = target === 'product' ? productById.get(productSelect?.getValue() || '') : null;
+    const type   = document.querySelector('input[name="rule-disc-type"]:checked')?.value || 'percent';
+    const d1     = parseFormattedNumber(document.getElementById('rule-disc-value').value) || 0;
+    const d2     = type === 'percent' ? (parseFormattedNumber(document.getElementById('rule-disc-value2').value) || 0) : 0;
+    const price  = Number(prod?.price || 0);
+    const setara = prod ? labelSetaraDiskon(price, type, d1, d2) : '';
+    if (!setara) { el.style.display = 'none'; el.textContent = ''; return; }
+    const jadi = Math.max(0, price - potonganPerPcs(price, type, d1, d2));
+    const isPcs = prod.unit === 'pcs';
+    const lsnNormal = Math.ceil((price * 12) / 100) * 100;
+    const lsnJadi   = hitungSubtotalBaris(12, price, type, d1, d2);
+    el.innerHTML = `<strong>${escapeHtml(setara)}</strong> — harga ${formatCurrency(price)} jadi <strong>${formatCurrency(Math.round(jadi))}</strong>/${escapeHtml(prod.unit || 'pcs')}` +
+      (isPcs ? ` · per lusin ${formatCurrency(lsnNormal)} jadi <strong>${formatCurrency(lsnJadi)}</strong>` : '');
+    el.style.display = '';
   }
 
   function openAddRule() {
@@ -1038,6 +1070,7 @@
           <span id="${id}-plus" style="font-size:11px;color:var(--text-muted)">+</span>
           <input type="text" inputmode="decimal" class="num" id="${id}-d2" value="${d2Text}" style="width:44px;flex-shrink:0" oninput="refreshStoreRow('${id}')" title="Tier 2 (opsional), mis. 20%+5%">
         </div>
+        <div class="store-equiv" id="${id}-equiv"></div>
       </td>
       <td><input type="text" inputmode="numeric" data-number class="num target-input" id="${id}-tpcs" oninput="onStoreTarget('${id}','pcs')" onchange="refreshStoreRow('${id}')"></td>
       <td><input type="text" inputmode="numeric" data-number class="num target-input" id="${id}-tlsn" oninput="onStoreTarget('${id}','lsn')" onchange="refreshStoreRow('${id}')"></td>
@@ -1087,7 +1120,9 @@
     const normalEl = document.getElementById(`${id}-normal`);
     const tpcs = document.getElementById(`${id}-tpcs`);
     const tlsn = document.getElementById(`${id}-tlsn`);
+    const equivEl = document.getElementById(`${id}-equiv`);
     if (!prod || price <= 0) {
+      equivEl.textContent = '';
       normalEl.innerHTML = prod ? 'Harga belum diisi' : '—';
       tpcs.value = ''; tlsn.value = ''; tpcs.disabled = true; tlsn.disabled = true;
       return;
@@ -1102,6 +1137,11 @@
       : price * (1 - Math.min(d1, 100) / 100) * (1 - Math.min(d2, 100) / 100);
     if (skip !== 'pcs') tpcs.value = Math.round(perPcs).toLocaleString('id-ID');
     if (skip !== 'lsn') tlsn.value = isPcs ? hitungSubtotalBaris(12, price, type, d1, d2).toLocaleString('id-ID') : '';
+
+    // Pembanding: diisi % → tampil potongan Rp, diisi Rp → tampil setara %
+    const setara = labelSetaraDiskon(price, type, d1, d2);
+    const potLsn = isPcs ? Math.ceil((price * 12) / 100) * 100 - hitungSubtotalBaris(12, price, type, d1, d2) : 0;
+    equivEl.textContent = setara ? setara + (potLsn > 0 ? ` · hemat Rp ${potLsn.toLocaleString('id-ID')}/lsn` : '') : '';
   }
 
   // Ketik harga jadi → diskon dihitung balik, mengikuti tipe (% / Rp) yang dipilih.
