@@ -378,3 +378,28 @@ function hitungSubtotalBaris(qty, price, discType, disc, disc2) {
   const a = Math.min(d1, 100), b = Math.min(d2, 100);
   return Math.max(0, Math.ceil((q * p * (1 - a / 100) * (1 - b / 100)) / 100) * 100);
 }
+
+// Dipakai invoices.html (edit subtotal) & discounts.html (Harga Khusus Toko).
+// Persen (tier berikutnya, di atas tier1 yang sudah ada) supaya subtotal = target.
+// Dicoba dari 0 sampai 4 desimal, dibulatkan NAIK supaya hasil sebelum
+// pembulatan ke 100 tidak melebihi target; ambil yang pertama pas.
+function cariPersenUntukSubtotal(qty, price, tier1, target) {
+  const afterTier1 = qty * price * (1 - tier1 / 100);
+  if (afterTier1 <= 0) return 0;
+  const exact = Math.max(0, Math.min(100, (1 - target / afterTier1) * 100));
+  for (let dec = 0; dec <= 4; dec++) {
+    const f = Math.pow(10, dec);
+    const p = Math.min(100, Math.ceil(exact * f - 1e-9) / f);
+    const hasil = tier1 > 0
+      ? hitungSubtotalBaris(qty, price, 'percent', tier1, p)
+      : hitungSubtotalBaris(qty, price, 'percent', p, 0);
+    if (hasil === target) return p;
+  }
+  return Math.round(exact * 10000) / 10000;
+}
+
+// Diskon % bisa desimal (1,25). Input data-number memakai titik = ribuan, jadi
+// nilai mentah 1.25 terbaca 125 — selalu tampilkan ke input lewat fungsi ini.
+function formatPersen(n) {
+  return Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 4 });
+}
