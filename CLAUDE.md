@@ -216,8 +216,13 @@ const sisa  = qty % 12;
 // Tampil: "144 pcs (12 lsn)" atau "15 pcs (1 lsn + 3)"
 ```
 
-**Subtotal editable hanya di `invoices.html`.** Di `sales.html` subtotal readonly.  
-Saat edit subtotal → back-calc: `Math.round(subtotal / (qty * (1 - disc%)))`
+**Subtotal editable hanya di form Buat Faktur `invoices.html`.** Di `sales.html` & modal Edit Faktur subtotal readonly.  
+Saat edit subtotal (harga khusus toko, mis. 12 pcs Rp 240.000 → 237.000) → **harga satuan tetap, diskon yang dihitung ulang** (`recalcRowFromSubtotal()`), mengikuti tipe diskon yang dipilih:
+- `%`: tier 1 yang sudah ada dipertahankan, selisihnya masuk tier 2 (`10%+1,25%`); tier 1 kosong → masuk tier 1. Persen dicari dengan desimal sesedikit mungkin (maks 4) yang menghasilkan subtotal persis (`cariPersenUntukSubtotal()`)
+- `Rp`: diskon per pcs = `Math.ceil((qty×harga − subtotal) / qty)`
+- Baris jadi terkunci manual (`discAuto = '0'`). Subtotal di atas qty×harga atau harga 0 → cara lama: back-calc harga satuan `Math.round(subtotal / (qty * (1 - disc%)))`
+- Kenapa bukan harga satuan: harga di faktur dipakai jadi harga jual produk saat Edit & Setujui di `verify-invoices.html`
+- Diskon % bisa desimal → saat dimuat ke input (`data-number`, titik = ribuan) **wajib** lewat `formatPersen()` (`1,25`), jangan nilai mentah `1.25` (terbaca 125%). Mengetik ulang di kolom diskon tetap cuma bisa angka bulat
 
 ## Database Schema Summary
 
