@@ -1571,28 +1571,6 @@
     recalcTotal();
   }
 
-  // Persen (tier berikutnya, di atas tier1 yang sudah ada) supaya subtotal = target.
-  // Dicoba dari 0 sampai 4 desimal, dibulatkan NAIK supaya hasil sebelum
-  // pembulatan ke 100 tidak melebihi target; ambil yang pertama pas.
-  function cariPersenUntukSubtotal(qty, price, tier1, target) {
-    const afterTier1 = qty * price * (1 - tier1 / 100);
-    if (afterTier1 <= 0) return 0;
-    const exact = Math.max(0, Math.min(100, (1 - target / afterTier1) * 100));
-    for (let dec = 0; dec <= 4; dec++) {
-      const f = Math.pow(10, dec);
-      const p = Math.min(100, Math.ceil(exact * f - 1e-9) / f);
-      const hasil = tier1 > 0
-        ? hitungSubtotalBaris(qty, price, 'percent', tier1, p)
-        : hitungSubtotalBaris(qty, price, 'percent', p, 0);
-      if (hasil === target) return p;
-    }
-    return Math.round(exact * 10000) / 10000;
-  }
-
-  function formatPersen(n) {
-    return Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 4 });
-  }
-
   function onSubtotalBlur(rowId) {
     recalcRow(rowId);
   }
