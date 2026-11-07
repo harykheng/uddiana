@@ -862,32 +862,81 @@
     };
 
     setLoading(btn, true);
-    let error, ruleId = id;
-    if (id) {
-      ({ error } = await supabase.from('product_discount_rules').update(payload).eq('id', id));
-    } else {
-      const { data, error: insErr } = await supabase.from('product_discount_rules').insert(payload).select('id').single();
-      error = insErr;
-      ruleId = data?.id;
+    let error = null;
+    try {
+      error = id
+        ? await updateRuleWithCustomers(id, payload, customerIds)
+        : await insertRuleWithCustomers(payload, customerIds);
+    } finally {
+      setLoading(btn, false);
     }
 
-    if (!error && ruleId) {
-      // Sinkronkan daftar customer: hapus yang lama, insert yang baru
-      const { error: delErr } = await supabase.from('product_discount_rule_customers').delete().eq('rule_id', ruleId);
-      if (delErr) error = delErr;
-      else if (customerIds.length) {
-        const { error: custErr } = await supabase.from('product_discount_rule_customers')
-          .insert(customerIds.map(cid => ({ rule_id: ruleId, customer_id: cid })));
-        if (custErr) error = custErr;
-      }
+    if (error) {
+      // Sebagian bisa sudah tersimpan (mis. nilai diskon) — tampilkan keadaan database
+      await loadRules();
+      showToast('Gagal simpan: ' + error.message, 'error');
+      return;
     }
-
-    setLoading(btn, false);
-
-    if (error) { showToast('Gagal simpan: ' + error.message, 'error'); return; }
     showToast(id ? 'Aturan diskon diperbarui!' : 'Aturan diskon ditambahkan!', 'success');
     closeModal('modal-rule');
     await loadRules();
+  }
+
+  // Daftar toko sebuah aturan TIDAK BOLEH sempat kosong kalau memang tidak
+  // dikosongkan: aturan tanpa baris customer = aturan UMUM, berlaku semua toko.
+  // Dulu: hapus semua toko → insert ulang. Koneksi putus / insert gagal di tengah
+  // = diskon khusus satu toko diam-diam berlaku untuk semua toko.
+
+  // Aturan baru: dibuat nonaktif dulu → ditautkan ke toko → baru diaktifkan.
+  // Penautan gagal = aturan dihapus lagi (jangan tertinggal sebagai aturan umum).
+  async function insertRuleWithCustomers(payload, customerIds) {
+    const needsLink = customerIds.length > 0;
+    const { data, error } = await supabase.from('product_discount_rules')
+      .insert(needsLink ? { ...payload, is_active: false } : payload).select('id').single();
+    if (error || !data) return error || new Error('Aturan gagal dibuat');
+    if (!needsLink) return null;
+
+    const { error: linkErr } = await supabase.from('product_discount_rule_customers')
+      .insert(customerIds.map(cid => ({ rule_id: data.id, customer_id: cid })));
+    if (linkErr) {
+      await supabase.from('product_discount_rules').delete().eq('id', data.id);
+      return linkErr;
+    }
+    if (payload.is_active) {
+      const { error: actErr } = await supabase.from('product_discount_rules')
+        .update({ is_active: true }).eq('id', data.id);
+      if (actErr) return new Error('Tersimpan tapi masih NONAKTIF — ' + actErr.message);
+    }
+    return null;
+  }
+
+  // Edit: toko yang baru ditambahkan DULU (upsert, aman untuk yang sudah ada),
+  // baru toko yang dilepas dihapus — jadi daftar toko tidak pernah sempat kosong.
+  // Daftar toko lama diambil langsung dari database, bukan dari allRules yang
+  // bisa basi kalau aturan ini diubah dari tab lain.
+  async function updateRuleWithCustomers(id, payload, customerIds) {
+    const { error: updErr } = await supabase.from('product_discount_rules').update(payload).eq('id', id);
+    if (updErr) return updErr;
+
+    const { data: current, error: curErr } = await supabase
+      .from('product_discount_rule_customers').select('customer_id').eq('rule_id', id);
+    if (curErr) return curErr;
+    const oldIds   = (current || []).map(x => x.customer_id);
+    const toAdd    = customerIds.filter(cid => !oldIds.includes(cid));
+    const toRemove = oldIds.filter(cid => !customerIds.includes(cid));
+
+    if (toAdd.length) {
+      const { error } = await supabase.from('product_discount_rule_customers')
+        .upsert(toAdd.map(cid => ({ rule_id: id, customer_id: cid })),
+                { onConflict: 'rule_id,customer_id', ignoreDuplicates: true });
+      if (error) return error;
+    }
+    if (toRemove.length) {
+      const { error } = await supabase.from('product_discount_rule_customers')
+        .delete().eq('rule_id', id).in('customer_id', toRemove);
+      if (error) return error;
+    }
+    return null;
   }
 
   async function deleteRule(id) {
@@ -1155,23 +1204,10 @@
           if (error) fails.push(`${x.nama}: ${error.message}`);
           continue;
         }
-        // Aturan baru dibuat NONAKTIF dulu, baru ditautkan ke toko, baru diaktifkan.
-        // Aturan tanpa baris customer = aturan UMUM (berlaku semua toko) — jadi kalau
-        // penautan gagal, aturannya dihapus lagi, jangan sampai sempat aktif untuk semua.
-        const { data, error } = await supabase.from('product_discount_rules')
-          .insert({ ...x.payload, is_active: false }).select('id').single();
-        if (error || !data) { fails.push(`${x.nama}: ${error?.message || 'gagal dibuat'}`); continue; }
-        const { error: linkErr } = await supabase.from('product_discount_rule_customers')
-          .insert({ rule_id: data.id, customer_id: cid });
-        if (linkErr) {
-          await supabase.from('product_discount_rules').delete().eq('id', data.id);
-          fails.push(`${x.nama}: ${linkErr.message}`);
-          continue;
-        }
-        if (x.payload.is_active) {
-          const { error: actErr } = await supabase.from('product_discount_rules').update({ is_active: true }).eq('id', data.id);
-          if (actErr) fails.push(`${x.nama}: tersimpan tapi masih nonaktif (${actErr.message})`);
-        }
+        // Aturan baru: lewat jalur aman yang sama dengan form Tambah Aturan
+        // (nonaktif dulu → tautkan ke toko → aktifkan; gagal tautkan = dihapus lagi)
+        const err = await insertRuleWithCustomers(x.payload, [cid]);
+        if (err) fails.push(`${x.nama}: ${err.message}`);
       }
       if (toDelete.length) {
         const { error } = await supabase.from('product_discount_rules').delete().in('id', toDelete);
