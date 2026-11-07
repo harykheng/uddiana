@@ -23,7 +23,8 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 │   ├── auth.js            ← requireAdmin(), requireSuperAdmin(), requireSales(), requireGudang(),
 │   │                        homePageForRole(), signOut(), updateSidebarUser(), mobile sidebar (hamburger)
 │   ├── utils.js           ← formatCurrency, formatDate, modal, toast, number format, debounce,
-│   │                        hitungSubtotalBaris, cariPersenUntukSubtotal, formatPersen
+│   │                        hitungSubtotalBaris, cariPersenUntukSubtotal, formatPersen,
+│   │                        potonganPerPcs, labelSetaraDiskon
 │   └── jadwal.js          ← helper Jadwal Kunjungan: HARI, localDateISO, fetchVisitFacts, computeVisitStatus
 ├── css/
 │   └── style.css          ← CSS global + mobile responsive + sidebar overlay
@@ -337,6 +338,7 @@ git push -u origin feat/nama-fitur
 - Accessible: admin + super_admin (`requireAdmin()`)
 - **🏪 Harga Khusus Toko** (tombol topbar, atau klik badge 🏪 toko di tabel aturan): pilih 1 toko → tabel banyak produk sekaligus, tiap baris = Min. Qty (lusin, boleh desimal) + Min. Beli (Rp) + Diskon (%/Rp, tier 2 opsional) + **Harga Jadi /pcs & /lusin**. Ketik harga jadi → diskon dihitung balik sesuai tipe (rumus /lusin = `cariPersenUntukSubtotal()` di `utils.js`, sama dengan edit subtotal di `invoices.html`, jadi faktur 12 pcs keluar persis angka itu); ganti %↔Rp = harga jadi dipertahankan, diskon dikonversi. Tiap baris disimpan sebagai `product_discount_rules` biasa + 1 baris `product_discount_rule_customers` — **tidak ada tabel/logika faktur baru**. Yang dikelola modal ini cuma aturan **eksklusif** toko itu (target produk, customer tepat 1); aturan bersama beberapa toko / aturan grup cuma ditampilkan sebagai info (mengubahnya di sini diam-diam ikut mengubah toko lain). Aturan baru di-insert **nonaktif** dulu → ditautkan ke toko → baru diaktifkan; kalau penautan gagal, aturan dihapus lagi (aturan tanpa customer = aturan umum untuk semua toko). Diskon tetap relatif ke harga normal: harga normal naik → harga toko ikut naik
 - **Simpan daftar toko sebuah aturan tidak boleh sempat kosong** (aturan tanpa baris `product_discount_rule_customers` = aturan UMUM untuk semua toko). Form Tambah/Edit Aturan & Harga Khusus Toko sama-sama lewat `insertRuleWithCustomers()` (insert nonaktif → tautkan → aktifkan; gagal tautkan = aturan dihapus) dan `updateRuleWithCustomers()` (daftar toko lama diambil live dari database → toko baru di-upsert DULU → baru toko yang dilepas dihapus). **JANGAN** kembali ke pola "hapus semua toko lalu insert ulang"
+- **Pembanding % ↔ Rp**: di mana pun diskon diisi, tampil angka setaranya — diisi % → `= Rp X/pcs`, diisi Rp → `≈ Y%` (`labelSetaraDiskon()` + `potonganPerPcs()` di `utils.js`). Muncul di kolom Diskon tabel aturan (cuma aturan produk — grup tidak, harga tiap varian bisa beda), modal Tambah/Edit Aturan (kotak hijau + harga jadi /pcs & /lusin), modal Harga Khusus Toko (+ hemat per lusin), dan di bawah kolom diskon tiap baris item Buat/Edit Faktur `invoices.html` (`updateDiscEq()`). `init()` memanggil `renderRules()` lagi setelah semua data termuat karena pembanding butuh harga produk
 - Filter **Semua Customer** di atas tabel aturan
 - Diskon % desimal ditampilkan lewat `formatPersen()` (tabel & modal edit) — sebelumnya `1.25` di modal edit terbaca 125%
 
