@@ -14,6 +14,8 @@
     .po-photo-item .po-photo-del { position:absolute; top:3px; right:3px; width:22px; height:22px; border-radius:50%; border:none; background:rgba(15,23,42,.75); color:#fff; font-size:12px; line-height:22px; padding:0; cursor:pointer; }
     .po-photo-add { width:88px; height:88px; border:1.5px dashed #94a3b8; border-radius:8px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; font-size:11.5px; font-weight:600; color:#475569; background:#f8fafc; cursor:pointer; text-align:center; }
     .po-photo-add input { display:none; }
+    .po-photo-item .po-pdf { width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; background:#fef2f2; color:#b91c1c; font-size:26px; cursor:pointer; text-decoration:none; }
+    .po-photo-item .po-pdf span { font-size:10.5px; font-weight:700; color:#7f1d1d; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ts-wrapper .ts-control { border:1px solid var(--border); border-radius:6px; padding:4px 8px; box-shadow:none; min-height:unset; font-size:12.5px; }
     .ts-wrapper.focus .ts-control,.ts-wrapper.single.input-active .ts-control { border-color:var(--primary); }
     .ts-dropdown { border-radius:8px; border:1.5px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.12); font-size:13px; }
@@ -147,7 +149,7 @@
           <input type="text" id="po-notes" placeholder="Nomor surat jalan atau catatan lainnya">
         </div>
         <div class="form-group" style="margin-top:10px;margin-bottom:0">
-          <label>Foto Faktur Supplier <span class="text-muted" style="font-weight:400">(opsional, bisa lebih dari 1 — maks <span class="po-max-photos"></span>)</span></label>
+          <label>Foto / PDF Faktur Supplier <span class="text-muted" style="font-weight:400">(opsional, bisa lebih dari 1 — maks <span class="po-max-photos"></span> file, PDF maks 5 MB)</span></label>
           <div class="po-photo-grid" id="po-photo-grid"></div>
           <div id="po-photo-status" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
         </div>
@@ -336,7 +338,7 @@
         ? '<span class="badge badge-danger">Dibatalkan</span>'
         : '<span class="badge badge-success">Diterima</span>';
       return `<tr ${faded}>
-        <td><strong style="color:var(--primary)">${escapeHtml(p.purchase_number)}</strong>${p.photo_paths?.length ? ` <span title="${p.photo_paths.length} foto faktur" style="font-size:11.5px;color:var(--text-muted);white-space:nowrap">📷 ${p.photo_paths.length}</span>` : ''}</td>
+        <td><strong style="color:var(--primary)">${escapeHtml(p.purchase_number)}</strong>${p.photo_paths?.length ? ` <span title="${p.photo_paths.length} lampiran faktur (foto/PDF)" style="font-size:11.5px;color:var(--text-muted);white-space:nowrap">📎 ${p.photo_paths.length}</span>` : ''}</td>
         <td>${escapeHtml(p.supplier_name || '—')}</td>
         <td>${formatDate(p.purchase_date)}</td>
         <td class="text-center">—</td>
@@ -508,18 +510,18 @@
     if (!items.length) { showToast('Tambahkan minimal 1 barang', 'error'); setLoading(btn, false); return; }
 
     if (newPoPhotos.some(p => !p.blob)) {
-      showToast('Tunggu foto selesai diproses dulu', 'error'); setLoading(btn, false); return;
+      showToast('Tunggu foto / PDF selesai diproses dulu', 'error'); setLoading(btn, false); return;
     }
 
     // Foto diunggah dulu supaya path-nya ikut tersimpan di PO. Kalau PO gagal
     // disimpan, foto yang terlanjur terunggah dihapus lagi.
     let photoPaths = [];
     if (newPoPhotos.length) {
-      showFullLoading(`Mengunggah ${newPoPhotos.length} foto faktur...`);
+      showFullLoading(`Mengunggah ${newPoPhotos.length} file faktur...`);
       const up = await uploadPoPhotos(newPoPhotos.map(p => p.blob));
       if (up.error) {
         hideFullLoading(); setLoading(btn, false);
-        showToast('Gagal mengunggah foto: ' + up.error + '. Coba lagi, atau hapus fotonya untuk simpan tanpa foto.', 'error');
+        showToast('Gagal mengunggah file: ' + up.error + '. Coba lagi, atau hapus lampirannya untuk simpan tanpa lampiran.', 'error');
         return;
       }
       photoPaths = up.paths;
@@ -601,6 +603,25 @@
     return blob;
   }
 
+  // PDF faktur (migration48): tidak bisa dikecilkan di browser, jadi diunggah
+  // apa adanya — dibatasi 5 MB, sama dengan batas bucket. Sebagian HP Android
+  // tidak mengisi file.type, jadi dicek juga dari nama file.
+  const PO_PDF_MAX_BYTES = 5 * 1024 * 1024;
+  const isPdfFile = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+  const isPdfPath = path => /\.pdf$/i.test(path || '');
+
+  // Foto → dikecilkan; PDF → dicek ukurannya lalu dipakai apa adanya
+  async function preparePoFile(file) {
+    if (isPdfFile(file)) {
+      if (file.size > PO_PDF_MAX_BYTES) {
+        throw new Error(`PDF "${file.name}" ${(file.size / 1048576).toFixed(1)} MB — maksimal 5 MB`);
+      }
+      return new Blob([file], { type: 'application/pdf' });
+    }
+    try { return await compressPoPhoto(file); }
+    catch (_) { throw new Error(`File "${file.name}" tidak bisa dibaca — pakai foto (JPG/PNG) atau PDF`); }
+  }
+
   async function compressPoPhoto(file) {
     const src = await readPoImage(file);
     let blob = await shrinkPoImage(src, 1600, 0.8);
@@ -615,7 +636,7 @@
     const paths = [];
     const month = todayISO().slice(0, 7);
     for (const blob of blobs) {
-      const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
+      const ext = blob.type === 'application/pdf' ? 'pdf' : blob.type === 'image/webp' ? 'webp' : 'jpg';
       const path = `${month}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
       const { error } = await supabase.storage.from(PO_PHOTO_BUCKET).upload(path, blob, { contentType: blob.type });
       if (error) {
@@ -636,22 +657,28 @@
   // Form Buat PO
   function photoAddTile(onchange, disabled) {
     if (disabled) return '';
-    return `<label class="po-photo-add">📷<span>Tambah Foto</span>
-      <input type="file" accept="image/*" multiple onchange="${onchange}(this)"></label>`;
+    return `<label class="po-photo-add">📎<span>Tambah Foto / PDF</span>
+      <input type="file" accept="image/*,application/pdf,.pdf" multiple onchange="${onchange}(this)"></label>`;
+  }
+
+  // Isi kotak lampiran: thumbnail untuk foto, kotak 📄 PDF untuk PDF
+  function poFileThumb(url, isPdf, label) {
+    if (isPdf) return `<a class="po-pdf" href="${url}" target="_blank" rel="noopener" title="Buka PDF">📄<span>${escapeHtml(label || 'PDF')}</span></a>`;
+    return `<img src="${url}" alt="Foto faktur" loading="lazy" onclick="window.open(this.src,'_blank')">`;
   }
 
   function renderNewPoPhotos() {
     const grid = document.getElementById('po-photo-grid');
     grid.innerHTML = newPoPhotos.map(p => `
       <div class="po-photo-item">
-        ${p.url ? `<img src="${p.url}" alt="Foto faktur" onclick="window.open(this.src,'_blank')">`
+        ${p.url ? poFileThumb(p.url, p.blob?.type === 'application/pdf', p.name)
                 : `<div style="display:flex;align-items:center;justify-content:center;height:100%"><span class="spinner"></span></div>`}
-        <button type="button" class="po-photo-del" title="Hapus foto" onclick="removeNewPoPhoto(${p.id})">✕</button>
+        <button type="button" class="po-photo-del" title="Hapus" onclick="removeNewPoPhoto(${p.id})">✕</button>
       </div>`).join('') + photoAddTile('onNewPoPhotos', newPoPhotos.length >= PO_MAX_PHOTOS);
     const ready = newPoPhotos.filter(p => p.blob);
     const kb = Math.round(ready.reduce((s, p) => s + p.blob.size, 0) / 1024);
     document.getElementById('po-photo-status').textContent = newPoPhotos.length
-      ? `${newPoPhotos.length} foto${ready.length < newPoPhotos.length ? ' (sedang diproses...)' : ''} · ${kb} KB`
+      ? `${newPoPhotos.length} file${ready.length < newPoPhotos.length ? ' (sedang diproses...)' : ''} · ${kb} KB`
       : '';
   }
 
@@ -660,19 +687,19 @@
     input.value = '';
     if (!files.length) return;
     const slot = PO_MAX_PHOTOS - newPoPhotos.length;
-    if (files.length > slot) showToast(`Maksimal ${PO_MAX_PHOTOS} foto per PO — ${files.length - slot} foto tidak ditambahkan`, 'error');
-    const entries = files.slice(0, Math.max(0, slot)).map(f => ({ id: ++poPhotoSeq, blob: null, url: null, file: f }));
+    if (files.length > slot) showToast(`Maksimal ${PO_MAX_PHOTOS} file per PO — ${files.length - slot} file tidak ditambahkan`, 'error');
+    const entries = files.slice(0, Math.max(0, slot)).map(f => ({ id: ++poPhotoSeq, blob: null, url: null, file: f, name: f.name }));
     newPoPhotos.push(...entries);
     renderNewPoPhotos();
     for (const e of entries) {
       try {
-        const blob = await compressPoPhoto(e.file);
+        const blob = await preparePoFile(e.file);
         if (!newPoPhotos.includes(e)) continue;   // sudah dihapus saat diproses
         e.blob = blob;
         e.url = URL.createObjectURL(blob);
-      } catch (_) {
+      } catch (err) {
         newPoPhotos = newPoPhotos.filter(x => x !== e);
-        showToast(`Foto "${e.file.name}" tidak bisa dibaca — coba foto lain`, 'error');
+        showToast(err.message, 'error');
       }
       delete e.file;
       renderNewPoPhotos();
@@ -702,20 +729,20 @@
     const paths = currentPo.po.photo_paths || [];
     let urls = {};
     if (paths.length) {
-      status.textContent = 'Memuat foto...';
+      status.textContent = 'Memuat lampiran...';
       const { data, error } = await supabase.storage.from(PO_PHOTO_BUCKET).createSignedUrls(paths, 3600);
       if (currentPo?.po.id !== poId) return;   // modal sudah pindah ke PO lain
-      if (error) { status.textContent = 'Gagal memuat foto: ' + error.message; }
+      if (error) { status.textContent = 'Gagal memuat lampiran: ' + error.message; }
       (data || []).forEach(d => { if (d.signedUrl) urls[d.path] = d.signedUrl; });
     }
     grid.innerHTML = paths.map((path, i) => `
       <div class="po-photo-item">
-        ${urls[path] ? `<img src="${urls[path]}" alt="Foto faktur ${i + 1}" loading="lazy" onclick="window.open(this.src,'_blank')">`
+        ${urls[path] ? poFileThumb(urls[path], isPdfPath(path), `PDF ${i + 1}`)
                      : `<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:11px;color:var(--text-muted)">tidak ada</div>`}
-        <button type="button" class="po-photo-del" title="Hapus foto" onclick="deleteViewPoPhoto(${i})">✕</button>
+        <button type="button" class="po-photo-del" title="Hapus" onclick="deleteViewPoPhoto(${i})">✕</button>
       </div>`).join('') + photoAddTile('onViewPoPhotos', paths.length >= PO_MAX_PHOTOS);
-    if (!paths.length) status.textContent = 'Belum ada foto faktur.';
-    else if (Object.keys(urls).length) status.textContent = `${paths.length} foto · klik untuk perbesar`;
+    if (!paths.length) status.textContent = 'Belum ada foto / PDF faktur.';
+    else if (Object.keys(urls).length) status.textContent = `${paths.length} file · klik untuk buka`;
   }
 
   async function onViewPoPhotos(input) {
@@ -724,21 +751,21 @@
     if (!files.length || !currentPo || viewPoPhotoBusy) return;
     const po = currentPo.po;
     const slot = PO_MAX_PHOTOS - (po.photo_paths || []).length;
-    if (files.length > slot) showToast(`Maksimal ${PO_MAX_PHOTOS} foto per PO — ${files.length - slot} foto tidak ditambahkan`, 'error');
+    if (files.length > slot) showToast(`Maksimal ${PO_MAX_PHOTOS} file per PO — ${files.length - slot} file tidak ditambahkan`, 'error');
     const pick = files.slice(0, Math.max(0, slot));
     if (!pick.length) return;
 
     viewPoPhotoBusy = true;
-    showFullLoading(`Mengunggah ${pick.length} foto faktur...`);
+    showFullLoading(`Mengunggah ${pick.length} file faktur...`);
     try {
       const blobs = [];
       for (const f of pick) {
-        try { blobs.push(await compressPoPhoto(f)); }
-        catch (_) { showToast(`Foto "${f.name}" tidak bisa dibaca — dilewati`, 'error'); }
+        try { blobs.push(await preparePoFile(f)); }
+        catch (err) { showToast(err.message + ' — dilewati', 'error'); }
       }
       if (!blobs.length) return;
       const up = await uploadPoPhotos(blobs);
-      if (up.error) { showToast('Gagal mengunggah foto: ' + up.error, 'error'); return; }
+      if (up.error) { showToast('Gagal mengunggah file: ' + up.error, 'error'); return; }
 
       // Ambil daftar foto terbaru dari database (bisa saja diubah admin lain di tab lain)
       const { data: live, error: liveErr } = await supabase.from('purchases').select('photo_paths').eq('id', po.id).single();
@@ -752,7 +779,7 @@
       if (cached) cached.photo_paths = next;
       renderPurchases();
       await renderViewPoPhotos();
-      showToast(`${up.paths.length} foto faktur ditambahkan`);
+      showToast(`${up.paths.length} file faktur ditambahkan`);
     } finally {
       hideFullLoading();
       viewPoPhotoBusy = false;
@@ -764,10 +791,10 @@
     const po = currentPo.po;
     const path = (po.photo_paths || [])[index];
     if (!path) return;
-    if (!confirm('Hapus foto faktur ini? Tindakan ini tidak bisa dibatalkan.')) return;
+    if (!confirm('Hapus lampiran faktur ini? Tindakan ini tidak bisa dibatalkan.')) return;
 
     viewPoPhotoBusy = true;
-    showFullLoading('Menghapus foto...');
+    showFullLoading('Menghapus lampiran...');
     try {
       const { data: live, error: liveErr } = await supabase.from('purchases').select('photo_paths').eq('id', po.id).single();
       if (liveErr) { showToast('Gagal: ' + liveErr.message, 'error'); return; }
@@ -782,7 +809,7 @@
       if (cached) cached.photo_paths = next;
       renderPurchases();
       await renderViewPoPhotos();
-      showToast('Foto dihapus');
+      showToast('Lampiran dihapus');
     } finally {
       hideFullLoading();
       viewPoPhotoBusy = false;
@@ -851,7 +878,7 @@
         </div>
       </div>
       <div style="margin-top:18px">
-        <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">📷 Foto Faktur Supplier</div>
+        <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#475569;margin-bottom:8px">📎 Foto / PDF Faktur Supplier</div>
         <div class="po-photo-grid" id="view-po-photos"></div>
         <div id="view-po-photo-status" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
       </div>`;
