@@ -56,6 +56,15 @@
     .store-shared { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px 12px; font-size:12px; color:#92400e; margin-top:12px; }
     .cust-link { background:none; border:none; padding:0; cursor:pointer; }
     .store-row-focus td { background:#fefce8; }
+    .rules-section td { background:#f8fafc; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#475569; padding:8px 14px !important; }
+    .store-group-row td { background:#fff7f7; vertical-align:middle; }
+    .store-group-row .sg-name { font-weight:700; font-size:14px; }
+    .store-group-row .sg-meta { font-size:11.5px; color:#64748b; margin-top:2px; }
+    .sg-items { display:flex; flex-wrap:wrap; gap:4px 6px; }
+    .sg-item { font-size:11.5px; background:#fff; border:1px solid #fecaca; border-radius:6px; padding:2px 7px; white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; }
+    .sg-item b { color:#15803d; font-weight:600; }
+    .rule-detail-row td { background:#fffcfc; }
+    .rule-detail-row td:first-child { padding-left:34px !important; border-left:3px solid #fecaca; }
     .store-row-split td { background:#f0fdf4; }
     .store-split-note { font-size:10.5px; color:#15803d; margin-top:3px; }
     .store-shared li { margin-bottom:4px; }
@@ -150,7 +159,7 @@
       <div class="filter-bar">
         <div class="search-input-wrap" style="flex:1;max-width:280px">
           <span class="search-icon">🔍</span>
-          <input type="text" id="search-input" placeholder="Cari nama produk / grup..." oninput="handleSearch()">
+          <input type="text" id="search-input" placeholder="Cari produk / grup / nama toko..." oninput="handleSearch()">
         </div>
         <select id="filter-target" onchange="renderRules()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--surface)">
           <option value="">Semua Target</option>
@@ -159,6 +168,10 @@
         </select>
         <select id="filter-customer" onchange="renderRules()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--surface);max-width:220px">
           <option value="">Semua Customer</option>
+        </select>
+        <select id="view-mode" onchange="onViewModeChange()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;outline:none;background:var(--surface)" title="Cara menampilkan daftar aturan">
+          <option value="grouped">🏪 Kelompokkan per toko</option>
+          <option value="flat">☰ Semua aturan satu per satu</option>
         </select>
         <select id="filter-active" onchange="renderRules()">
           <option value="">Semua Status</option>
@@ -680,17 +693,35 @@
     renderRules();
   }
 
+  // Tampilan daftar: 'grouped' (default) = aturan khusus 1 toko dikumpulkan jadi
+  // 1 baris per toko; 'flat' = semua aturan satu per satu seperti dulu.
+  let expandedStores = new Set();   // toko yang rinciannya sedang dibuka
+  try { const v = localStorage.getItem('discounts_view_mode'); if (v) document.getElementById('view-mode').value = v; } catch (e) {}
+
+  function onViewModeChange() {
+    try { localStorage.setItem('discounts_view_mode', document.getElementById('view-mode').value); } catch (e) {}
+    renderRules();
+  }
+
+  function toggleStoreGroup(cid) {
+    if (expandedStores.has(cid)) expandedStores.delete(cid); else expandedStores.add(cid);
+    renderRules();
+  }
+
   function renderRules() {
     const search       = document.getElementById('search-input').value.toLowerCase();
     const filterActive = document.getElementById('filter-active').value;
     const filterTarget = document.getElementById('filter-target').value;
     const filterCust   = document.getElementById('filter-customer').value;
+    const viewMode     = document.getElementById('view-mode').value;
 
     const filtered = allRules.filter(r => {
       const name = r.group_id
         ? (r.discount_groups?.name || '').toLowerCase()
         : (r.products?.name || '').toLowerCase();
-      if (search && !name.includes(search)) return false;
+      // Pencarian juga mencocokkan nama toko, supaya bisa cari "fauzil" langsung
+      const custNames = (r.product_discount_rule_customers || []).map(x => (x.customers?.name || '').toLowerCase()).join(' ');
+      if (search && !name.includes(search) && !custNames.includes(search)) return false;
       if (filterActive !== '' && String(r.is_active) !== filterActive) return false;
       if (filterTarget === 'product' && r.group_id) return false;
       if (filterTarget === 'group'   && !r.group_id) return false;
@@ -706,7 +737,71 @@
       return;
     }
 
-    tbody.innerHTML = filtered.map(r => {
+    if (viewMode === 'flat') {
+      tbody.innerHTML = filtered.map(r => ruleRowHtml(r)).join('');
+      return;
+    }
+
+    // Kelompokkan: aturan produk yang khusus TEPAT 1 toko → per toko.
+    // Sisanya (umum, bersama beberapa toko, grup varian) tetap per aturan.
+    const byStore = new Map();
+    const lainnya = [];
+    filtered.forEach(r => {
+      if (!r.group_id && r.customer_ids.length === 1) {
+        const cid = r.customer_ids[0];
+        if (!byStore.has(cid)) byStore.set(cid, []);
+        byStore.get(cid).push(r);
+      } else {
+        lainnya.push(r);
+      }
+    });
+    const stores = [...byStore.entries()].map(([cid, rules]) => ({
+      cid, rules: rules.sort((a, b) => (a.products?.name || '').localeCompare(b.products?.name || '') || (a.min_qty - b.min_qty)),
+      name: rules[0].product_discount_rule_customers?.[0]?.customers?.name || 'Toko',
+    })).sort((a, b) => a.name.localeCompare(b.name));
+
+    let html = '';
+    if (stores.length) {
+      html += `<tr class="rules-section"><td colspan="8">🏪 Harga khusus per toko — ${stores.length} toko</td></tr>`;
+      html += stores.map(st => storeGroupRowHtml(st)
+        + (expandedStores.has(st.cid) ? st.rules.map(r => ruleRowHtml(r, 'rule-detail-row')).join('') : '')).join('');
+    }
+    if (lainnya.length) {
+      html += `<tr class="rules-section"><td colspan="8">🏷️ Aturan umum, bersama beberapa toko &amp; grup varian — ${lainnya.length} aturan</td></tr>`;
+      html += lainnya.map(r => ruleRowHtml(r)).join('');
+    }
+    tbody.innerHTML = html;
+  }
+
+  // 1 baris ringkasan untuk semua harga khusus 1 toko
+  function storeGroupRowHtml(st) {
+    const TAMPIL = 4;
+    const aktif = st.rules.filter(r => r.is_active).length;
+    const items = st.rules.slice(0, TAMPIL).map(r => {
+      const minq = r.min_qty > 0 ? ` ≥${formatPersen(r.min_qty / 12)} lsn` : '';
+      return `<span class="sg-item" title="${escapeHtml((r.products?.name || '') + ' — ' + ruleDiscText(r) + minq)}">${escapeHtml(r.products?.name || '—')} <b>${escapeHtml(ruleDiscText(r))}</b>${minq ? `<span style="color:#94a3b8">${minq}</span>` : ''}</span>`;
+    }).join('');
+    const sisa = st.rules.length - TAMPIL;
+    const buka = expandedStores.has(st.cid);
+    return `
+      <tr class="store-group-row">
+        <td>
+          <div class="sg-name">🏪 ${escapeHtml(st.name)}</div>
+          <div class="sg-meta">${st.rules.length} produk${aktif < st.rules.length ? ` · ${st.rules.length - aktif} nonaktif` : ''}</div>
+        </td>
+        <td colspan="5"><div class="sg-items">${items}${sisa > 0 ? `<span class="sg-item" style="border-style:dashed;color:#64748b">+${sisa} lainnya</span>` : ''}</div></td>
+        <td style="text-align:center"><span class="badge badge-success">${aktif} aktif</span></td>
+        <td>
+          <div class="table-actions">
+            <button class="btn btn-ghost btn-sm" title="Edit semua harga khusus toko ini sekaligus" onclick="openStoreRules('${st.cid}')">✏️ Edit</button>
+            <button class="btn btn-ghost btn-sm" title="Tampilkan / sembunyikan rincian per produk" onclick="toggleStoreGroup('${st.cid}')">${buka ? '▾ Tutup' : '▸ Rincian'}</button>
+          </div>
+        </td>
+      </tr>`;
+  }
+
+  // 1 baris = 1 aturan (tampilan lama, juga dipakai untuk rincian per toko)
+  function ruleRowHtml(r, rowClass = '') {
       const isGroup = !!r.group_id;
       const targetCell = isGroup
         ? `<div><span class="badge badge-group">🔗 Grup</span><br><small style="color:#64748b">${escapeHtml(r.discount_groups?.name || '—')}</small></div>`
@@ -737,7 +832,7 @@
         : '<span class="text-muted" style="font-size:12px">Semua</span>';
 
       return `
-        <tr style="${!r.is_active ? 'opacity:.55;' : ''}">
+        <tr class="${rowClass}" style="${!r.is_active ? 'opacity:.55;' : ''}">
           <td>${targetCell}</td>
           <td>${customerCell}</td>
           <td>${r.description ? escapeHtml(r.description) : '<span class="text-muted">—</span>'}</td>
@@ -755,7 +850,6 @@
             </div>
           </td>
         </tr>`;
-    }).join('');
   }
 
   function clearFilters() {
