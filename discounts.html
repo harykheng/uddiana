@@ -55,6 +55,11 @@
     .store-equiv, .disc-equiv { font-size:10.5px; color:#64748b; margin-top:3px; white-space:nowrap; }
     .store-shared { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px 12px; font-size:12px; color:#92400e; margin-top:12px; }
     .cust-link { background:none; border:none; padding:0; cursor:pointer; }
+    .rule-check { width:16px; height:16px; cursor:pointer; }
+    #bulk-bar { display:none; align-items:center; gap:8px; font-size:13px; }
+    #bulk-bar.show { display:flex; }
+    .store-cust { font-size:11px; color:#991b1b; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
+    .store-row-focus td { background:#fefce8; }
   </style>
 </head>
 <body>
@@ -167,11 +172,17 @@
       <div class="card">
         <div class="card-header">
           <h3>Daftar Aturan Diskon <span id="rules-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
+          <div id="bulk-bar">
+            <span><strong id="bulk-count">0</strong> dipilih</span>
+            <button class="btn btn-primary btn-sm" onclick="openBulkEdit()">✏️ Edit Terpilih</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearRuleSelection()">Batal</button>
+          </div>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
+                <th style="width:34px;text-align:center"><input type="checkbox" class="rule-check" id="check-all-rules" onchange="toggleAllRules(this.checked)" title="Pilih semua aturan produk yang tampil"></th>
                 <th>Target</th>
                 <th>Customer</th>
                 <th>Deskripsi</th>
@@ -183,7 +194,7 @@
               </tr>
             </thead>
             <tbody id="rules-table">
-              <tr><td colspan="8" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
+              <tr><td colspan="9" class="text-center text-muted" style="padding:40px">Memuat data...</td></tr>
             </tbody>
           </table>
         </div>
@@ -352,13 +363,17 @@
 <div class="modal-overlay" id="modal-store">
   <div class="modal" style="max-width:1180px;width:96vw">
     <div class="modal-header">
-      <h3>🏪 Harga Khusus Toko</h3>
+      <h3 id="store-title">🏪 Harga Khusus Toko</h3>
       <button class="modal-close" onclick="closeModal('modal-store')">×</button>
     </div>
     <div class="modal-body">
-      <div class="form-group">
+      <div class="form-group" id="store-customer-wrap">
         <label>Toko / Customer *</label>
         <select id="store-customer"></select>
+      </div>
+      <div id="bulk-hint" class="form-hint" style="display:none;margin:0 0 10px;font-size:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:8px;padding:8px 12px">
+        Mengedit aturan yang dipilih sekaligus. Daftar toko tiap aturan <strong>tidak berubah</strong> (lihat tulisan merah di bawah nama produk) — untuk mengubah tokonya, pakai ⚙️ di tabel.
+        Tombol × di sini cuma mengeluarkan baris dari daftar edit, <strong>tidak menghapus</strong> aturannya.
       </div>
       <div class="form-hint" style="margin:-6px 0 12px;font-size:12px;line-height:1.5">
         Isi <strong>Diskon</strong> langsung, atau ketik <strong style="color:#15803d">Harga Jadi</strong> (per pcs / per lusin) — diskonnya dihitung otomatis.
@@ -384,7 +399,7 @@
             <tbody id="store-rows"></tbody>
           </table>
         </div>
-        <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="addStoreRow()">+ Tambah Produk</button>
+        <button class="btn btn-ghost btn-sm" id="store-add-btn" style="margin-top:10px" onclick="addStoreRow()">+ Tambah Produk</button>
         <div id="store-shared"></div>
       </div>
       <div id="store-empty" class="text-muted" style="padding:20px 0;text-align:center;font-size:13px">Pilih toko dulu.</div>
@@ -416,6 +431,9 @@
   let storeTomSelects    = {};    // rowId -> TomSelect produk
   let storeRowSeq        = 0;
   let storeLoadedRuleIds = [];    // aturan eksklusif toko ini saat modal dibuka
+  let storeMode          = 'store'; // 'store' = Harga Khusus Toko, 'bulk' = Edit Terpilih
+  let bulkRuleIds        = [];      // aturan yang sedang diedit massal
+  let selectedRuleIds    = new Set(); // centangan di tabel aturan
 
   const handleSearch = debounce(() => renderRules(), 300);
 
@@ -696,8 +714,10 @@
     document.getElementById('rules-count').textContent = filtered.length;
     const tbody = document.getElementById('rules-table');
 
+    renderedRuleIds = filtered.filter(r => !r.group_id).map(r => r.id);
+    updateBulkBar();
     if (!filtered.length) {
-      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🏷️</div><h4>Belum ada aturan diskon</h4><p>Klik <strong>+ Tambah Aturan Diskon</strong> untuk mulai.</p></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">🏷️</div><h4>Belum ada aturan diskon</h4><p>Klik <strong>+ Tambah Aturan Diskon</strong> untuk mulai.</p></div></td></tr>`;
       return;
     }
 
@@ -733,6 +753,9 @@
 
       return `
         <tr style="${!r.is_active ? 'opacity:.55;' : ''}">
+          <td style="text-align:center">${isGroup
+            ? '<span class="text-muted" title="Aturan grup diedit satu per satu (harga tiap varian bisa beda)">—</span>'
+            : `<input type="checkbox" class="rule-check" ${selectedRuleIds.has(r.id) ? 'checked' : ''} onchange="toggleRuleSelect('${r.id}', this.checked)">`}</td>
           <td>${targetCell}</td>
           <td>${customerCell}</td>
           <td>${r.description ? escapeHtml(r.description) : '<span class="text-muted">—</span>'}</td>
@@ -742,12 +765,40 @@
           <td style="text-align:center">${status}</td>
           <td>
             <div class="table-actions">
-              <button class="btn btn-ghost btn-sm" onclick="openEditRule('${r.id}')">✏️ Edit</button>
+              ${!isGroup && r.customer_ids.length === 1
+                ? `<button class="btn btn-ghost btn-sm" title="Edit semua harga khusus toko ini sekaligus" onclick="openStoreRules('${r.customer_ids[0]}', '${r.id}')">✏️ Edit</button>
+                   <button class="btn btn-ghost btn-sm" title="Edit detail aturan ini saja (daftar toko, deskripsi)" onclick="openEditRule('${r.id}')">⚙️</button>`
+                : `<button class="btn btn-ghost btn-sm" onclick="openEditRule('${r.id}')">✏️ Edit</button>`}
               <button class="btn btn-danger btn-sm" onclick="deleteRule('${r.id}')">Hapus</button>
             </div>
           </td>
         </tr>`;
     }).join('');
+  }
+
+  /* ─── PILIH BANYAK ATURAN (Edit Terpilih) ─────────── */
+  let renderedRuleIds = [];   // aturan produk yang sedang tampil (bisa dicentang)
+
+  function toggleRuleSelect(id, on) {
+    if (on) selectedRuleIds.add(id); else selectedRuleIds.delete(id);
+    updateBulkBar();
+  }
+  function toggleAllRules(on) {
+    renderedRuleIds.forEach(id => on ? selectedRuleIds.add(id) : selectedRuleIds.delete(id));
+    renderRules();
+  }
+  function clearRuleSelection() {
+    selectedRuleIds.clear();
+    renderRules();
+  }
+  function updateBulkBar() {
+    // Buang centangan untuk aturan yang sudah tidak ada (dihapus / dimuat ulang)
+    const ada = new Set(allRules.map(r => r.id));
+    [...selectedRuleIds].forEach(id => { if (!ada.has(id)) selectedRuleIds.delete(id); });
+    document.getElementById('bulk-count').textContent = selectedRuleIds.size;
+    document.getElementById('bulk-bar').classList.toggle('show', selectedRuleIds.size > 0);
+    const all = document.getElementById('check-all-rules');
+    if (all) all.checked = renderedRuleIds.length > 0 && renderedRuleIds.every(id => selectedRuleIds.has(id));
   }
 
   function clearFilters() {
@@ -1007,10 +1058,51 @@
     return parseFloat(String(v || '').replace(/\s/g, '').replace(',', '.')) || 0;
   }
 
-  function openStoreRules(customerId = '') {
+  // Modal yang sama dipakai 2 mode: 'store' (semua harga khusus 1 toko, boleh tambah
+  // & hapus) dan 'bulk' (Edit Terpilih: aturan pilihan dari tabel, cuma diubah nilainya).
+  function setStoreMode(mode) {
+    storeMode = mode;
+    const bulk = mode === 'bulk';
+    document.getElementById('store-customer-wrap').style.display = bulk ? 'none' : '';
+    document.getElementById('bulk-hint').style.display = bulk ? '' : 'none';
+    document.getElementById('store-add-btn').style.display = bulk ? 'none' : '';
+    document.getElementById('store-shared').style.display = bulk ? 'none' : '';
+    document.getElementById('btn-save-store').innerHTML = bulk ? '💾 Simpan Perubahan' : '💾 Simpan Semua';
+  }
+
+  // focusRuleId: baris aturan yang diklik ✏️ Edit di tabel → disorot
+  function openStoreRules(customerId = '', focusRuleId = '') {
+    setStoreMode('store');
+    document.getElementById('store-title').textContent = '🏪 Harga Khusus Toko';
     storeCustomerSelect?.setValue(customerId || '', true);   // silent: loadStoreRows dipanggil sendiri
     loadStoreRows(customerId || '');
     openModal('modal-store');
+    if (focusRuleId) {
+      const tr = document.querySelector(`#store-rows tr[data-rule-id="${focusRuleId}"]`);
+      if (tr) { tr.classList.add('store-row-focus'); setTimeout(() => tr.scrollIntoView({ block: 'center' }), 50); }
+    }
+  }
+
+  function openBulkEdit(ids = null) {
+    ids = ids || [...selectedRuleIds];
+    const rules = ids.map(id => allRules.find(r => r.id === id)).filter(r => r && !r.group_id)
+      .sort((a, b) => (a.products?.name || '').localeCompare(b.products?.name || '') || (a.min_qty - b.min_qty));
+    if (!rules.length) { showToast('Pilih minimal 1 aturan produk', 'error'); return; }
+    setStoreMode('bulk');
+    bulkRuleIds = rules.map(r => r.id);
+    storeLoadedRuleIds = [];   // mode ini tidak pernah menghapus aturan
+    clearStoreRows();
+    document.getElementById('store-title').textContent = `✏️ Edit ${rules.length} Aturan Sekaligus`;
+    document.getElementById('store-body').style.display = '';
+    document.getElementById('store-empty').style.display = 'none';
+    rules.forEach(r => addStoreRow(r));
+    openModal('modal-store');
+  }
+
+  function ruleCustomerLabel(r) {
+    const names = (r.product_discount_rule_customers || []).map(x => x.customers?.name).filter(Boolean);
+    if (!names.length) return 'Semua toko (aturan umum)';
+    return '🏪 ' + (names.length <= 2 ? names.join(', ') : `${names.length} toko: ${names.join(', ')}`);
   }
 
   function clearStoreRows() {
@@ -1048,6 +1140,8 @@
     const tr   = document.createElement('tr');
     tr.id = id;
     tr.dataset.ruleId = rule?.id || '';
+    // Kunci daftar toko — dipakai cek duplikat produk+min qty di mode Edit Terpilih
+    tr.dataset.custKey = rule ? [...rule.customer_ids].sort().join(',') : '';
     const type    = rule?.discount_type || 'percent';
     const minLsn  = rule?.min_qty > 0 ? rule.min_qty / 12 : 0;
     const d1Text  = rule ? (type === 'nominal' ? Number(rule.discount_value).toLocaleString('id-ID') : formatPersen(rule.discount_value)) : '0';
@@ -1056,7 +1150,7 @@
     const inactiveOpt = rule?.product_id && !productById.has(rule.product_id)
       ? `<option value="${rule.product_id}">${escapeHtml((rule.products?.name || 'Produk') + ' (nonaktif)')}</option>` : '';
     tr.innerHTML = `
-      <td><select id="${id}-prod"><option value=""></option>${inactiveOpt}</select></td>
+      <td><select id="${id}-prod"><option value=""></option>${inactiveOpt}</select>${storeMode === 'bulk' && rule ? `<div class="store-cust" title="${escapeHtml(ruleCustomerLabel(rule))}">${escapeHtml(ruleCustomerLabel(rule))}</div>` : ''}</td>
       <td><div class="store-normal" id="${id}-normal">—</div></td>
       <td><input type="text" inputmode="decimal" class="num" id="${id}-minqty" value="${formatPersen(minLsn)}" title="0 = tanpa syarat. Boleh 0,5"></td>
       <td><input type="text" inputmode="numeric" data-number class="num" id="${id}-minamt" value="${rule?.min_amount > 0 ? Number(rule.min_amount).toLocaleString('id-ID') : '0'}" title="0 = tanpa syarat nilai beli"></td>
@@ -1075,7 +1169,7 @@
       <td><input type="text" inputmode="numeric" data-number class="num target-input" id="${id}-tpcs" oninput="onStoreTarget('${id}','pcs')" onchange="refreshStoreRow('${id}')"></td>
       <td><input type="text" inputmode="numeric" data-number class="num target-input" id="${id}-tlsn" oninput="onStoreTarget('${id}','lsn')" onchange="refreshStoreRow('${id}')"></td>
       <td style="text-align:center"><input type="checkbox" id="${id}-active" ${rule ? (rule.is_active ? 'checked' : '') : 'checked'} style="width:16px;height:16px"></td>
-      <td><button onclick="removeStoreRow('${id}')" title="Hapus baris" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;line-height:1">×</button></td>`;
+      <td><button onclick="removeStoreRow('${id}')" title="${storeMode === 'bulk' ? 'Keluarkan dari daftar edit (aturan tidak dihapus)' : 'Hapus baris'}" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;line-height:1">×</button></td>`;
     document.getElementById('store-rows').appendChild(tr);
 
     const sel = document.getElementById(`${id}-prod`);
@@ -1191,8 +1285,9 @@
   }
 
   async function saveStoreRules() {
-    const cid = storeCustomerSelect?.getValue();
-    if (!cid) { showToast('Pilih toko terlebih dahulu', 'error'); return; }
+    const bulk = storeMode === 'bulk';
+    const cid = bulk ? null : storeCustomerSelect?.getValue();
+    if (!bulk && !cid) { showToast('Pilih toko terlebih dahulu', 'error'); return; }
     const btn = document.getElementById('btn-save-store');
 
     const items = [];
@@ -1210,8 +1305,9 @@
       else if (d1 <= 0) err = `"${nama}": diskon / harga jadi belum diisi`;
       else if (type === 'percent' && (d1 > 100 || d2 > 100)) err = `"${nama}": persentase tidak boleh melebihi 100%`;
       else if (type === 'nominal' && price > 0 && d1 >= price) err = `"${nama}": diskon Rp tidak boleh ≥ harga normal`;
-      else if (seen.has(`${productId}|${minQty}`)) err = `"${nama}" muncul 2× dengan Min. Qty yang sama — bedakan Min. Qty-nya atau hapus salah satu`;
-      seen.add(`${productId}|${minQty}`);
+      const key = `${productId}|${minQty}|${bulk ? tr.dataset.custKey : ''}`;
+      if (!err && seen.has(key)) err = `"${nama}" muncul 2× dengan Min. Qty ${bulk ? 'dan toko ' : ''}yang sama — bedakan Min. Qty-nya atau ${bulk ? 'ubah salah satu' : 'hapus salah satu'}`;
+      seen.add(key);
       if (err) { tr.classList.add('store-row-err'); firstErr = firstErr || err; return; }
       items.push({
         ruleId: tr.dataset.ruleId || null,
@@ -1229,13 +1325,14 @@
       });
     });
     if (firstErr) { showToast(firstErr, 'error'); return; }
+    if (bulk && !items.length) { showToast('Tidak ada aturan di daftar edit', 'error'); return; }
 
     const keepIds  = new Set(items.filter(x => x.ruleId).map(x => x.ruleId));
     const toDelete = storeLoadedRuleIds.filter(rid => !keepIds.has(rid));
     if (toDelete.length && !confirm(`${toDelete.length} harga khusus toko ini dihapus dari daftar. Lanjut simpan?`)) return;
 
     setLoading(btn, true);
-    showFullLoading('Menyimpan harga khusus toko...');
+    showFullLoading(bulk ? 'Menyimpan perubahan aturan...' : 'Menyimpan harga khusus toko...');
     const fails = [];
     try {
       for (const x of items) {
@@ -1255,11 +1352,13 @@
       }
       await loadRules();
       if (fails.length) {
-        loadStoreRows(cid);   // tampilkan keadaan terbaru dari database
+        // tampilkan keadaan terbaru dari database
+        if (bulk) openBulkEdit(items.map(x => x.ruleId)); else loadStoreRows(cid);
         showToast(`Sebagian gagal disimpan — ${fails.join(' · ')}`, 'error');
       } else {
         closeModal('modal-store');
-        showToast(`Harga khusus toko tersimpan (${items.length} produk)`, 'success');
+        if (bulk) { selectedRuleIds.clear(); renderRules(); }
+        showToast(bulk ? `${items.length} aturan diperbarui` : `Harga khusus toko tersimpan (${items.length} produk)`, 'success');
       }
     } finally {
       hideFullLoading();
