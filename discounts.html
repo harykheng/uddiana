@@ -55,6 +55,11 @@
     .store-equiv, .disc-equiv { font-size:10.5px; color:#64748b; margin-top:3px; white-space:nowrap; }
     .store-shared { background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px 12px; font-size:12px; color:#92400e; margin-top:12px; }
     .cust-link { background:none; border:none; padding:0; cursor:pointer; }
+    .store-row-focus td { background:#fefce8; }
+    .store-row-split td { background:#f0fdf4; }
+    .store-split-note { font-size:10.5px; color:#15803d; margin-top:3px; }
+    .store-shared li { margin-bottom:4px; }
+    .store-shared .btn-split { margin-left:6px; padding:2px 8px; font-size:11px; border:1px solid #f59e0b; background:#fff; color:#92400e; border-radius:6px; cursor:pointer; }
   </style>
 </head>
 <body>
@@ -742,7 +747,10 @@
           <td style="text-align:center">${status}</td>
           <td>
             <div class="table-actions">
-              <button class="btn btn-ghost btn-sm" onclick="openEditRule('${r.id}')">✏️ Edit</button>
+              ${!isGroup && r.customer_ids.length === 1
+                ? `<button class="btn btn-ghost btn-sm" title="Edit semua harga khusus toko ini sekaligus" onclick="openStoreRules('${r.customer_ids[0]}', '${r.id}')">✏️ Edit</button>
+                   <button class="btn btn-ghost btn-sm" title="Edit detail aturan ini saja (daftar toko, deskripsi)" onclick="openEditRule('${r.id}')">⚙️</button>`
+                : `<button class="btn btn-ghost btn-sm" onclick="openEditRule('${r.id}')">✏️ Edit</button>`}
               <button class="btn btn-danger btn-sm" onclick="deleteRule('${r.id}')">Hapus</button>
             </div>
           </td>
@@ -1007,10 +1015,41 @@
     return parseFloat(String(v || '').replace(/\s/g, '').replace(',', '.')) || 0;
   }
 
-  function openStoreRules(customerId = '') {
+  // focusRuleId: baris aturan yang diklik ✏️ Edit di tabel utama → disorot
+  function openStoreRules(customerId = '', focusRuleId = '') {
     storeCustomerSelect?.setValue(customerId || '', true);   // silent: loadStoreRows dipanggil sendiri
     loadStoreRows(customerId || '');
     openModal('modal-store');
+    if (focusRuleId) {
+      const tr = document.querySelector(`#store-rows tr[data-rule-id="${focusRuleId}"]`);
+      if (tr) { tr.classList.add('store-row-focus'); setTimeout(() => tr.scrollIntoView({ block: 'center' }), 50); }
+    }
+  }
+
+  // Aturan "bersama" (1 aturan untuk beberapa toko) → disalin jadi baris baru milik
+  // toko ini saja. Saat Simpan, aturan baru dibuat dulu, BARU toko ini dilepas dari
+  // aturan bersama (lihat saveStoreRules) — toko lain di aturan itu tidak berubah.
+  function splitSharedToStore(ruleId) {
+    const r = allRules.find(x => x.id === ruleId);
+    if (!r) return;
+    const id = addStoreRow({ ...r, id: null, is_active: true });
+    const tr = document.getElementById(id);
+    tr.classList.add('store-row-split');
+    tr.dataset.splitFrom = ruleId;
+    tr.querySelector('td').insertAdjacentHTML('beforeend',
+      `<div class="store-split-note">Disalin dari aturan bersama — ubah harganya, lalu Simpan</div>`);
+    const btn = document.querySelector(`.btn-split[data-rule="${ruleId}"]`);
+    if (btn) { btn.disabled = true; btn.textContent = '✓ disalin ke tabel'; }
+    setTimeout(() => tr.scrollIntoView({ block: 'center' }), 50);
+  }
+
+  // Aturan bersama (beberapa toko) yang berisi toko ini, produk & min qty sama —
+  // kalau dibiarkan, faktur menganggap keduanya sama-sama "khusus toko" dan harga
+  // yang menang jadi tidak jelas. Toko ini dilepas dari aturan bersama itu.
+  function sharedRulesToDetach(cid, productId, minQty) {
+    return allRules.filter(r => !r.group_id && r.product_id === productId
+      && Number(r.min_qty || 0) === minQty
+      && r.customer_ids.length > 1 && r.customer_ids.includes(cid));
   }
 
   function clearStoreRows() {
@@ -1036,9 +1075,12 @@
     const shared = allRules.filter(r => r.customer_ids.includes(cid) && !isStoreExclusiveRule(r, cid));
     document.getElementById('store-shared').innerHTML = shared.length ? `
       <div class="store-shared">
-        <strong>Aturan lain yang juga berlaku untuk toko ini</strong> — dipakai bersama toko lain atau berbasis grup varian, jadi diedit lewat tabel utama supaya toko lain tidak ikut berubah tanpa sadar:
+        <strong>Aturan bersama yang juga berlaku untuk toko ini</strong> — 1 aturan dipakai beberapa toko sekaligus, jadi mengubahnya ikut mengubah toko lain.
+        Supaya harga toko ini bisa beda sendiri, klik <strong>Jadikan khusus toko ini</strong>: aturannya disalin ke tabel di atas, dan saat Simpan toko ini dilepas dari aturan bersama (toko lain tetap).
         <ul style="margin:6px 0 0 18px">
-          ${shared.map(r => `<li>${escapeHtml(r.group_id ? '🔗 ' + (r.discount_groups?.name || '—') : (r.products?.name || '—'))} — ${ruleDiscText(r)}${r.min_qty > 0 ? ` (≥${formatPersen(r.min_qty / 12)} lsn)` : ''}${r.customer_ids.length > 1 ? ` · bersama ${r.customer_ids.length} toko` : ''}</li>`).join('')}
+          ${shared.map(r => `<li>${escapeHtml(r.group_id ? '🔗 ' + (r.discount_groups?.name || '—') : (r.products?.name || '—'))} — ${ruleDiscText(r)}${r.min_qty > 0 ? ` (≥${formatPersen(r.min_qty / 12)} lsn)` : ''}${r.customer_ids.length > 1 ? ` · bersama ${r.customer_ids.length} toko` : ''}${!r.group_id && r.customer_ids.length > 1
+            ? `<button type="button" class="btn-split" data-rule="${r.id}" onclick="splitSharedToStore('${r.id}')">Jadikan khusus toko ini</button>`
+            : (r.group_id ? ' <span style="color:#a16207">(grup varian — edit lewat tabel utama)</span>' : '')}</li>`).join('')}
         </ul>
       </div>` : '';
   }
@@ -1234,6 +1276,16 @@
     const toDelete = storeLoadedRuleIds.filter(rid => !keepIds.has(rid));
     if (toDelete.length && !confirm(`${toDelete.length} harga khusus toko ini dihapus dari daftar. Lanjut simpan?`)) return;
 
+    // Baris baru yang bentrok dengan aturan bersama (produk & min qty sama) →
+    // toko ini dilepas dari aturan bersama itu setelah aturan barunya tersimpan
+    items.filter(x => !x.ruleId).forEach(x => {
+      x.detach = sharedRulesToDetach(cid, x.payload.product_id, x.payload.min_qty);
+    });
+    const detachNames = items.filter(x => x.detach?.length).map(x => x.nama);
+    if (detachNames.length && !confirm(
+      `Toko ini akan dilepas dari aturan bersama untuk: ${detachNames.join(', ')}.\n` +
+      `Toko lain di aturan bersama itu TIDAK berubah. Lanjut simpan?`)) return;
+
     setLoading(btn, true);
     showFullLoading('Menyimpan harga khusus toko...');
     const fails = [];
@@ -1247,7 +1299,14 @@
         // Aturan baru: lewat jalur aman yang sama dengan form Tambah Aturan
         // (nonaktif dulu → tautkan ke toko → aktifkan; gagal tautkan = dihapus lagi)
         const err = await insertRuleWithCustomers(x.payload, [cid]);
-        if (err) fails.push(`${x.nama}: ${err.message}`);
+        if (err) { fails.push(`${x.nama}: ${err.message}`); continue; }
+        // Baru setelah aturan khusus toko ini tersimpan, toko ini dilepas dari aturan
+        // bersama — jadi tidak ada jeda di mana toko ini kehilangan harga khususnya.
+        for (const sr of (x.detach || [])) {
+          const { error: detErr } = await supabase.from('product_discount_rule_customers')
+            .delete().eq('rule_id', sr.id).eq('customer_id', cid);
+          if (detErr) fails.push(`${x.nama}: aturan baru tersimpan, tapi gagal melepas dari aturan bersama (${detErr.message})`);
+        }
       }
       if (toDelete.length) {
         const { error } = await supabase.from('product_discount_rules').delete().in('id', toDelete);
