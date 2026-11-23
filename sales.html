@@ -507,6 +507,7 @@
       <div class="form-group">
         <label>Toko / Customer</label>
         <select id="absen-customer"></select>
+        <button type="button" class="btn btn-ghost btn-full" onclick="openAbsenNewStore()" style="border:1.5px dashed var(--border);color:var(--primary);font-size:13px;margin-top:8px">➕ Toko baru (belum ada di daftar)</button>
       </div>
 
       <div class="form-group">
@@ -1099,7 +1100,11 @@
 
   function closeNewCustomerModal() {
     document.getElementById('modal-new-customer').classList.remove('open');
+    // Batal: TomSelect mengunci dropdown sampai callback create dipanggil —
+    // tanpa ini dropdown macet setelah modal ditutup tanpa simpan
+    const cb = newCustomerCallback;
     newCustomerCallback = null;
+    if (cb) cb();
   }
 
   async function confirmNewCustomer() {
@@ -1125,7 +1130,9 @@
     customers.push(data);
     await autoScheduleNewStore(data.id);
     const label = data.name + (data.store_name ? ' — ' + data.store_name : '');
-    if (newCustomerCallback) newCustomerCallback({ value: data.id, text: label });
+    const cb = newCustomerCallback;
+    newCustomerCallback = null;   // supaya closeNewCustomerModal() tidak memanggilnya lagi
+    if (cb) cb({ value: data.id, text: label });
     // Toko baru dari tab Hari Ini belum ada di dropdown faktur & absen
     [customerTS, absenCustomerTS].forEach(ts => {
       if (ts && !ts.options[data.id]) ts.addOption({ value: data.id, text: label });
@@ -2503,8 +2510,8 @@ function recalcTotal() {
   }
 
   // Dipanggil confirmNewCustomer() setelah toko baru dari tab ini tersimpan
-  function tvAfterNewStore() {
-    loadToday();
+  function tvAfterNewStore(created) {
+    if (created) loadToday();
   }
 
   // Toko yang sudah diabsen hari ini (oleh siapa pun)
@@ -2571,7 +2578,35 @@ function recalcTotal() {
         value: c.id,
         text: c.name + (c.store_name ? ' — ' + c.store_name : '')
       })),
+      // Toko baru bisa didaftarkan langsung dari sini (sama dengan form faktur),
+      // jadi sales tidak perlu bolak-balik ke tab Buat Faktur dulu
+      create: function(input, callback) {
+        openNewCustomerModal(input, created => {
+          callback(created);
+          if (created && jadwalEnabled) loadToday();
+        });
+      },
+      createFilter: function(input) { return input.trim().length >= 1; },
+      render: {
+        option_create: function(data, escape) {
+          return `<div class="create" style="color:#2563eb">➕ Tambah toko baru: <strong>${escape(data.input)}</strong></div>`;
+        }
+      },
       onChange: updateAbsenSubmitState
+    });
+  }
+
+  // Tombol "➕ Toko baru" di bawah dropdown absen
+  function openAbsenNewStore() {
+    const typed = absenCustomerTS?.lastQuery || '';
+    absenCustomerTS?.close();
+    openNewCustomerModal(typed, created => {
+      if (!created) return;
+      if (absenCustomerTS) {
+        if (!absenCustomerTS.options[created.value]) absenCustomerTS.addOption(created);
+        absenCustomerTS.setValue(created.value);
+      }
+      if (jadwalEnabled) loadToday();
     });
   }
 
