@@ -127,6 +127,29 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Gabung nama customer + nama toko tanpa dobel. Sales sering mengisi dua kolom
+// dengan isi sama ("Toko Sejahtera" - "Toko Sejahtera") atau nama customer cuma
+// "TOKO" / "Bu" lalu nama lengkapnya di nama toko. Aturan (dibandingkan per kata,
+// abaikan huruf besar/kecil & tanda baca):
+//  - salah satu kosong → yang terisi
+//  - nama customer cuma kata umum (toko, tk, bu, pak, ...) → nama toko saja
+//  - semua kata yang satu sudah ada di yang lain → yang lebih lengkap saja
+//  - selain itu → "customer - toko" (format lama)
+// Mengembalikan teks polos — pemanggil tetap wajib escapeHtml().
+const NAMA_UMUM = new Set(['toko','tk','tok','warung','wr','kios','agen','ibu','bu','bpk','pak','bapak','mbak','mba','kak','cv','ud','pt']);
+function namaCustomerToko(customerName, storeName, sep = ' - ') {
+  const cust  = (customerName || '').trim();
+  const store = (storeName || '').trim();
+  const kata  = s => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  const kc = kata(cust), ks = kata(store);
+  if (!ks.length) return cust;
+  if (!kc.length || kc.every(w => NAMA_UMUM.has(w))) return store;
+  const setC = new Set(kc), setS = new Set(ks);
+  if (kc.every(w => setS.has(w))) return store;
+  if (ks.every(w => setC.has(w))) return cust;
+  return cust + sep + store;
+}
+
 function stockBadge(qty, min) {
   if (qty <= 0) return `<span class="badge badge-danger">Habis</span>`;
   if (qty <= min) return `<span class="badge badge-warning">Menipis</span>`;
