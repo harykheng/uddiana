@@ -22,6 +22,7 @@
     .ts-dropdown .option { padding:8px 12px; }
     .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
     .ts-dropdown { z-index:9999 !important; }
+    .cost-chg { font-size:10.5px; line-height:1.35; margin-top:3px; white-space:nowrap; }
     .ts-dropdown .create { padding:9px 12px; color:#15803d; font-weight:600; border-top:1px dashed #bbf7d0; }
     .ts-dropdown .create.active { background:#f0fdf4; color:#166534; }
   </style>
@@ -448,7 +449,7 @@
       </td>
       <td style="padding:5px 6px"><input type="number" id="postock-${id}" readonly value="0" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="number" id="poqty-${id}" value="1" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
-      <td class="col-harga-modal-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
+      <td class="col-harga-modal-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"><div id="pocostchg-${id}" class="cost-chg"></div></td>
       <td style="padding:5px 6px"><input type="text" id="pobatch-${id}" placeholder="No. Lot" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="date" id="poexpiry-${id}" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="text" id="posub-${id}" readonly value="0" style="background:#f8fafc;width:90px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
@@ -630,9 +631,44 @@
 
   function onPoProductSelect(sel, rowId) {
     const prod = products.find(p => p.id === sel.value);
+    setCostBase(rowId, prod);
     document.getElementById(`postock-${rowId}`).value = prod?.stock_quantity ?? 0;
     document.getElementById(`pocost-${rowId}`).value  = Number(prod?.cost || 0).toLocaleString('id-ID');
     recalcPoRow(rowId);
+  }
+
+  // ── TANDA HARGA MODAL NAIK / TURUN ──────────────────────────
+  // Dibandingkan dengan harga modal terakhir produk (products.cost — diisi trigger
+  // dari pembelian terbaru, lihat migration34). Baris lama di Edit PO dibandingkan
+  // dengan harga yang tersimpan di PO itu. Kolom ini cuma tampil untuk super_admin.
+  function setCostBase(rowId, prod) {
+    const tr = document.getElementById(rowId);
+    if (!tr) return;
+    if (prod) { tr.dataset.baseCost = Number(prod.cost || 0); tr.dataset.baseLabel = 'terakhir'; }
+    else { delete tr.dataset.baseCost; delete tr.dataset.baseLabel; }
+  }
+
+  function costChangeHtml(cost, base, label) {
+    if (!(base > 0)) {
+      return cost > 0 ? '<span style="color:#2563eb">🆕 modal pertama</span>' : '';
+    }
+    if (!(cost > 0)) return '<span style="color:#b45309">⚠️ belum diisi</span>';
+    const diff = cost - base;
+    if (diff === 0) return `<span style="color:#64748b">= sama dgn ${label}</span>`;
+    const pct = formatPersen(Math.round(Math.abs(diff) / base * 1000) / 10);
+    const naik = diff > 0;
+    return `<span style="color:${naik ? '#dc2626' : '#16a34a'};font-weight:700">${naik ? '▲ naik' : '▼ turun'} ${formatCurrency(Math.abs(diff))} (${pct}%)</span>`
+      + `<br><span style="color:#94a3b8">${label}: ${formatCurrency(base)}</span>`;
+  }
+
+  function renderCostChange(rowId, elId, cost) {
+    const el = document.getElementById(elId);
+    const tr = document.getElementById(rowId);
+    if (!el || !tr) return;
+    const hasProduct = !!tr.querySelector('select')?.value;
+    el.innerHTML = hasProduct && tr.dataset.baseCost !== undefined
+      ? costChangeHtml(cost, Number(tr.dataset.baseCost), tr.dataset.baseLabel || 'terakhir')
+      : '';
   }
 
   function recalcPoRow(rowId) {
@@ -640,6 +676,7 @@
     const cost = parseFormattedNumber(document.getElementById(`pocost-${rowId}`)?.value || '0');
     const sub  = document.getElementById(`posub-${rowId}`);
     if (sub) sub.value = (qty * cost).toLocaleString('id-ID');
+    renderCostChange(rowId, `pocostchg-${rowId}`, cost);
     recalcPoTotal();
   }
 
@@ -1331,6 +1368,8 @@
     // id purchase_items lama — dipakai edit_purchase() untuk membawa serta batch_number
     // & expired_date milik baris ini (form edit tidak punya input untuk keduanya).
     tr.dataset.itemId = existing?.id || '';
+    // Pembanding tanda naik/turun: baris lama = harga modal yang tersimpan di PO ini
+    if (existing) { tr.dataset.baseCost = Number(existing.cost_price || 0); tr.dataset.baseLabel = 'tersimpan'; }
     tr.innerHTML = `
       <td style="padding:5px 6px">
         <select style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px">
@@ -1340,7 +1379,7 @@
       </td>
       <td style="padding:5px 6px"><input type="number" id="epostock-${id}" readonly value="${existing ? (products.find(p=>p.id===existing.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="number" id="epoqty-${id}" value="${existing ? existing.quantity : 1}" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"></td>
-      <td class="col-harga-modal-edit-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="epocost-${id}" value="${existing ? Number(existing.cost_price||0).toLocaleString('id-ID') : '0'}" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"></td>
+      <td class="col-harga-modal-edit-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="epocost-${id}" value="${existing ? Number(existing.cost_price||0).toLocaleString('id-ID') : '0'}" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"><div id="epocostchg-${id}" class="cost-chg"></div></td>
       <td style="padding:5px 6px"><input type="text" id="eposub-${id}" readonly value="${existing ? Number(existing.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcEditPoTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
@@ -1357,6 +1396,7 @@
 
   function onEditPoProductSelect(sel, rowId) {
     const prod = products.find(p => p.id === sel.value);
+    setCostBase(rowId, prod);
     document.getElementById(`epostock-${rowId}`).value = prod?.stock_quantity ?? 0;
     document.getElementById(`epocost-${rowId}`).value  = Number(prod?.cost || 0).toLocaleString('id-ID');
     recalcEditPoRow(rowId);
@@ -1367,6 +1407,7 @@
     const cost = parseFormattedNumber(document.getElementById(`epocost-${rowId}`)?.value || '0');
     const sub  = document.getElementById(`eposub-${rowId}`);
     if (sub) sub.value = (qty * cost).toLocaleString('id-ID');
+    renderCostChange(rowId, `epocostchg-${rowId}`, cost);
     recalcEditPoTotal();
   }
 
