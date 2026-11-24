@@ -33,6 +33,17 @@
     .cost-chg.same  { background:#f1f5f9; color:#64748b; }
     .cost-chg.new   { background:#dbeafe; color:#1d4ed8; }
     .cost-chg.empty { background:#fef3c7; color:#b45309; }
+    .cost-chg[data-tip] { cursor:pointer; user-select:none; -webkit-tap-highlight-color:transparent; }
+    .cost-chg[data-tip]:hover, .cost-chg.tip-open { box-shadow:0 0 0 2px rgba(15,23,42,.12); }
+    /* Kotak rincian saat label diketuk — di <body> & position:fixed supaya tidak
+       terpotong overflow tabel/modal, z-index di atas modal (200) */
+    #cost-tip { position:fixed; z-index:10000; max-width:260px; padding:8px 11px; border-radius:8px;
+      background:#0f172a; color:#fff; font-size:12px; line-height:1.45; box-shadow:0 8px 24px rgba(0,0,0,.2);
+      pointer-events:none; }
+    #cost-tip::after { content:''; position:absolute; left:var(--arrow-x, 50%); transform:translateX(-50%);
+      border:6px solid transparent; }
+    #cost-tip.below::after { bottom:100%; border-bottom-color:#0f172a; }
+    #cost-tip.above::after { top:100%; border-top-color:#0f172a; }
     .ts-dropdown .create { padding:9px 12px; color:#15803d; font-weight:600; border-top:1px dashed #bbf7d0; }
     .ts-dropdown .create.active { background:#f0fdf4; color:#166534; }
   </style>
@@ -675,6 +686,65 @@
     };
   }
 
+  // Rincian tanda harga modal dibuka dengan KETUK/klik label (bukan hover), supaya
+  // jalan juga di HP/tablet. Satu kotak dipakai bersama, ditutup oleh ketukan di
+  // luar label, ketukan ulang, scroll, atau Esc.
+  let costTipOwner = null;   // label yang kotak rinciannya sedang terbuka
+
+  function setCostTip(el, c) {
+    if (costTipOwner === el) closeCostTip();   // isi label berubah → rincian lama basi
+    if (c?.title) {
+      el.dataset.tip = c.title;
+      el.setAttribute('role', 'button');
+      el.tabIndex = 0;
+    } else {
+      delete el.dataset.tip;
+      el.removeAttribute('role');
+      el.removeAttribute('tabindex');
+    }
+  }
+
+  function closeCostTip() {
+    document.getElementById('cost-tip')?.remove();
+    costTipOwner?.classList.remove('tip-open');
+    costTipOwner = null;
+  }
+
+  function openCostTip(el) {
+    closeCostTip();
+    const tip = document.createElement('div');
+    tip.id = 'cost-tip';
+    tip.textContent = el.dataset.tip;
+    document.body.appendChild(tip);
+    el.classList.add('tip-open');
+    costTipOwner = el;
+    const r = el.getBoundingClientRect();
+    const w = tip.offsetWidth, h = tip.offsetHeight, gap = 8;
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8));
+    const below = r.bottom + gap + h <= window.innerHeight - 8;
+    tip.style.left = left + 'px';
+    tip.style.top  = (below ? r.bottom + gap : r.top - gap - h) + 'px';
+    tip.style.setProperty('--arrow-x', (r.left + r.width / 2 - left) + 'px');
+    tip.classList.add(below ? 'below' : 'above');
+  }
+
+  document.addEventListener('click', e => {
+    const el = e.target.closest?.('.cost-chg[data-tip]');
+    if (!el) { closeCostTip(); return; }
+    if (costTipOwner === el) closeCostTip(); else openCostTip(el);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeCostTip();
+    const el = e.target.closest?.('.cost-chg[data-tip]');
+    if (el && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      if (costTipOwner === el) closeCostTip(); else openCostTip(el);
+    }
+  });
+  // capture: scroll di dalam modal/tabel juga menutup kotak (posisinya fixed)
+  window.addEventListener('scroll', closeCostTip, true);
+  window.addEventListener('resize', closeCostTip);
+
   function renderCostChange(rowId, elId, cost) {
     const el = document.getElementById(elId);
     const tr = document.getElementById(rowId);
@@ -685,7 +755,7 @@
       : null;
     el.className = 'cost-chg' + (c ? ' ' + c.cls : '');
     el.textContent = c ? c.text : '';
-    el.title = c ? c.title : '';
+    setCostTip(el, c);
   }
 
   function recalcPoRow(rowId) {
@@ -1095,7 +1165,7 @@
       if (c && !prev) c.title = 'Pembelian pertama produk ini';
       el.className = 'cost-chg' + (c ? ' ' + c.cls : '');
       el.textContent = c ? c.text : '';
-      el.title = c ? c.title : '';
+      setCostTip(el, c);
     }
   }
 
