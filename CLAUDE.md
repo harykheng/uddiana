@@ -24,7 +24,7 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 │   │                        homePageForRole(), signOut(), updateSidebarUser(), mobile sidebar (hamburger)
 │   ├── utils.js           ← formatCurrency, formatDate, modal, toast, number format, debounce,
 │   │                        hitungSubtotalBaris, cariPersenUntukSubtotal, formatPersen,
-│   │                        potonganPerPcs, labelSetaraDiskon
+│   │                        potonganPerPcs, labelSetaraDiskon, generateSKU, belumAdaHargaJual
 │   └── jadwal.js          ← helper Jadwal Kunjungan: HARI, localDateISO, fetchVisitFacts, computeVisitStatus
 ├── css/
 │   └── style.css          ← CSS global + mobile responsive + sidebar overlay
@@ -407,6 +407,12 @@ git push -u origin feat/nama-fitur
 - Akun gudang dibuat super_admin di `settings.html` tab **👥 Akun Sales & Gudang** (pilih Jenis Akun saat tambah). `allSales` di halaman itu tetap cuma role sales (dipakai Target Omzet)
 
 ### purchases.html
+- **Tambah produk baru dari baris PO** (form Buat & Edit PO): ketik nama yang belum ada di dropdown produk → pilihan **➕ Tambah produk baru: ...** → modal kecil `modal-quick-product` terbuka **di atas** form PO (draft tetap utuh) → Simpan & Pilih = produk langsung terpilih di baris itu dan ikut ditambahkan ke semua dropdown baris lain (`pakaiProdukDiBaris()`). Isian: nama, SKU (kosong = `generateSKU()` di `utils.js`, diulang sekali kalau bentrok 23505), satuan, kategori, harga jual **opsional**
+  - Produk dibuat **stok 0 & harga modal 0** — stok masuk lewat trigger `purchase_items` saat PO disimpan, harga modal diisi trigger dari baris PO. **JANGAN** isi stok di modal ini (stok jadi dobel)
+  - Nama persis sama (tidak peka huruf besar/spasi ganda, dicek live ke database) sudah ada → produk itu yang dipilih, tidak dibuat kembar
+  - Produk tersimpan begitu modal disimpan, bukan saat PO disimpan — PO batal = produk tetap ada stok 0 (hapus manual dari Produk)
+  - `addPrecedence: false` di TomSelect: Enter tetap memilih produk yang cocok, bukan membuat produk baru
+- **Harga jual menyusul** (`price = 0`, cek lewat `belumAdaHargaJual(p)` di `utils.js`): disembunyikan dari katalog online (view `public_catalog_products` + `price > 0`, migration49), **tidak bisa dipilih di `sales.html`** (`createProductTomSelect(..., { blockNoPrice: true })` + cek di `updateItemPrice()` & saat kirim/simpan edit), di `invoices.html` cuma peringatan (admin boleh ketik harga manual), dilewati brosur otomatis `katalog-cetak.html` (mode manual tampil "Harga menyusul"). `products.html`: badge **⚠️ Harga jual belum diisi**, banner jumlahnya, filter **⚠️ Belum Ada Harga Jual**. Tambah/Edit produk manual di `products.html` tetap wajib harga > 0
 - **Foto Faktur Supplier** (migration44): form Buat Pembelian bisa lampirkan **beberapa foto** (maks 10/PO) — faktur, nota, atau surat jalan supplier. Dikecilkan di browser (maks 1600px, WebP/JPEG; lebih besar dari foto retur supaya tulisan faktur terbaca) → bucket **privat** `purchase-photos` (2 MB/file, baca/tulis/hapus cuma admin+super_admin lewat `current_app_role()`). Path disimpan di `purchases.photo_paths text[]`
 - Foto diunggah **sebelum** insert PO; kalau insert PO / item gagal, foto yang terlanjur terunggah dihapus lagi (`removePoPhotoFiles()`)
 - Modal **Detail PO**: thumbnail (signed URL 1 jam, klik = buka ukuran penuh), **+ Tambah Foto** & ✕ hapus per foto — untuk foto yang lupa dilampirkan saat input. Daftar foto diambil ulang dari database sebelum ditulis supaya tidak menimpa perubahan dari tab lain; file dihapus **setelah** baris PO tidak lagi menunjuknya. Hapus PO = file fotonya ikut dihapus
@@ -475,4 +481,5 @@ Faktur yang punya retur **approved**: tiap barang yang diretur diberi teks `(dir
 | `supabase_migration44.sql` | **Wajib untuk Foto Faktur Supplier** di `purchases.html`. Kolom `purchases.photo_paths text[]` + bucket privat `purchase-photos` (policy admin/super_admin). Jalankan setelah migration43 (pakai `current_app_role()`) |
 | `supabase_migration46.sql` | Fix nilai retur dari gudang (`create_store_return()`) pakai harga setelah diskon. Retur lama tidak diubah otomatis — query audit ada di bawah file. Jalankan setelah migration43 |
 | `supabase_migration47.sql` | **Wajib untuk Riwayat & Batalkan Pembayaran.** Tabel `invoice_payments` + RPC `record_invoice_payment()`/`void_invoice_payment()` + backfill pembayaran lama. Jalankan **segera setelah** merge (sebelum ada yang mencatat pembayaran — tanpa migration ini tombol Bayar error). Jalankan setelah migration43 |
+| `supabase_migration49.sql` | **Wajib sebelum memakai "harga jual menyusul"** di form Pembelian. View `public_catalog_products` ditambah `price > 0` supaya produk tanpa harga jual tidak tampil Rp 0 di katalog online. Kolom view tidak berubah; migration batal sendiri kalau kolom view live sudah beda dari migration26 |
 | `supabase_migration42.sql` | **Wajib untuk Jadwal Kunjungan.** Tabel `visit_schedules` + setting `visit_target_per_day` (default 12) + `jadwal_tab_visible_for` (default kosong = tab Hari Ini belum tampil ke siapa pun). Tanpa ini tab Hari Ini di `sales.html` kosong dan `jadwal-kunjungan.html` menampilkan pesan error |

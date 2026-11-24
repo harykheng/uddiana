@@ -22,6 +22,8 @@
     .ts-dropdown .option { padding:8px 12px; }
     .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
     .ts-dropdown { z-index:9999 !important; }
+    .ts-dropdown .create { padding:9px 12px; color:#15803d; font-weight:600; border-top:1px dashed #bbf7d0; }
+    .ts-dropdown .create.active { background:#f0fdf4; color:#166534; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
@@ -270,6 +272,61 @@
   </div>
 </div>
 
+<!-- MODAL TAMBAH PRODUK BARU (dibuka di atas form Buat/Edit PO, draft PO tetap utuh) -->
+<div class="modal-overlay" id="modal-quick-product" data-no-overlay-close>
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <h3>➕ Produk Baru</h3>
+      <button class="modal-close" onclick="closeQuickProduct()">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12.5px;color:#475569;background:#f8fafc;border-radius:8px;padding:9px 12px;margin-bottom:12px">
+        Produk dibuat dengan <strong>stok 0</strong> — stoknya bertambah saat pembelian ini disimpan.
+        Harga modal ikut terisi dari baris pembelian.
+      </div>
+      <div class="form-group">
+        <label>Nama Produk *</label>
+        <input type="text" id="qp-name" placeholder="Nama lengkap produk">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>SKU <span class="text-muted" style="font-weight:400">(kosong = otomatis)</span></label>
+          <input type="text" id="qp-sku" placeholder="UDD-xxxx">
+        </div>
+        <div class="form-group">
+          <label>Satuan</label>
+          <select id="qp-unit">
+            <option value="pcs">pcs</option>
+            <option value="unit">unit</option>
+            <option value="pack">pack</option>
+            <option value="kg">kg</option>
+            <option value="liter">liter</option>
+            <option value="box">box</option>
+            <option value="lusin">lusin</option>
+            <option value="rim">rim</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Kategori</label>
+        <select id="qp-category"><option value="">— Tanpa kategori —</option></select>
+      </div>
+      <div class="form-group mb-0">
+        <label>Harga Jual / satuan <span class="text-muted" style="font-weight:400">(boleh menyusul)</span></label>
+        <input type="text" inputmode="numeric" data-number id="qp-price" placeholder="Kosongkan kalau belum tahu">
+        <div style="font-size:11.5px;color:#92400e;margin-top:5px">
+          Selama harga jual belum diisi, produk ini tidak tampil di katalog online dan belum bisa dipilih sales.
+          Isi nanti di halaman Produk (filter ⚠️ Belum Ada Harga Jual).
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeQuickProduct()">Batal</button>
+      <button class="btn btn-primary" id="btn-save-qp" onclick="saveQuickProduct()">Simpan & Pilih</button>
+    </div>
+  </div>
+</div>
+
 <div id="print-area"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
@@ -403,8 +460,137 @@
       placeholder: '— Cari & pilih produk —',
       maxOptions: 200,
       dropdownParent: 'body',
+      ...quickProductTsOptions(selEl),
       onChange: () => onPoProductSelect(selEl, id)
     });
+  }
+
+  // ── PRODUK BARU DARI FORM PEMBELIAN ─────────────────────────
+  // Barang baru dari supplier bisa dibuat langsung dari dropdown baris PO
+  // ("➕ Tambah produk baru: ..."), tanpa menutup form & kehilangan draft.
+  // Produk dibuat stok 0 (stok masuk lewat trigger purchase_items saat PO disimpan,
+  // jadi kalau diisi di sini stoknya dobel) dan harga modal 0 (diisi trigger dari
+  // harga modal baris PO). Harga jual boleh menyusul (0) — lihat belumAdaHargaJual().
+  // Catatan: produk sudah tersimpan begitu modal ini disimpan; kalau PO-nya batal
+  // dibuat, produk tetap ada dengan stok 0 dan bisa dihapus dari halaman Produk.
+  let qpTargetSelect = null;
+  let qpCategoriesLoaded = false;
+
+  function quickProductTsOptions(selEl) {
+    return {
+      create: (input, callback) => {
+        callback();                  // TomSelect tidak membuat opsi sendiri — modal yang membuat
+        openQuickProduct(selEl, input);
+      },
+      addPrecedence: false,          // Enter tetap memilih produk yang cocok, bukan bikin baru
+      render: {
+        option_create: (d, esc) => `<div class="create">➕ Tambah produk baru: <strong>${esc(d.input)}</strong></div>`,
+      },
+    };
+  }
+
+  async function openQuickProduct(selEl, name) {
+    qpTargetSelect = selEl;
+    selEl.tomselect?.close();
+    document.getElementById('qp-name').value  = (name || '').trim();
+    document.getElementById('qp-sku').value   = '';
+    document.getElementById('qp-unit').value  = 'pcs';
+    document.getElementById('qp-price').value = '';
+    document.getElementById('qp-category').value = '';
+    openModal('modal-quick-product');
+    setTimeout(() => document.getElementById('qp-name').focus(), 50);
+    if (!qpCategoriesLoaded) {
+      const { data, error } = await supabase.from('categories').select('id,name').order('name');
+      if (!error) {
+        qpCategoriesLoaded = true;
+        document.getElementById('qp-category').innerHTML = '<option value="">— Tanpa kategori —</option>'
+          + (data || []).map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+      }
+    }
+  }
+
+  function closeQuickProduct() {
+    closeModal('modal-quick-product');
+    // closeModal() membuka scroll body, padahal form PO di belakang masih terbuka
+    if (document.querySelector('.modal-overlay.open')) document.body.style.overflow = 'hidden';
+    qpTargetSelect = null;
+  }
+
+  function poProductLabel(p) {
+    return `${p.name} (${p.stock_quantity} ${p.unit})`;
+  }
+
+  // Masukkan produk ke daftar & semua dropdown baris PO yang sedang terbuka
+  // (form Buat dan Edit), lalu pilih di baris yang memicu modal.
+  function pakaiProdukDiBaris(prod) {
+    if (!products.some(p => p.id === prod.id)) {
+      products.push(prod);
+      products.sort((a, b) => a.name.localeCompare(b.name, 'id'));
+    }
+    document.querySelectorAll('#po-items-body select, #edit-po-items-body select').forEach(sel => {
+      const ts = sel.tomselect;
+      if (ts && !ts.options[prod.id]) ts.addOption({ value: prod.id, text: poProductLabel(prod) });
+    });
+    const target = qpTargetSelect;
+    closeQuickProduct();
+    if (target?.tomselect) {
+      target.tomselect.setValue(prod.id);
+      const qtyEl = target.closest('tr')?.querySelector('[id^="poqty-"], [id^="epoqty-"]');
+      qtyEl?.focus(); qtyEl?.select();
+    }
+  }
+
+  async function saveQuickProduct() {
+    const btn = document.getElementById('btn-save-qp');
+    if (btn.disabled) return;
+    const name  = document.getElementById('qp-name').value.trim().replace(/\s+/g, ' ');
+    let sku     = document.getElementById('qp-sku').value.trim();
+    const skuAuto = !sku;
+    const price = parseFormattedNumber(document.getElementById('qp-price').value) || 0;
+    if (!name) { showToast('Nama produk wajib diisi', 'error'); return; }
+    if (price < 0) { showToast('Harga jual tidak boleh minus', 'error'); return; }
+    setLoading(btn, true);
+    try {
+      // Nama persis sama sudah ada (bisa juga baru dibuat dari tab lain setelah
+      // halaman ini dibuka) → pakai produk itu, jangan bikin kembar.
+      const pola = name.replace(/[\\%_]/g, m => '\\' + m);
+      const { data: kembar, error: errKembar } = await supabase.from('products')
+        .select('id,name,sku,cost,stock_quantity,unit').eq('is_active', true).ilike('name', pola).limit(1);
+      if (errKembar) throw new Error('Gagal cek nama produk: ' + errKembar.message);
+      if (kembar?.length) {
+        showToast(`"${kembar[0].name}" sudah ada (SKU ${kembar[0].sku}) — produk itu yang dipilih`, 'success');
+        pakaiProdukDiBaris(kembar[0]);
+        return;
+      }
+
+      if (skuAuto) sku = await generateSKU();
+      const payload = {
+        name, sku,
+        unit: document.getElementById('qp-unit').value,
+        category_id: document.getElementById('qp-category').value || null,
+        price, cost: 0, stock_quantity: 0, min_stock: 0,
+      };
+      let { data: created, error } = await supabase.from('products').insert(payload)
+        .select('id,name,sku,cost,stock_quantity,unit').single();
+      // Bentrok SKU karena admin lain menyimpan produk di jeda yang sama — diulang
+      // sekali HANYA untuk SKU otomatis; SKU yang diketik manual dilaporkan apa adanya.
+      if (error?.code === '23505' && skuAuto) {
+        payload.sku = await generateSKU();
+        ({ data: created, error } = await supabase.from('products').insert(payload)
+          .select('id,name,sku,cost,stock_quantity,unit').single());
+      }
+      if (error) {
+        throw new Error(error.code === '23505' ? `SKU "${payload.sku}" sudah dipakai produk lain` : error.message);
+      }
+      showToast(price > 0
+        ? `Produk ${created.sku} dibuat`
+        : `Produk ${created.sku} dibuat — harga jual belum diisi, lengkapi nanti di halaman Produk`, 'success');
+      pakaiProdukDiBaris(created);
+    } catch (e) {
+      showToast('Gagal membuat produk: ' + e.message, 'error');
+    } finally {
+      setLoading(btn, false);
+    }
   }
 
   function removePoRow(id) {
@@ -443,9 +629,8 @@
   }
 
   function onPoProductSelect(sel, rowId) {
-    const opt = sel.options[sel.selectedIndex];
     const prod = products.find(p => p.id === sel.value);
-    document.getElementById(`postock-${rowId}`).value = opt.dataset.stock || 0;
+    document.getElementById(`postock-${rowId}`).value = prod?.stock_quantity ?? 0;
     document.getElementById(`pocost-${rowId}`).value  = Number(prod?.cost || 0).toLocaleString('id-ID');
     recalcPoRow(rowId);
   }
@@ -1165,14 +1350,14 @@
       placeholder: '— Cari & pilih produk —',
       maxOptions: 200,
       dropdownParent: 'body',
+      ...quickProductTsOptions(selEl),
       onChange: () => onEditPoProductSelect(selEl, id)
     });
   }
 
   function onEditPoProductSelect(sel, rowId) {
-    const opt = sel.options[sel.selectedIndex];
     const prod = products.find(p => p.id === sel.value);
-    document.getElementById(`epostock-${rowId}`).value = opt.dataset.stock || 0;
+    document.getElementById(`epostock-${rowId}`).value = prod?.stock_quantity ?? 0;
     document.getElementById(`epocost-${rowId}`).value  = Number(prod?.cost || 0).toLocaleString('id-ID');
     recalcEditPoRow(rowId);
   }
