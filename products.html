@@ -170,6 +170,7 @@
     </header>
 
     <main class="page">
+      <div id="noprice-banner" style="display:none;margin-bottom:12px;padding:10px 14px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;font-size:13px;color:#92400e"></div>
       <div class="filter-bar">
         <div class="search-input-wrap" style="flex:1;max-width:340px">
           <span class="search-icon">🔍</span>
@@ -183,6 +184,10 @@
           <option value="low">Stok Menipis</option>
           <option value="out">Stok Habis</option>
           <option value="ok">Stok Normal</option>
+        </select>
+        <select id="filter-price" onchange="currentPage = 1; renderProducts()">
+          <option value="">Semua Harga</option>
+          <option value="noprice">⚠️ Belum Ada Harga Jual</option>
         </select>
         <div id="filter-opname-wrap" style="display:none">
           <select id="filter-opname" onchange="renderProducts()">
@@ -672,10 +677,28 @@
     return '';
   }
 
+  // Produk yang dibuat dari form Pembelian boleh disimpan tanpa harga jual (harga
+  // menyusul). Selama harganya 0, produk ini disembunyikan dari katalog online
+  // (migration49), tidak bisa dipilih sales, dan ditandai di sini supaya tidak terlupa.
+  const BADGE_BELUM_ADA_HARGA = `<span style="display:inline-block;background:#fef3c7;color:#92400e;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;white-space:nowrap">⚠️ Harga jual belum diisi</span>`;
+
+  function renderNoPriceBanner() {
+    const el = document.getElementById('noprice-banner');
+    if (!el) return;
+    const n = allProducts.filter(belumAdaHargaJual).length;
+    const aktif = document.getElementById('filter-price')?.value === 'noprice';
+    if (!n || aktif) { el.style.display = 'none'; return; }
+    el.innerHTML = `⚠️ <strong>${n} produk belum ada harga jual</strong> — belum tampil di katalog online & belum bisa dipilih sales. `
+      + `<a href="#" onclick="document.getElementById('filter-price').value='noprice';currentPage=1;renderProducts();return false" style="color:#92400e;font-weight:700">Tampilkan →</a>`;
+    el.style.display = '';
+  }
+
   function renderProducts() {
     const search = document.getElementById('search-input').value.toLowerCase();
     const stockFilter = document.getElementById('filter-stock').value;
     const opnameFilter = document.getElementById('filter-opname')?.value || '';
+    const priceFilter = document.getElementById('filter-price')?.value || '';
+    renderNoPriceBanner();
     const searchWords = search.split(/\s+/).filter(Boolean);
     let filtered = allProducts.filter(p => {
       const haystack = `${p.name} ${p.sku||''} ${p.description||''}`.toLowerCase();
@@ -687,7 +710,8 @@
       let matchOpname = true;
       if (opnameFilter === 'done') matchOpname = activeOpnameSession && p.last_opname_session_id === activeOpnameSession.id;
       if (opnameFilter === 'not') matchOpname = !activeOpnameSession || p.last_opname_session_id !== activeOpnameSession.id;
-      return matchSearch && matchStock && matchOpname;
+      const matchPrice = priceFilter !== 'noprice' || belumAdaHargaJual(p);
+      return matchSearch && matchStock && matchOpname && matchPrice;
     });
 
     // Sort
@@ -734,9 +758,9 @@
         <td><code style="font-size:12px;background:#f1f5f9;padding:2px 6px;border-radius:4px">${escapeHtml(p.sku)}</code></td>
         <td><strong>${escapeHtml(p.name)}</strong></td>
         <td class="col-hide-mobile">${escapeHtml(cat)}</td>
-        <td class="text-right">
+        <td class="text-right">${belumAdaHargaJual(p) ? BADGE_BELUM_ADA_HARGA : `
           <div>${formatCurrency(p.price)}</div>
-          <div class="col-lusin-hint" style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(Math.ceil((p.price * 12) / 100) * 100)}/lsn</div>
+          <div class="col-lusin-hint" style="font-size:11px;color:var(--text-muted);margin-top:2px">${formatCurrency(Math.ceil((p.price * 12) / 100) * 100)}/lsn</div>`}
         </td>
         <td class="text-right col-hide-mobile">${p.price_shopee > 0 ? formatCurrency(p.price_shopee) : '<span class="text-muted">—</span>'}</td>
         ${isSuperAdmin ? `<td class="text-right">${formatCurrency(p.cost)}</td>` : ''}
@@ -1136,7 +1160,7 @@
         <div class="product-card-name">${escapeHtml(p.name)}</div>
         <div class="product-card-info">
           <span class="${stockCls}">${stockQty} ${unitLabel}${lusin}</span>
-          <span class="product-card-price">${formatCurrency(p.price)}</span>
+          <span class="product-card-price">${belumAdaHargaJual(p) ? BADGE_BELUM_ADA_HARGA : formatCurrency(p.price)}</span>
           ${isSuperAdmin ? `<span class="product-card-cost">Modal: ${formatCurrency(p.cost)}</span>` : ''}
           ${mobileOpnameBadge}
         </div>
@@ -1232,18 +1256,7 @@
   // kategori yang sedang aktif, jadi SKU milik produk yang sudah dihapus (hapus produk =
   // soft delete, barangnya masih ada dengan SKU-nya) atau produk di kategori lain tidak
   // kelihatan — nomornya dipakai ulang dan insert ditolak unique constraint sku.
-  async function generateSKU() {
-    const { data, error } = await fetchAll(() =>
-      supabase.from('products').select('sku').ilike('sku', 'UDD-%').order('sku')
-    );
-    if (error) throw new Error('Gagal ambil nomor SKU terakhir: ' + error.message);
-    let max = 0;
-    for (const p of (data || [])) {
-      const m = (p.sku || '').match(/^UDD-(\d+)$/i);
-      if (m) max = Math.max(max, parseInt(m[1], 10));
-    }
-    return `UDD-${String(max + 1).padStart(4, '0')}`;
-  }
+  // generateSKU() ada di js/utils.js (dipakai juga form Pembelian)
 
   async function saveProduct() {
     const btn = document.getElementById('btn-save-product');

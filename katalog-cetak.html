@@ -474,7 +474,9 @@
     // (atau ranking terlaris) tetap terjaga di brosurnya.
     semuaKandidat = urutanId
       .map(id => produkById.get(id))
-      .filter(p => p && (modeManual || (p.is_active && Number(p.stock_quantity) > 0)))
+      // Produk yang harga jualnya belum diisi (dibuat dari form Pembelian) tidak
+      // ditawarkan di brosur otomatis — mode manual tetap tampil sebagai "Harga menyusul"
+      .filter(p => p && (modeManual || (p.is_active && Number(p.stock_quantity) > 0 && !belumAdaHargaJual(p))))
       .map(p => ({ ...p, category_name: namaKategori.get(p.category_id) || 'Lainnya' }));
 
     if (modeManual && semuaKandidat.length < manualIds.length) {
@@ -508,12 +510,13 @@
         ? `<img class="kt-photo" src="${foto}" alt="">`
         : `<div class="kt-photo-placeholder">${escapeHtml((p.name || '?').trim().charAt(0).toUpperCase())}</div>`;
 
-      const promo = promoUntuk(p.id, p.price);
-      const priceHtml = promo
+      const tanpaHarga = belumAdaHargaJual(p);
+      const promo = tanpaHarga ? null : promoUntuk(p.id, p.price);
+      const priceHtml = tanpaHarga ? 'Harga menyusul' : promo
         ? `<span class="kt-price-coret">${formatCurrency(p.price)}</span> ${formatCurrency(promo.hargaPromo)}`
         : formatCurrency(p.price);
 
-      const lusinHtml = p.unit === 'pcs'
+      const lusinHtml = p.unit === 'pcs' && !tanpaHarga
         ? `<div class="kt-price-lusin">${
             promo
               ? `<span class="kt-price-coret">${formatCurrency(hargaLusin(p.price))}</span> ${formatCurrency(hargaLusin(promo.hargaPromo))}`

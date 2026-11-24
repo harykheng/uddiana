@@ -1333,6 +1333,11 @@
 
     document.getElementById(`stock-${rowId}`).value = stock;
     document.getElementById(`price-${rowId}`).value = price > 0 ? price.toLocaleString('id-ID') : '0';
+    // Produk dari form Pembelian yang harga jualnya menyusul: tetap boleh dipakai
+    // admin (harga satuan diketik manual), tapi diberi tahu supaya tidak lolos Rp 0
+    if (prod && belumAdaHargaJual(prod) && currentPriceMode !== 'custom') {
+      showToast(`Harga jual "${prod.name}" belum diisi — ketik harga satuannya manual, atau isi dulu di Produk`, 'error');
+    }
 
     // Ganti produk = mulai bersih, aturan otomatis berlaku lagi untuk baris ini
     setDiscAuto(rowId, true);

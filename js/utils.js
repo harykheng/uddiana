@@ -299,14 +299,49 @@ async function fetchAll(queryFn, pageSize = 1000) {
 //
 // productList: array produk ({ id, name }). Objek option dibuat baru per
 // instance karena TomSelect menulis $order/$id ke objek itu.
-function createProductTomSelect(sel, productList, onChange) {
+// opts.blockNoPrice = produk yang harga jualnya belum diisi tidak bisa dipilih
+// (sales.html). Tanpa itu cuma diberi tanda di dropdown. Label tanda dirender
+// terpisah dari `text` — `text` dipakai sebagai product_name saat simpan faktur.
+function createProductTomSelect(sel, productList, onChange, opts = {}) {
   return new TomSelect(sel, {
     placeholder: '— Cari & pilih produk —',
     maxOptions: 200,
     dropdownParent: 'body',
-    options: productList.map(p => ({ value: p.id, text: p.name })),
+    options: productList.map(p => {
+      // Baris tanpa kolom price (mis. produk nonaktif yang disisipkan verify-invoices) tidak ditandai
+      const noPrice = p != null && 'price' in p && belumAdaHargaJual(p);
+      return { value: p.id, text: p.name, noPrice, disabled: !!(opts.blockNoPrice && noPrice) };
+    }),
+    render: {
+      option: (d, esc) => `<div${d.disabled ? ' style="opacity:.55"' : ''}>${esc(d.text)}${d.noPrice
+        ? ' <span style="font-size:10.5px;font-weight:700;color:#92400e;background:#fef3c7;padding:1px 5px;border-radius:4px;white-space:nowrap">⚠️ harga belum diisi</span>'
+        : ''}</div>`,
+    },
     onChange,
   });
+}
+
+// Harga jual produk belum diisi (0 / kosong). Produk seperti ini bisa dibuat dari
+// form Pembelian (harga menyusul); disembunyikan dari katalog online (migration49),
+// tidak bisa dipilih sales, dan ditandai di products.html.
+function belumAdaHargaJual(p) {
+  return !(Number(p?.price) > 0);
+}
+
+// SKU otomatis berikutnya: UDD-0001, UDD-0002, ... (nomor terbesar + 1).
+// Dipakai products.html & form Pembelian. Kalau insert bentrok (23505) karena admin
+// lain menyimpan produk di jeda yang sama, panggil ulang sekali.
+async function generateSKU() {
+  const { data, error } = await fetchAll(() =>
+    supabase.from('products').select('sku').ilike('sku', 'UDD-%').order('sku')
+  );
+  if (error) throw new Error('Gagal ambil nomor SKU terakhir: ' + error.message);
+  let max = 0;
+  for (const p of (data || [])) {
+    const m = (p.sku || '').match(/^UDD-(\d+)$/i);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `UDD-${String(max + 1).padStart(4, '0')}`;
 }
 
 // ── RETUR vs FAKTUR ───────────────────────────────────────────
