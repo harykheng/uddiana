@@ -22,7 +22,17 @@
     .ts-dropdown .option { padding:8px 12px; }
     .ts-dropdown .option.active,.ts-dropdown .option:hover { background:#eff6ff; color:#1d4ed8; }
     .ts-dropdown { z-index:9999 !important; }
-    .cost-chg { font-size:10.5px; line-height:1.35; margin-top:3px; white-space:nowrap; }
+    /* Tanda harga modal: label kecil di SAMPING kotak, ruangnya selalu disediakan
+       (lebar tetap) supaya tinggi & lebar baris tidak berubah saat harga diketik */
+    .cost-wrap { display:flex; align-items:center; gap:6px; }
+    .cost-chg { flex:0 0 62px; height:22px; display:inline-flex; align-items:center; justify-content:center;
+                border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; cursor:default; }
+    .cost-chg:empty { visibility:hidden; }
+    .cost-chg.up    { background:#fee2e2; color:#b91c1c; }
+    .cost-chg.down  { background:#dcfce7; color:#15803d; }
+    .cost-chg.same  { background:#f1f5f9; color:#64748b; }
+    .cost-chg.new   { background:#dbeafe; color:#1d4ed8; }
+    .cost-chg.empty { background:#fef3c7; color:#b45309; }
     .ts-dropdown .create { padding:9px 12px; color:#15803d; font-weight:600; border-top:1px dashed #bbf7d0; }
     .ts-dropdown .create.active { background:#f0fdf4; color:#166534; }
   </style>
@@ -173,8 +183,8 @@
               <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:28%">Produk</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:8%">Stok</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:7%">Qty</th>
-              <th class="col-harga-modal-po" style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Harga Modal</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:13%">Batch/Lot</th>
+              <th class="col-harga-modal-po" style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Harga Modal</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Batch/Lot</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:12%">Kadaluarsa</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Subtotal</th>
               <th style="width:8%"></th>
@@ -449,7 +459,7 @@
       </td>
       <td style="padding:5px 6px"><input type="number" id="postock-${id}" readonly value="0" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="number" id="poqty-${id}" value="1" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"></td>
-      <td class="col-harga-modal-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"><div id="pocostchg-${id}" class="cost-chg"></div></td>
+      <td class="col-harga-modal-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><div class="cost-wrap"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"><span id="pocostchg-${id}" class="cost-chg"></span></div></td>
       <td style="padding:5px 6px"><input type="text" id="pobatch-${id}" placeholder="No. Lot" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="date" id="poexpiry-${id}" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="text" id="posub-${id}" readonly value="0" style="background:#f8fafc;width:90px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
@@ -648,17 +658,21 @@
     else { delete tr.dataset.baseCost; delete tr.dataset.baseLabel; }
   }
 
-  function costChangeHtml(cost, base, label) {
+  // { cls, text, title } — text pendek untuk label, rincian Rp di tooltip
+  function costChange(cost, base, label) {
     if (!(base > 0)) {
-      return cost > 0 ? '<span style="color:#2563eb">🆕 modal pertama</span>' : '';
+      return cost > 0 ? { cls: 'new', text: 'Baru', title: 'Belum ada harga modal sebelumnya' } : null;
     }
-    if (!(cost > 0)) return '<span style="color:#b45309">⚠️ belum diisi</span>';
+    if (!(cost > 0)) return { cls: 'empty', text: 'Kosong', title: `Harga modal belum diisi (${label}: ${formatCurrency(base)})` };
     const diff = cost - base;
-    if (diff === 0) return `<span style="color:#64748b">= sama dgn ${label}</span>`;
+    if (diff === 0) return { cls: 'same', text: '= Sama', title: `Sama dengan modal ${label}: ${formatCurrency(base)}` };
     const pct = formatPersen(Math.round(Math.abs(diff) / base * 1000) / 10);
     const naik = diff > 0;
-    return `<span style="color:${naik ? '#dc2626' : '#16a34a'};font-weight:700">${naik ? '▲ naik' : '▼ turun'} ${formatCurrency(Math.abs(diff))} (${pct}%)</span>`
-      + `<br><span style="color:#94a3b8">${label}: ${formatCurrency(base)}</span>`;
+    return {
+      cls: naik ? 'up' : 'down',
+      text: `${naik ? '▲' : '▼'} ${pct}%`,
+      title: `${naik ? 'Naik' : 'Turun'} ${formatCurrency(Math.abs(diff))} dari modal ${label} ${formatCurrency(base)}`,
+    };
   }
 
   function renderCostChange(rowId, elId, cost) {
@@ -666,9 +680,12 @@
     const tr = document.getElementById(rowId);
     if (!el || !tr) return;
     const hasProduct = !!tr.querySelector('select')?.value;
-    el.innerHTML = hasProduct && tr.dataset.baseCost !== undefined
-      ? costChangeHtml(cost, Number(tr.dataset.baseCost), tr.dataset.baseLabel || 'terakhir')
-      : '';
+    const c = hasProduct && tr.dataset.baseCost !== undefined
+      ? costChange(cost, Number(tr.dataset.baseCost), tr.dataset.baseLabel || 'terakhir')
+      : null;
+    el.className = 'cost-chg' + (c ? ' ' + c.cls : '');
+    el.textContent = c ? c.text : '';
+    el.title = c ? c.title : '';
   }
 
   function recalcPoRow(rowId) {
@@ -1039,6 +1056,49 @@
   }
 
   // ── VIEW & PRINT ───────────────────────────────────────────
+  // Tanda naik/turun di Detail PO: tiap barang dibanding harga modal di pembelian
+  // SEBELUMNYA untuk produk yang sama (PO lain yang tidak batal, tanggal lebih awal;
+  // tanggal sama → yang diinput lebih dulu). Dimuat setelah detail tampil supaya
+  // modal tidak tertahan menunggu query ini.
+  async function renderViewPoCostChanges(po, items) {
+    const ids = [...new Set(items.map(i => i.product_id).filter(Boolean))];
+    if (!ids.length) return;
+    const { data, error } = await fetchAll(() => supabase.from('purchase_items')
+      .select('product_id,cost_price,purchase_id,purchases!inner(purchase_number,purchase_date,created_at,status)')
+      .in('product_id', ids).neq('purchase_id', po.id));
+    if (error || currentPo?.po?.id !== po.id) return;   // modal sudah pindah ke PO lain
+    const lebihAwal = r => r.purchase_date < po.purchase_date
+      || (r.purchase_date === po.purchase_date && r.created_at < po.created_at);
+    const sebelumnya = {};
+    for (const row of data || []) {
+      const p = row.purchases;
+      if (!p || p.status === 'cancelled' || !lebihAwal(p)) continue;
+      const cur = sebelumnya[row.product_id];
+      if (!cur || p.purchase_date > cur.purchase_date
+          || (p.purchase_date === cur.purchase_date && p.created_at > cur.created_at)) {
+        sebelumnya[row.product_id] = { ...p, cost: Number(row.cost_price || 0) };
+      }
+    }
+    for (const item of items) {
+      const el = document.querySelector(`#view-po-body [data-vp-item="${item.id}"]`);
+      if (!el) continue;
+      const prev = sebelumnya[item.product_id];
+      const c = costChange(Number(item.cost_price || 0), prev ? prev.cost : 0,
+        prev ? `${prev.purchase_number} (${formatDate(prev.purchase_date)})` : '');
+      if (c && prev) {
+        const ref = `${prev.purchase_number} (${formatDate(prev.purchase_date)}): ${formatCurrency(prev.cost)}`;
+        const diff = Number(item.cost_price || 0) - prev.cost;
+        c.title = c.cls === 'same' ? `Sama dengan ${ref}`
+          : c.cls === 'empty' ? `Harga modal kosong — sebelumnya ${ref}`
+          : `${diff > 0 ? 'Naik' : 'Turun'} ${formatCurrency(Math.abs(diff))} dibanding ${ref}`;
+      }
+      if (c && !prev) c.title = 'Pembelian pertama produk ini';
+      el.className = 'cost-chg' + (c ? ' ' + c.cls : '');
+      el.textContent = c ? c.text : '';
+      el.title = c ? c.title : '';
+    }
+  }
+
   async function viewPo(id) {
     const { data: po }    = await supabase.from('purchases').select('*').eq('id', id).single();
     const { data: items } = await supabase.from('purchase_items').select('*').eq('purchase_id', id);
@@ -1063,7 +1123,11 @@
           ${item.batch_number ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">Batch: ${escapeHtml(item.batch_number)}</div>` : ''}
         </td>
         <td style="padding:8px 10px;text-align:right">${item.quantity}</td>
-        <td style="padding:8px 10px;text-align:right">${formatCurrency(item.cost_price)}</td>
+        <td style="padding:8px 10px;text-align:right">
+          <div style="display:inline-flex;align-items:center;gap:6px;justify-content:flex-end">
+            ${formatCurrency(item.cost_price)}${poIsSuperAdmin ? `<span class="cost-chg" data-vp-item="${item.id}"></span>` : ''}
+          </div>
+        </td>
         <td style="padding:8px 10px">${expBadge}</td>
         <td style="padding:8px 10px;text-align:right;font-weight:700">${formatCurrency(item.subtotal)}</td>
       </tr>`;
@@ -1105,6 +1169,7 @@
         <div id="view-po-photo-status" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
       </div>`;
     renderViewPoPhotos();
+    if (poIsSuperAdmin) renderViewPoCostChanges(po, items || []);
 
     document.getElementById('btn-cancel-po').style.display = po.status === 'cancelled' ? 'none' : 'inline-flex';
     openModal('modal-view-po');
@@ -1379,7 +1444,7 @@
       </td>
       <td style="padding:5px 6px"><input type="number" id="epostock-${id}" readonly value="${existing ? (products.find(p=>p.id===existing.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="number" id="epoqty-${id}" value="${existing ? existing.quantity : 1}" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"></td>
-      <td class="col-harga-modal-edit-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><input type="text" inputmode="numeric" data-number id="epocost-${id}" value="${existing ? Number(existing.cost_price||0).toLocaleString('id-ID') : '0'}" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"><div id="epocostchg-${id}" class="cost-chg"></div></td>
+      <td class="col-harga-modal-edit-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><div class="cost-wrap"><input type="text" inputmode="numeric" data-number id="epocost-${id}" value="${existing ? Number(existing.cost_price||0).toLocaleString('id-ID') : '0'}" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"><span id="epocostchg-${id}" class="cost-chg"></span></div></td>
       <td style="padding:5px 6px"><input type="text" id="eposub-${id}" readonly value="${existing ? Number(existing.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcEditPoTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
