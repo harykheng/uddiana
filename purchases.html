@@ -24,6 +24,11 @@
     .ts-dropdown { z-index:9999 !important; }
     /* Tanda harga modal: label kecil di SAMPING kotak, ruangnya selalu disediakan
        (lebar tetap) supaya tinggi & lebar baris tidak berubah saat harga diketik */
+    /* Angka modal (harga modal, subtotal, total) cuma untuk super_admin. <body> mulai
+       dengan class ini dan baru dilepas di init() setelah role terbukti super_admin.
+       Berlaku juga saat cetak. Ingat: ini cuma tampilan — data cost tetap terkirim ke
+       browser (RLS products/purchases tidak membatasi kolom per role) */
+    body.hide-modal-cost .po-cost-only { display:none !important; }
     .cost-wrap { display:flex; align-items:center; gap:6px; }
     .cost-chg { flex:0 0 62px; height:22px; display:inline-flex; align-items:center; justify-content:center;
                 border-radius:999px; font-size:11px; font-weight:700; white-space:nowrap; cursor:default; }
@@ -63,7 +68,7 @@
     .print-doc .total-row { font-weight:700; font-size:15px; text-align:right; padding-top:8px; }
   </style>
 </head>
-<body>
+<body class="hide-modal-cost">
 <div class="layout">
   <aside class="sidebar">
     <div class="sidebar-logo">
@@ -124,7 +129,7 @@
       <div class="card">
         <div class="card-header">
           <h3>Daftar Pembelian <span id="po-count" class="badge badge-info" style="margin-left:8px">0</span></h3>
-          <span id="po-total-summary" class="text-muted" style="font-size:13px"></span>
+          <span id="po-total-summary" class="text-muted po-cost-only" style="font-size:13px"></span>
         </div>
         <div class="table-wrap">
           <table>
@@ -134,7 +139,7 @@
                 <th>Supplier</th>
                 <th>Tanggal</th>
                 <th>Jml Item</th>
-                <th>Total Modal</th>
+                <th class="po-cost-only">Total Modal</th>
                 <th>Status</th>
                 <th>Aksi</th>
               </tr>
@@ -197,7 +202,7 @@
               <th class="col-harga-modal-po" style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Harga Modal</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Batch/Lot</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:12%">Kadaluarsa</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Subtotal</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%" class="po-cost-only">Subtotal</th>
               <th style="width:8%"></th>
             </tr>
           </thead>
@@ -206,7 +211,7 @@
       </div>
       <button class="btn btn-ghost btn-sm" onclick="addPoRow()" style="margin-bottom:14px">+ Tambah Barang</button>
 
-      <div class="invoice-summary">
+      <div class="invoice-summary po-cost-only">
         <div class="invoice-summary-row total">
           <span>TOTAL MODAL PEMBELIAN</span>
           <span id="po-total" style="color:var(--primary)">Rp 0</span>
@@ -254,7 +259,7 @@
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Stok</th>
               <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:10%">Qty</th>
               <th class="col-harga-modal-edit-po" style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:20%">Harga Modal / Unit</th>
-              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%">Subtotal</th>
+              <th style="padding:8px 10px;font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-muted);width:14%" class="po-cost-only">Subtotal</th>
               <th style="width:8%"></th>
             </tr>
           </thead>
@@ -263,7 +268,7 @@
       </div>
       <button class="btn btn-ghost btn-sm" onclick="addEditPoRow()" style="margin-bottom:14px">+ Tambah Barang</button>
 
-      <div class="invoice-summary">
+      <div class="invoice-summary po-cost-only">
         <div class="invoice-summary-row total">
           <span>TOTAL MODAL PEMBELIAN</span>
           <span id="edit-po-total" style="color:var(--primary)">Rp 0</span>
@@ -368,6 +373,7 @@
   async function init() {
     const auth = await requireAdmin(); if (!auth) return;
     poIsSuperAdmin = auth.profile.role === 'super_admin';
+    document.body.classList.toggle('hide-modal-cost', !poIsSuperAdmin);
     // Sembunyikan kolom & input harga modal untuk admin biasa
     if (!poIsSuperAdmin) {
       document.querySelectorAll('.col-harga-modal-po').forEach(el => el.style.display = 'none');
@@ -421,7 +427,7 @@
         <td>${escapeHtml(p.supplier_name || '—')}</td>
         <td>${formatDate(p.purchase_date)}</td>
         <td class="text-center">—</td>
-        <td class="text-right font-bold">${formatCurrency(p.total_cost)}</td>
+        <td class="text-right font-bold po-cost-only">${formatCurrency(p.total_cost)}</td>
         <td>${statusBadge}</td>
         <td>
           <div class="table-actions">
@@ -473,7 +479,7 @@
       <td class="col-harga-modal-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><div class="cost-wrap"><input type="text" inputmode="numeric" data-number id="pocost-${id}" value="0" style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcPoRow('${id}')"><span id="pocostchg-${id}" class="cost-chg"></span></div></td>
       <td style="padding:5px 6px"><input type="text" id="pobatch-${id}" placeholder="No. Lot" style="width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="date" id="poexpiry-${id}" style="width:130px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
-      <td style="padding:5px 6px"><input type="text" id="posub-${id}" readonly value="0" style="background:#f8fafc;width:90px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td class="po-cost-only" style="padding:5px 6px"><input type="text" id="posub-${id}" readonly value="0" style="background:#f8fafc;width:90px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 4px"><button onclick="removePoRow('${id}')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
@@ -1193,13 +1199,13 @@
           ${item.batch_number ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">Batch: ${escapeHtml(item.batch_number)}</div>` : ''}
         </td>
         <td style="padding:8px 10px;text-align:right">${item.quantity}</td>
-        <td style="padding:8px 10px;text-align:right">
+        <td class="po-cost-only" style="padding:8px 10px;text-align:right">
           <div style="display:inline-flex;align-items:center;gap:6px;justify-content:flex-end">
             ${formatCurrency(item.cost_price)}${poIsSuperAdmin ? `<span class="cost-chg" data-vp-item="${item.id}"></span>` : ''}
           </div>
         </td>
         <td style="padding:8px 10px">${expBadge}</td>
-        <td style="padding:8px 10px;text-align:right;font-weight:700">${formatCurrency(item.subtotal)}</td>
+        <td class="po-cost-only" style="padding:8px 10px;text-align:right;font-weight:700">${formatCurrency(item.subtotal)}</td>
       </tr>`;
     }).join('');
 
@@ -1220,14 +1226,14 @@
           <tr style="background:#f8fafc">
             <th style="padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Produk / Batch</th>
             <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Qty</th>
-            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Harga Modal</th>
+            <th class="po-cost-only" style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Harga Modal</th>
             <th style="padding:8px 10px;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Kadaluarsa</th>
-            <th style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Subtotal</th>
+            <th class="po-cost-only" style="padding:8px 10px;text-align:right;font-size:11px;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border)">Subtotal</th>
           </tr>
         </thead>
         <tbody>${itemsHtml}</tbody>
       </table>
-      <div class="invoice-summary" style="margin-top:12px">
+      <div class="invoice-summary po-cost-only" style="margin-top:12px">
         <div class="invoice-summary-row total">
           <span>TOTAL MODAL</span>
           <span style="color:var(--primary)">${formatCurrency(po.total_cost)}</span>
@@ -1428,8 +1434,8 @@
         <td>${no++}</td>
         <td>${escapeHtml(i.product_name)}</td>
         <td style="text-align:right">${i.quantity}</td>
-        <td style="text-align:right">${formatCurrency(i.cost_price)}</td>
-        <td style="text-align:right">${formatCurrency(i.subtotal)}</td>
+        <td class="po-cost-only" style="text-align:right">${formatCurrency(i.cost_price)}</td>
+        <td class="po-cost-only" style="text-align:right">${formatCurrency(i.subtotal)}</td>
       </tr>`).join('');
 
     document.getElementById('print-area').innerHTML = `
@@ -1452,13 +1458,13 @@
               <th style="width:5%">No</th>
               <th>Nama Barang</th>
               <th style="text-align:right;width:10%">Qty</th>
-              <th style="text-align:right;width:18%">Harga Modal</th>
-              <th style="text-align:right;width:18%">Subtotal</th>
+              <th class="po-cost-only" style="text-align:right;width:18%">Harga Modal</th>
+              <th class="po-cost-only" style="text-align:right;width:18%">Subtotal</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
-        <div class="total-row">Total Modal: ${formatCurrency(po.total_cost)}</div>
+        <div class="total-row po-cost-only">Total Modal: ${formatCurrency(po.total_cost)}</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:32px;font-size:12px">
           <div style="text-align:center;border-top:1px solid #999;padding-top:4px">Diterima Oleh</div>
           <div style="text-align:center;border-top:1px solid #999;padding-top:4px">Diserahkan Oleh</div>
@@ -1515,7 +1521,7 @@
       <td style="padding:5px 6px"><input type="number" id="epostock-${id}" readonly value="${existing ? (products.find(p=>p.id===existing.product_id)?.stock_quantity||0) : 0}" style="background:#f8fafc;width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 6px"><input type="number" id="epoqty-${id}" value="${existing ? existing.quantity : 1}" min="1" style="width:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"></td>
       <td class="col-harga-modal-edit-po" style="padding:5px 6px${!poIsSuperAdmin ? ';display:none' : ''}"><div class="cost-wrap"><input type="text" inputmode="numeric" data-number id="epocost-${id}" value="${existing ? Number(existing.cost_price||0).toLocaleString('id-ID') : '0'}" style="width:120px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px" oninput="recalcEditPoRow('${id}')"><span id="epocostchg-${id}" class="cost-chg"></span></div></td>
-      <td style="padding:5px 6px"><input type="text" id="eposub-${id}" readonly value="${existing ? Number(existing.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
+      <td class="po-cost-only" style="padding:5px 6px"><input type="text" id="eposub-${id}" readonly value="${existing ? Number(existing.subtotal||0).toLocaleString('id-ID') : '0'}" style="background:#f8fafc;width:100px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12.5px"></td>
       <td style="padding:5px 4px"><button onclick="document.getElementById('${id}').remove();recalcEditPoTotal()" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;padding:2px 6px;border-radius:4px;line-height:1">×</button></td>
     `;
     tbody.appendChild(tr);
