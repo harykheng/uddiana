@@ -1995,7 +1995,8 @@
     //   tanpa ini barisnya cuma "+12 pcs" tanpa keterangan
     const invIds = [...new Set([
       ...(outList||[]).filter(m=>['invoice','sale'].includes(m.reference_type)&&m.reference_id),
-      ...(inList||[]).filter(m=>m.reference_type==='invoice_cancel'&&m.reference_id),
+      ...(inList||[]).filter(m=>['invoice_cancel','invoice_edit'].includes(m.reference_type)&&m.reference_id),
+      ...(outList||[]).filter(m=>m.reference_type==='invoice_edit'&&m.reference_id),
     ].map(m=>m.reference_id))];
     let invMap = {};
     if (invIds.length) {
@@ -2016,6 +2017,8 @@
     const movRow = (m, color) => {
       const sub = m.reference_type === 'invoice_cancel'
         ? `Faktur dibatalkan/diedit${invMap[m.reference_id] ? ' — ' + invMap[m.reference_id] : ''}`
+        : m.reference_type === 'invoice_edit'
+        ? `${invMap[m.reference_id] || 'Faktur'} — ${m.notes || 'edit faktur'}`
         : getSubLabel(m, poMap);
       const batchInfo = poBatchMap[m.reference_id];
       const today = new Date(); today.setHours(0,0,0,0);
@@ -2045,7 +2048,9 @@
     };
 
     const movRowOut = (m) => {
-      const sub = getSubLabel(m, invMap);
+      const sub = m.reference_type === 'invoice_edit'
+        ? escapeHtml(`${invMap[m.reference_id] || 'Faktur'} — ${m.notes || 'edit faktur'}`)
+        : getSubLabel(m, invMap);
       return `
       <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f1f5f9">
         <div style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#ef4444;margin-top:2px"></div>
@@ -2088,7 +2093,7 @@
 
     // Lookup semua referensi (PO + invoice) sekaligus
     const poIds  = [...new Set(all.filter(m => m.reference_type === 'purchase' && m.reference_id).map(m => m.reference_id))];
-    const invIds = [...new Set(all.filter(m => ['invoice','sale'].includes(m.reference_type) && m.reference_id).map(m => m.reference_id))];
+    const invIds = [...new Set(all.filter(m => KS_INV_TYPES.includes(m.reference_type) && m.reference_id).map(m => m.reference_id))];
     const refMap = {};
     if (poIds.length) {
       const { data: pos } = await supabase.from('purchases').select('id,purchase_number').in('id', poIds);
@@ -2121,7 +2126,10 @@
   // diselingi transaksi lain) dengan faktur yang sama & ada pembatalannya digabung jadi 1 baris
   // bernilai bersih. Saldo baris gabungan = saldo baris terakhirnya, jadi saldo tetap
   // nyambung dengan baris sebelum/sesudahnya. Rincian asli bisa dibuka per baris.
-  const KS_INV_TYPES = ['invoice', 'sale', 'invoice_cancel'];
+  // 'invoice_edit' = edit faktur lewat edit_invoice() (migration50): 1 baris per produk
+  // sebesar selisih qty, jadi tidak perlu digabung — cuma ikut grup kalau bersebelahan
+  // dengan baris pembatalan model lama.
+  const KS_INV_TYPES = ['invoice', 'sale', 'invoice_cancel', 'invoice_edit'];
   let _ksExpanded = new Set();
 
   function groupKartuStok(list) {
@@ -2188,7 +2196,9 @@
     const singleRow = (m, sub) => {
       const inQty  = m.type === 'in'  ? `<span class="in-qty">+${m.quantity}</span>`  : '';
       const outQty = m.type === 'out' ? `<span class="out-qty">−${m.quantity}</span>` : '';
-      const note = m.reference_type === 'invoice_cancel'
+      const note = m.reference_type === 'invoice_edit'
+        ? ` <span class="text-muted" style="font-size:11px">(${escapeHtml((m.notes || 'edit faktur').replace(/^Edit faktur: /, 'edit: '))})</span>`
+        : m.reference_type === 'invoice_cancel'
         ? ` <span class="text-muted" style="font-size:11px">(stok dikembalikan${sub ? ' — edit/batal' : ', faktur dibatalkan'})</span>`
         : (sub && m.type === 'out' ? ` <span class="text-muted" style="font-size:11px">(potong stok)</span>` : '');
       const style = sub ? ' style="background:#f8fafc;font-size:11px"' : '';

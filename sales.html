@@ -2195,13 +2195,8 @@ function recalcTotal() {
     }
 
     // Status diambil LIVE dari database, bukan dari cache allInvoices yang bisa sudah basi
-    // kalau admin membatalkan faktur ini sesudah halaman sales dimuat.
-    //
-    // Kenapa krusial: langkah 1 di bawah menyetel status ke 'cancelled' supaya trigger
-    // restore_stock_on_cancel mengembalikan stok. Tapi trigger itu cuma bekerja kalau
-    // status LAMA belum 'cancelled'. Untuk faktur yang sudah dibatalkan, stok TIDAK
-    // dikembalikan, sementara langkah 5 tetap memasukkan item baru yang memotong stok
-    // lewat trigger — hasilnya stok berkurang dua kali untuk satu faktur, tanpa peringatan.
+    // kalau admin sudah membatalkan/memproses faktur ini sesudah halaman sales dimuat.
+    // edit_invoice() di database juga menolaknya — cek ini cuma supaya pesannya lebih cepat.
     const { data: liveInv, error: invErr } = await supabase
       .from('invoices').select('status,verification_status').eq('id', editingInvoiceId).single();
     if (invErr || !liveInv) {
@@ -2276,10 +2271,8 @@ function recalcTotal() {
     const total = items.reduce((s, i) => s + i.subtotal, 0);
     const finalNotes = gabungCatatanBonus(notes, bonusItems);
 
-    // Validasi stok LIVE dulu sebelum ada langkah destruktif apapun (cancel/hapus item lama).
-    // Kalau ini dilewat dan validasi cuma nunggu trigger DB gagal di step insert terakhir,
-    // faktur bisa kadung ke-cancel & item lama kadung terhapus sebelum ketahuan gagal —
-    // hasilnya faktur kosong tanpa item tapi status sudah balik 'pending'.
+    // Cek stok LIVE dulu supaya pesan "stok tidak cukup" muncul sebelum overlay loading.
+    // edit_invoice() tetap memeriksa ulang secara atomik di database.
     const inv = allInvoices.find(x => x.id === editingInvoiceId);
     const releasedByProduct = {};
     (inv?.invoice_items || []).forEach(it => {
@@ -2309,40 +2302,29 @@ function recalcTotal() {
 
     showFullLoading('Menyimpan perubahan faktur & memperbarui stok...');
     try {
-      // 1. Cancel invoice → trigger DB kembalikan stok otomatis
-      const { error: e1 } = await supabase.from('invoices')
-        .update({ status: 'cancelled' }).eq('id', editingInvoiceId);
-      if (e1) throw new Error('Gagal restore stok: ' + e1.message);
-
-      // 2. Hapus semua item lama
-      const { error: e2 } = await supabase.from('invoice_items')
-        .delete().eq('invoice_id', editingInvoiceId);
-      if (e2) throw new Error('Gagal hapus items lama: ' + e2.message);
-
-      // 3. Ambil data customer terbaru
       const { data: customer } = await supabase.from('customers')
         .select('name,store_name,phone,address').eq('id', customerId).single();
 
-      // 4. Update header faktur & set kembali ke pending
-      const { error: e3 } = await supabase.from('invoices').update({
-        customer_id:      customerId,
-        customer_name:    customer?.name || '',
-        store_name:       customer?.store_name || customer?.name || '',
-        customer_phone:   customer?.phone   || null,
-        customer_address: customer?.address || null,
-        invoice_date:     date,
-        payment_term:     term,
-        notes:            finalNotes || null,
-        total:            total,
-        status:           'pending',
-        verification_status: 'pending'
-      }).eq('id', editingInvoiceId);
-      if (e3) throw new Error('Gagal update faktur: ' + e3.message);
-
-      // 5. Insert item baru → trigger DB kurangi stok otomatis
-      const { error: e4 } = await supabase.from('invoice_items')
-        .insert(items.map(it => ({ ...it, invoice_id: editingInvoiceId })));
-      if (e4) throw new Error('Gagal simpan items baru: ' + e4.message);
+      // Satu transaksi di database (supabase_migration50): stok cuma digeser sebesar
+      // SELISIH qty per produk, dicatat 1 baris 'invoice_edit'. Dulu: batalkan faktur
+      // (stok kembali semua) → hapus item → insert ulang (stok dipotong lagi) — Kartu Stok
+      // jadi +12/−6/+6/−12 tiap edit, dan koneksi putus di tengah = faktur kosong.
+      const { error: rpcErr } = await supabase.rpc('edit_invoice', {
+        p_invoice_id: editingInvoiceId,
+        p_items: items,
+        p_header: {
+          customer_id:      customerId,
+          customer_name:    customer?.name || '',
+          store_name:       customer?.store_name || customer?.name || '',
+          customer_phone:   customer?.phone   || null,
+          customer_address: customer?.address || null,
+          invoice_date:     date,
+          payment_term:     term,
+          notes:            finalNotes || null,
+          total:            total,
+        },
+      });
+      if (rpcErr) throw new Error('Gagal simpan perubahan: ' + rpcErr.message);
 
       showToast('✅ Faktur berhasil diperbarui!');
       closeEditModal();
