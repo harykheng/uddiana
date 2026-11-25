@@ -37,6 +37,7 @@ Tidak ada `npm`, `package.json`, `node_modules`, atau compile step. Semua JS/CSS
 ├── supabase_migration7.sql    ← Migration 7: role super_admin di user_profiles
 ├── supabase_migration44.sql   ← Migration 44: foto faktur supplier di purchases (bucket purchase-photos)
 ├── reset_demo_data.sql        ← Reset semua data demo (jalankan di Supabase SQL Editor)
+├── koreksi_stok_faktur_ditolak.sql ← Koreksi sekali-jalan stok kelebihan dari bug tolak faktur 2x (pratinjau dulu, flag `jalankan`)
 ├── split-csv.html             ← Tool pecah file CSV besar (public, no auth)
 ├── setup.html         ← Dipakai sekali untuk buat akun admin pertama
 ├── login.html
@@ -186,7 +187,7 @@ closeModal('modal-id');
 `sales.html`, `invoices.html` (Edit Faktur) dan `verify-invoices.html` (Edit & Setujui) memanggil `supabase.rpc('edit_invoice', { p_invoice_id, p_items, p_header })`. Satu transaksi: baris item dengan `id` milik faktur = update, tanpa id = insert, yang tidak disebut = dihapus; stok cuma digeser sebesar **selisih qty bersih per produk** ("cek + kurangi" atomik) dan dicatat 1 baris `stock_movements` `reference_type = 'invoice_edit'`. `p_header` cuma mengubah kunci yang dikirim; `approve: true` = setujui sekaligus (admin/super_admin). Sales cuma boleh faktur miliknya yang masih `pending`, tanpa `sales_name`/`created_by_id`/`approve`. Ditolak saat ada sesi stock opname aktif.
 - **JANGAN** kembali ke pola "set `status='cancelled'` → hapus item → insert ulang" atau menulis `products.stock_quantity` absolut dari browser untuk edit faktur
 - Insert `invoice_items` di dalam fungsi itu tidak dipotong trigger: `decrease_stock_on_invoice_item()` melewati dirinya kalau GUC transaction-local `app.invoice_edit = 'on'`
-- **Tolak faktur** (`verify-invoices.html`): cukup set `status='cancelled'` — trigger `restore_stock_on_cancel` sudah mengembalikan stok. Jangan tambah stok lagi dari browser (dulu begitu → stok kembali 2×, audit di bawah migration50)
+- **Tolak faktur** (`verify-invoices.html`): cukup set `status='cancelled'` — trigger `restore_stock_on_cancel` sudah mengembalikan stok. Jangan tambah stok lagi dari browser (dulu begitu → stok kembali 2×). Data lama dikoreksi lewat `koreksi_stok_faktur_ditolak.sql`: default cuma pratinjau, `jalankan := true` untuk mengoreksi; produk yang punya `adjustment` (opname / Sesuaikan Stok / set massal) sesudah faktur ditolak dilewati; tiap koreksi dicatat `reference_type = 'invoice_reject_fix'` (aman di-Run ulang). Kartu Stok: baris `invoice_reject` ber-badge ⚠️ merah, jadi ✔️ hijau kalau faktur itu sudah punya baris `invoice_reject_fix`
 
 ### Number Formatting (Indonesian)
 ```html
