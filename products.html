@@ -2093,7 +2093,7 @@
 
     // Lookup semua referensi (PO + invoice) sekaligus
     const poIds  = [...new Set(all.filter(m => m.reference_type === 'purchase' && m.reference_id).map(m => m.reference_id))];
-    const invIds = [...new Set(all.filter(m => KS_INV_TYPES.includes(m.reference_type) && m.reference_id).map(m => m.reference_id))];
+    const invIds = [...new Set(all.filter(m => (KS_INV_TYPES.includes(m.reference_type) || m.reference_type === 'invoice_reject') && m.reference_id).map(m => m.reference_id))];
     const refMap = {};
     if (poIds.length) {
       const { data: pos } = await supabase.from('purchases').select('id,purchase_number').in('id', poIds);
@@ -2198,6 +2198,10 @@
       const outQty = m.type === 'out' ? `<span class="out-qty">−${m.quantity}</span>` : '';
       const note = m.reference_type === 'invoice_edit'
         ? ` <span class="text-muted" style="font-size:11px">(${escapeHtml((m.notes || 'edit faktur').replace(/^Edit faktur: /, 'edit: '))})</span>`
+        : m.reference_type === 'invoice_reject'
+        // Tolak faktur sebelum migration50: trigger SUDAH mengembalikan stok ('invoice_cancel'),
+        // lalu browser menambah lagi baris ini → stok kelebihan sebesar qty-nya
+        ? ` <span style="font-size:11px;background:#fee2e2;color:#991b1b;padding:1px 6px;border-radius:10px;font-weight:700;white-space:nowrap" title="Stok faktur ditolak ini dikembalikan dua kali (bug lama). Stok produk kelebihan sebesar qty baris ini — koreksi lewat Sesuaikan Stok setelah cek fisik.">⚠️ dobel — stok kelebihan</span>`
         : m.reference_type === 'invoice_cancel'
         ? ` <span class="text-muted" style="font-size:11px">(stok dikembalikan${sub ? ' — edit/batal' : ', faktur dibatalkan'})</span>`
         : (sub && m.type === 'out' ? ` <span class="text-muted" style="font-size:11px">(potong stok)</span>` : '');
