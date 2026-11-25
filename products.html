@@ -1958,6 +1958,7 @@
     _piCostLoaded = false;
     _piAllMovements = [];
     _piRefMap = {};
+    _ksExpanded = new Set();
     document.getElementById('pi-name').textContent = p.name;
     document.getElementById('pi-sku').textContent  = p.sku ? `SKU: ${p.sku}` : '';
     document.getElementById('pi-stock').textContent = `Stok: ${p.stock_quantity} pcs`;
@@ -1990,7 +1991,12 @@
     }
 
     // Lookup nomor faktur untuk movements yang reference_type = 'invoice' / 'sale'
-    const invIds = [...new Set((outList||[]).filter(m=>['invoice','sale'].includes(m.reference_type)&&m.reference_id).map(m=>m.reference_id))];
+    // + baris 'invoice_cancel' di tab Masuk (stok kembali karena faktur dibatalkan/diedit) —
+    //   tanpa ini barisnya cuma "+12 pcs" tanpa keterangan
+    const invIds = [...new Set([
+      ...(outList||[]).filter(m=>['invoice','sale'].includes(m.reference_type)&&m.reference_id),
+      ...(inList||[]).filter(m=>m.reference_type==='invoice_cancel'&&m.reference_id),
+    ].map(m=>m.reference_id))];
     let invMap = {};
     if (invIds.length) {
       const { data: invs } = await supabase.from('invoices').select('id,invoice_number').in('id', invIds);
@@ -2008,7 +2014,9 @@
     };
 
     const movRow = (m, color) => {
-      const sub = getSubLabel(m, poMap);
+      const sub = m.reference_type === 'invoice_cancel'
+        ? `Faktur dibatalkan/diedit${invMap[m.reference_id] ? ' — ' + invMap[m.reference_id] : ''}`
+        : getSubLabel(m, poMap);
       const batchInfo = poBatchMap[m.reference_id];
       const today = new Date(); today.setHours(0,0,0,0);
       let expBadge = '';
@@ -2105,32 +2113,113 @@
     renderKartuStok();
   }
 
+  // Edit faktur (sales.html & verify-invoices.html) = batalkan faktur (trigger mengembalikan
+  // stok, reference_type 'invoice_cancel') lalu insert ulang item (stok dipotong lagi). Tiap
+  // edit jadi 2 baris di stock_movements: faktur yang diedit 2× tampil 5 baris +12/−12/+6/−6/...
+  // padahal barang yang keluar cuma sekali. Catatan di database tetap apa adanya (jujur, saldo
+  // tiap baris benar); yang dirapikan cuma TAMPILAN: baris yang BERURUTAN langsung (tidak
+  // diselingi transaksi lain) dengan faktur yang sama & ada pembatalannya digabung jadi 1 baris
+  // bernilai bersih. Saldo baris gabungan = saldo baris terakhirnya, jadi saldo tetap
+  // nyambung dengan baris sebelum/sesudahnya. Rincian asli bisa dibuka per baris.
+  const KS_INV_TYPES = ['invoice', 'sale', 'invoice_cancel'];
+  let _ksExpanded = new Set();
+
+  function groupKartuStok(list) {
+    const groups = [];
+    for (const m of list) {
+      const last = groups[groups.length - 1];
+      const isInv = KS_INV_TYPES.includes(m.reference_type) && m.reference_id;
+      if (isInv && last && last.refId === m.reference_id) { last.items.push(m); continue; }
+      groups.push({ refId: isInv ? m.reference_id : null, items: [m] });
+    }
+    return groups.map(g => {
+      const items = g.items;
+      const lastM = items[items.length - 1];
+      const masuk  = items.filter(m => m.type === 'in').reduce((s, m) => s + m.quantity, 0);
+      const keluar = items.filter(m => m.type === 'out').reduce((s, m) => s + m.quantity, 0);
+      const cancels = items.filter(m => m.reference_type === 'invoice_cancel').length;
+      // Cuma digabung kalau memang ada pembatalan di dalamnya; dua baris 'out' biasa dari
+      // faktur yang sama (produk di 2 baris item) tetap tampil apa adanya.
+      if (items.length < 2 || !cancels) return items.map(m => ({ single: true, m, created_at: m.created_at }));
+      // Jumlah edit = pembatalan yang diikuti potong stok lagi. Pembatalan di ujung run
+      // (faktur benar-benar dibatalkan) bukan edit.
+      let edits = 0;
+      items.forEach((m, i) => { if (m.reference_type === 'invoice_cancel' && items.slice(i + 1).some(x => x.type === 'out')) edits++; });
+      const finalCancelled = lastM.reference_type === 'invoice_cancel';
+      return [{
+        single: false, key: items[0].id, items, refId: g.refId, created_at: lastM.created_at,
+        net: keluar - masuk, edits, finalCancelled, saldo: lastM.quantity_after,
+      }];
+    }).flat();
+  }
+
+  function ksToggle(key) {
+    if (_ksExpanded.has(key)) _ksExpanded.delete(key); else _ksExpanded.add(key);
+    renderKartuStok();
+  }
+
   function renderKartuStok() {
     const dateFrom = document.getElementById('ks-date-from')?.value || '';
     const dateTo   = document.getElementById('ks-date-to')?.value   || '';
 
-    const visible = _piAllMovements.filter(m => {
-      const d = m.created_at.slice(0, 10);
+    const inRange = (iso) => {
+      const d = iso.slice(0, 10);
       if (dateFrom && d < dateFrom) return false;
       if (dateTo   && d > dateTo)   return false;
       return true;
+    };
+    // Dikelompokkan dari SEMUA baris dulu baru difilter tanggal (pakai tanggal baris
+    // terakhir grup), supaya rentang tanggal tidak memotong satu grup jadi dua.
+    const visible = groupKartuStok(_piAllMovements).filter(r => inRange(r.created_at));
+
+    let totalMasuk = 0, totalKeluar = 0;
+    visible.forEach(r => {
+      if (r.single) {
+        if (r.m.type === 'in')  totalMasuk  += r.m.quantity;
+        if (r.m.type === 'out') totalKeluar += r.m.quantity;
+      } else if (r.net > 0) totalKeluar += r.net;
+      else if (r.net < 0) totalMasuk += -r.net;
     });
 
-    const totalMasuk  = visible.filter(m => m.type === 'in').reduce((s,m) => s + m.quantity, 0);
-    const totalKeluar = visible.filter(m => m.type === 'out').reduce((s,m) => s + m.quantity, 0);
-
-    const rows = [...visible].reverse().map(m => {
-      const ref   = _piRefMap[m.reference_id];
-      const label = ref ? escapeHtml(ref) : (m.notes ? escapeHtml(m.notes) : `<span class="text-muted">${m.reference_type||'—'}</span>`);
+    const labelOf = (m) => {
+      const ref = _piRefMap[m.reference_id];
+      return ref ? escapeHtml(ref) : (m.notes ? escapeHtml(m.notes) : `<span class="text-muted">${m.reference_type||'—'}</span>`);
+    };
+    const singleRow = (m, sub) => {
       const inQty  = m.type === 'in'  ? `<span class="in-qty">+${m.quantity}</span>`  : '';
       const outQty = m.type === 'out' ? `<span class="out-qty">−${m.quantity}</span>` : '';
-      return `<tr>
-        <td style="white-space:nowrap;color:var(--text-muted)">${formatDate(m.created_at)}</td>
-        <td>${label}</td>
+      const note = m.reference_type === 'invoice_cancel'
+        ? ` <span class="text-muted" style="font-size:11px">(stok dikembalikan${sub ? ' — edit/batal' : ', faktur dibatalkan'})</span>`
+        : (sub && m.type === 'out' ? ` <span class="text-muted" style="font-size:11px">(potong stok)</span>` : '');
+      const style = sub ? ' style="background:#f8fafc;font-size:11px"' : '';
+      return `<tr${style}>
+        <td style="white-space:nowrap;color:var(--text-muted)${sub ? ';padding-left:18px' : ''}">${sub ? new Date(m.created_at).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : formatDate(m.created_at)}</td>
+        <td>${labelOf(m)}${note}</td>
         <td class="num">${inQty}</td>
         <td class="num">${outQty}</td>
-        <td class="num saldo">${m._saldo}</td>
+        <td class="num ${sub ? 'text-muted' : 'saldo'}">${m._saldo}</td>
       </tr>`;
+    };
+
+    const rows = [...visible].reverse().map(r => {
+      if (r.single) return singleRow(r.m, false);
+      const open = _ksExpanded.has(r.key);
+      const ket = r.finalCancelled
+        ? 'faktur dibatalkan'
+        : (r.edits ? `diedit ${r.edits}×` : 'dibatalkan & dibuat ulang');
+      const inQty  = r.net < 0 ? `<span class="in-qty">+${-r.net}</span>` : '';
+      const outQty = r.net > 0 ? `<span class="out-qty">−${r.net}</span>` : (r.net === 0 ? '<span class="text-muted">0</span>' : '');
+      const head = `<tr style="cursor:pointer" onclick="ksToggle('${r.key}')" title="Klik untuk lihat rincian ${r.items.length} catatan stok">
+        <td style="white-space:nowrap;color:var(--text-muted)">${formatDate(r.created_at)}</td>
+        <td>${labelOf(r.items[0])}
+          <span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px;white-space:nowrap">✏️ ${ket}</span>
+          <span class="text-muted" style="font-size:11px;white-space:nowrap">${open ? '▾ tutup' : '▸ rincian'}</span>
+        </td>
+        <td class="num">${inQty}</td>
+        <td class="num">${outQty}</td>
+        <td class="num saldo">${r.saldo}</td>
+      </tr>`;
+      return head + (open ? [...r.items].reverse().map(m => singleRow(m, true)).join('') : '');
     }).join('');
 
     document.getElementById('pi-panel-card').innerHTML = `
