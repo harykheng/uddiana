@@ -828,7 +828,8 @@
     // dikurangkan sendiri saat menampilkan tagihan & sisa.
     const [returTotals, tokoBaru] = await Promise.all([
       fetchReturnTotals(rows.map(i => i.id)),
-      fetchTokoBaruInvoiceIds(rows.filter(i => i.status !== 'cancelled'))
+      // Cuma faktur belum lunas — faktur toko baru yang sudah lunas tidak perlu diawasi lagi
+      fetchTokoBaruInvoiceIds(rows.filter(i => i.status === 'pending'))
         .catch(e => { console.warn('Gagal cek toko baru:', e); return new Set(); }),
     ]);
     if (seq !== invListSeq) return;
