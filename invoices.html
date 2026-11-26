@@ -678,6 +678,7 @@
     sel.value = value || '';
   }
 
+  let tokoBaruIds = new Set();      // id faktur toko baru (🆕) di halaman aktif
   let returTotalByInvoice = {};   // { invoice_id: nilai retur disetujui }
 
   // ── DAFTAR FAKTUR: pagination di database ──────────────────
@@ -825,9 +826,14 @@
 
     // Retur tidak mengubah invoices.total, jadi nilainya diambil terpisah lalu
     // dikurangkan sendiri saat menampilkan tagihan & sisa.
-    const returTotals = await fetchReturnTotals(rows.map(i => i.id));
+    const [returTotals, tokoBaru] = await Promise.all([
+      fetchReturnTotals(rows.map(i => i.id)),
+      fetchTokoBaruInvoiceIds(rows.filter(i => i.status !== 'cancelled'))
+        .catch(e => { console.warn('Gagal cek toko baru:', e); return new Set(); }),
+    ]);
     if (seq !== invListSeq) return;
     returTotalByInvoice = returTotals;
+    tokoBaruIds = tokoBaru;
     allInvoices = rows;
     invTotalCount = count;
     renderInvoices();
@@ -948,9 +954,10 @@
       return `<tr ${faded}>
         <td>
           <strong style="color:var(--primary)">${escapeHtml(inv.invoice_number)}</strong>
-          ${inv.sales_name || inv.printed_at || inv.status !== 'cancelled' ? `
+          ${inv.sales_name || inv.printed_at || inv.status !== 'cancelled' || tokoBaruIds.has(inv.id) ? `
           <div style="margin-top:3px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
             ${inv.sales_name ? `<span class="badge-sales">👤 ${escapeHtml(inv.sales_name)}</span>` : ''}
+            ${tokoBaruIds.has(inv.id) ? badgeTokoBaru(inv) : ''}
             ${inv.printed_at ? `<span class="tippy" data-tip="Dicetak ${inv.print_count}x · terakhir ${formatDate(inv.printed_at)}" style="font-size:11px;color:#94a3b8">🖨️ ${inv.print_count}x</span>`
               : inv.status !== 'cancelled' ? `<span style="font-size:11px;font-weight:700;color:#c2410c;background:#ffedd5;border:1px solid #fdba74;border-radius:4px;padding:1px 6px;white-space:nowrap">⚠️ Belum dicetak</span>` : ''}
           </div>` : ''}
