@@ -322,6 +322,7 @@
       color: #b91c1c;
       margin-top: 8px;
     }
+    .newstore-cod { background:#eff6ff; border:1px solid #93c5fd; border-radius:8px; padding:8px 12px; margin:-4px 0 12px; font-size:13px; color:#1e40af; }
   </style>
 </head>
 <body>
@@ -412,6 +413,7 @@
           </select>
         </div>
       </div>
+      <div id="inv-term-newstore" class="newstore-cod" style="display:none">🆕 Toko baru — faktur pertama wajib <strong>COD</strong>. Termin tempo bisa dipakai setelah ada faktur yang disetujui admin.</div>
       <div class="form-group">
         <label>Catatan (opsional)</label>
         <textarea id="inv-notes" rows="2" placeholder="Catatan tambahan..."></textarea>
@@ -627,6 +629,7 @@
         </select>
       </div>
     </div>
+    <div id="edit-term-newstore" class="newstore-cod" style="display:none">🆕 Toko baru — faktur pertama wajib <strong>COD</strong>. Termin tempo bisa dipakai setelah ada faktur yang disetujui admin.</div>
     <div class="form-group">
       <label>Catatan (opsional)</label>
       <textarea id="edit-notes" rows="2" placeholder="Catatan tambahan..."></textarea>
@@ -1073,6 +1076,7 @@
       createFilter: function(input) { return input.trim().length >= 1; },
       onChange: function(value) {
         checkUnpaidInvoices(value);
+        applyNewStoreTermRule('inv-term', 'inv-term-newstore', value);
         // Customer ini mungkin punya aturan diskon khusus — evaluasi ulang baris yang ada
         recalcItem();   // sudah mengevaluasi ulang semua baris sekaligus
       },
@@ -1256,6 +1260,68 @@
     showToast('✅ Laporan bayar dikirim, menunggu konfirmasi admin');
     closeModal('modal-claim');
     await loadHistory();
+  }
+
+  // ── Toko baru wajib COD ──
+  // "Toko baru" = belum punya satu pun faktur yang sah (bukan batal & sudah disetujui
+  // admin / tanpa verifikasi). Faktur pertama yang masih menunggu verifikasi belum
+  // dihitung, jadi faktur kedua di hari yang sama tetap wajib COD.
+  // excludeInvoiceId: faktur yang sedang diedit tidak dihitung sebagai riwayat.
+  async function isTokoBaru(customerId, excludeInvoiceId) {
+    if (!customerId) return false;
+    let q = supabase.from('invoices')
+      .select('id', { count: 'exact', head: true })
+      .eq('customer_id', customerId)
+      .neq('status', 'cancelled')
+      .or('verification_status.is.null,verification_status.eq.approved');
+    if (excludeInvoiceId) q = q.neq('id', excludeInvoiceId);
+    const { count, error } = await q;
+    if (error) throw error;
+    return (count || 0) === 0;
+  }
+
+  // Kunci dropdown termin ke COD (atau buka lagi). Nilai lama dikembalikan kalau kunci dilepas.
+  function setTermLockCOD(selectId, noteId, locked) {
+    const sel = document.getElementById(selectId);
+    [...sel.options].forEach(o => { if (o.value !== 'cod') o.disabled = locked; });
+    if (locked) {
+      if (sel.value !== 'cod') sel.dataset.prevTerm = sel.value;
+      sel.value = 'cod';
+    } else if (sel.dataset.prevTerm) {
+      sel.value = sel.dataset.prevTerm;
+      delete sel.dataset.prevTerm;
+    }
+    document.getElementById(noteId).style.display = locked ? 'block' : 'none';
+  }
+
+  // Lepas kunci tanpa mengembalikan nilai lama — dipakai sebelum form diisi ulang
+  function resetTermLock(selectId, noteId) {
+    termCheckSeq[selectId] = (termCheckSeq[selectId] || 0) + 1;   // batalkan cek yang masih jalan
+    const sel = document.getElementById(selectId);
+    delete sel.dataset.prevTerm;
+    setTermLockCOD(selectId, noteId, false);
+  }
+
+  const termCheckSeq = {};
+  async function applyNewStoreTermRule(selectId, noteId, customerId, excludeInvoiceId) {
+    const seq = (termCheckSeq[selectId] = (termCheckSeq[selectId] || 0) + 1);
+    let baru = false;
+    try { baru = await isTokoBaru(customerId, excludeInvoiceId); } catch (e) { /* dicek lagi saat kirim */ }
+    if (seq !== termCheckSeq[selectId]) return;   // customer sudah diganti lagi
+    setTermLockCOD(selectId, noteId, baru);
+  }
+
+  // Dipanggil saat kirim/simpan. Return false (dan toast) kalau termin bukan COD untuk toko baru.
+  async function enforceNewStoreCOD(customerId, term, excludeInvoiceId) {
+    if (term === 'cod') return true;
+    let baru;
+    try { baru = await isTokoBaru(customerId, excludeInvoiceId); }
+    catch (e) { showToast('Gagal cek riwayat toko: ' + e.message, 'error'); return false; }
+    if (baru) {
+      showToast('Toko baru wajib COD — ubah Termin ke COD', 'error');
+      return false;
+    }
+    return true;
   }
 
   async function checkUnpaidInvoices(customerId) {
@@ -1549,6 +1615,7 @@
     if (customerTS) customerTS.clear();
     document.getElementById('inv-notes').value = inv.notes || '';
     document.getElementById('inv-date').value = new Date().toISOString().split('T')[0];
+    resetTermLock('inv-term', 'inv-term-newstore');
     document.getElementById('inv-term').value = inv.payment_term || 'cod';
 
     // Set customer
@@ -1861,6 +1928,7 @@ function recalcTotal() {
 
     if (!customerId) { showToast('Pilih customer terlebih dahulu', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
     if (!date) { showToast('Isi tanggal faktur', 'error'); btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
+    if (!(await enforceNewStoreCOD(customerId, term))) { btn.disabled = false; btn.textContent = 'Kirim Faktur'; return; }
 
     const rows = document.querySelectorAll('.item-row');
     const items = [];
@@ -2028,6 +2096,7 @@ function recalcTotal() {
 
     // Isi field header
     document.getElementById('edit-date').value = inv.invoice_date;
+    resetTermLock('edit-term', 'edit-term-newstore');
     document.getElementById('edit-term').value = inv.payment_term || 'cod';
     document.getElementById('edit-notes').value = inv.notes || '';
 
@@ -2040,7 +2109,8 @@ function recalcTotal() {
         value: c.id,
         text: c.name + (c.store_name ? ' — ' + c.store_name : '')
       })),
-      onChange: function() {
+      onChange: function(value) {
+        applyNewStoreTermRule('edit-term', 'edit-term-newstore', value, editingInvoiceId);
         // Customer ini mungkin punya aturan diskon khusus — evaluasi ulang baris yang ada
         recalcEditItem();   // sudah mengevaluasi ulang semua baris sekaligus
       }
@@ -2224,6 +2294,7 @@ function recalcTotal() {
 
     if (!customerId) { showToast('Pilih customer terlebih dahulu', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
     if (!date)       { showToast('Isi tanggal faktur', 'error'); btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
+    if (!(await enforceNewStoreCOD(customerId, term, editingInvoiceId))) { btn.disabled = false; btn.textContent = '💾 Simpan Perubahan'; return; }
 
     // Kumpulkan item
     const rows = document.querySelectorAll('#edit-items-list .item-row');
