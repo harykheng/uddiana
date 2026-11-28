@@ -678,6 +678,7 @@
     sel.value = value || '';
   }
 
+  let tokoBaruIds = new Set();      // id faktur toko baru (🆕) di halaman aktif
   let returTotalByInvoice = {};   // { invoice_id: nilai retur disetujui }
 
   // ── DAFTAR FAKTUR: pagination di database ──────────────────
@@ -825,9 +826,15 @@
 
     // Retur tidak mengubah invoices.total, jadi nilainya diambil terpisah lalu
     // dikurangkan sendiri saat menampilkan tagihan & sisa.
-    const returTotals = await fetchReturnTotals(rows.map(i => i.id));
+    const [returTotals, tokoBaru] = await Promise.all([
+      fetchReturnTotals(rows.map(i => i.id)),
+      // Cuma faktur belum lunas — faktur toko baru yang sudah lunas tidak perlu diawasi lagi
+      fetchTokoBaruInvoiceIds(rows.filter(i => i.status === 'pending'))
+        .catch(e => { console.warn('Gagal cek toko baru:', e); return new Set(); }),
+    ]);
     if (seq !== invListSeq) return;
     returTotalByInvoice = returTotals;
+    tokoBaruIds = tokoBaru;
     allInvoices = rows;
     invTotalCount = count;
     renderInvoices();
@@ -948,9 +955,10 @@
       return `<tr ${faded}>
         <td>
           <strong style="color:var(--primary)">${escapeHtml(inv.invoice_number)}</strong>
-          ${inv.sales_name || inv.printed_at || inv.status !== 'cancelled' ? `
+          ${inv.sales_name || inv.printed_at || inv.status !== 'cancelled' || tokoBaruIds.has(inv.id) ? `
           <div style="margin-top:3px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
             ${inv.sales_name ? `<span class="badge-sales">👤 ${escapeHtml(inv.sales_name)}</span>` : ''}
+            ${tokoBaruIds.has(inv.id) ? badgeTokoBaru(inv) : ''}
             ${inv.printed_at ? `<span class="tippy" data-tip="Dicetak ${inv.print_count}x · terakhir ${formatDate(inv.printed_at)}" style="font-size:11px;color:#94a3b8">🖨️ ${inv.print_count}x</span>`
               : inv.status !== 'cancelled' ? `<span style="font-size:11px;font-weight:700;color:#c2410c;background:#ffedd5;border:1px solid #fdba74;border-radius:4px;padding:1px 6px;white-space:nowrap">⚠️ Belum dicetak</span>` : ''}
           </div>` : ''}
@@ -2265,9 +2273,6 @@
       const stockEl = tr.querySelector('[id^="estock-"]');
       const stockAvail = parseInt(stockEl?.value || '0');
       const originalQty = parseInt(tr.dataset.originalQty || '0');
-      // Tidak dipakai untuk validasi stok lagi (lihat catatan di bawah), tapi masih
-      // dibutuhkan saveEditInvoice untuk memilih cabang update vs insert item.
-      const isSameProduct = tr.dataset.originalProductId === sel.value;
 
       if (qty <= 0) { showToast('Qty harus lebih dari 0', 'error'); valid = false; break; }
 
@@ -2287,8 +2292,6 @@
 
       newItems.push({
         itemId: tr.dataset.itemId || null,
-        originalProductId: tr.dataset.originalProductId || null,
-        originalQty,
         product_id: sel.value,
         product_name: prod?.name || '',
         quantity: qty,
@@ -2298,7 +2301,6 @@
         discount_type: discType,
         subtotal: sub,
         cost_price: cost,
-        isSameProduct,
       });
       total += sub;
     }
@@ -2340,123 +2342,38 @@
     showFullLoading('Menyimpan perubahan faktur...');
     try {
 
-    // Kumpulkan item ID lama untuk mendeteksi item yang dihapus
-    const oldItemIds = new Set((editInvoiceItems || []).map(it => it.id));
-    const keptItemIds = new Set(newItems.filter(x => x.itemId).map(x => x.itemId));
-    const deletedItems = (editInvoiceItems || []).filter(it => !keptItemIds.has(it.id));
-
-    // Restore stok untuk item yang dihapus
-    for (const it of deletedItems) {
-      if (!it.product_id) continue;
-      const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', it.product_id).single();
-      if (prod) {
-        const newStock = prod.stock_quantity + it.quantity;
-        await supabase.from('products').update({ stock_quantity: newStock }).eq('id', it.product_id);
-        const { error: movErr1 } = await supabase.from('stock_movements').insert({
-          product_id: it.product_id, product_name: it.product_name, type: 'adjustment',
-          quantity: it.quantity, quantity_before: prod.stock_quantity, quantity_after: newStock,
-          notes: `Edit faktur: item dihapus`,
-        });
-        if (movErr1) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr1.message, 'error');
-      }
-      await supabase.from('invoice_items').delete().eq('id', it.id);
-    }
-
-    // Update/insert items
-    for (const item of newItems) {
-      const qtyDiff = item.isSameProduct ? item.quantity - item.originalQty : item.quantity;
-      const payload = {
-        invoice_id: editInvoiceId,
-        product_id: item.product_id,
-        product_name: item.product_name,
-        quantity: item.quantity,
-        price: item.price,
-        item_discount: item.item_discount,
-        item_discount2: item.item_discount2,
-        discount_type: item.discount_type,
-        subtotal: item.subtotal,
-        cost_price: item.cost_price,
-      };
-
-      if (item.itemId && item.isSameProduct) {
-        // Update item lama — adjust stok jika qty berubah
-        if (qtyDiff !== 0) {
-          const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', item.product_id).single();
-          const newStock = prod ? prod.stock_quantity - qtyDiff : null;
-          if (newStock !== null && newStock < 0) {
-            showToast(`Stok "${item.product_name}" tidak cukup (sisa saat ini: ${prod.stock_quantity}, butuh tambahan: ${qtyDiff})`, 'error');
-            setLoading(btn, false); return;
-          }
-          if (prod) {
-            await supabase.from('products').update({ stock_quantity: newStock }).eq('id', item.product_id);
-            const { error: movErr2 } = await supabase.from('stock_movements').insert({
-              product_id: item.product_id, product_name: item.product_name, type: 'adjustment',
-              quantity: Math.abs(qtyDiff), quantity_before: prod.stock_quantity, quantity_after: newStock,
-              notes: `Edit faktur: qty item berubah`,
-            });
-            if (movErr2) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr2.message, 'error');
-          }
-        }
-        await supabase.from('invoice_items').update(payload).eq('id', item.itemId);
-      } else {
-        // Item baru atau ganti produk — validasi stok produk baru cukup DULU sebelum restore stok produk lama
-        const { data: prod } = await supabase.from('products').select('stock_quantity').eq('id', item.product_id).single();
-        const newStock = prod ? prod.stock_quantity - item.quantity : null;
-        if (newStock !== null && newStock < 0) {
-          showToast(`Stok "${item.product_name}" tidak cukup (sisa saat ini: ${prod.stock_quantity}, butuh: ${item.quantity})`, 'error');
-          setLoading(btn, false); return;
-        }
-
-        if (item.itemId && !item.isSameProduct) {
-          const oldItem = editInvoiceItems.find(x => x.id === item.itemId);
-          if (oldItem) {
-            const { data: oldProd } = await supabase.from('products').select('stock_quantity').eq('id', oldItem.product_id).single();
-            if (oldProd) {
-              const oldNewStock = oldProd.stock_quantity + oldItem.quantity;
-              await supabase.from('products').update({ stock_quantity: oldNewStock }).eq('id', oldItem.product_id);
-              const { error: movErr3 } = await supabase.from('stock_movements').insert({
-                product_id: oldItem.product_id, product_name: oldItem.product_name, type: 'adjustment',
-                quantity: oldItem.quantity, quantity_before: oldProd.stock_quantity, quantity_after: oldNewStock,
-                notes: `Edit faktur: ganti produk`,
-              });
-              if (movErr3) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr3.message, 'error');
-            }
-            await supabase.from('invoice_items').delete().eq('id', item.itemId);
-          }
-        }
-        // Insert ini memicu trigger decrease_stock_on_invoice_item, yang SUDAH memotong
-        // stok secara atomik sekaligus mencatat stock_movements-nya sendiri.
-        // Sebelumnya di bawah sini stok masih dipotong SEKALI LAGI secara manual pakai
-        // nilai absolut hasil pembacaan sebelum insert. Tiga akibatnya:
-        //   1. riwayat tercatat dobel (satu dari trigger, satu dari sini) — rekap dari
-        //      stock_movements jadi 2x lipat dari potongan yang sebenarnya;
-        //   2. penulisan absolut itu menimpa perubahan stok transaksi lain yang menyelip
-        //      antara pembacaan dan penulisan (faktur lain, PO, scan opname);
-        //   3. errornya tidak pernah ditangkap, jadi kalau trigger menolak karena stok
-        //      kurang, stok tetap dikurangi manual padahal itemnya batal tersimpan.
-        // Cukup andalkan trigger, dan hentikan proses kalau insert-nya gagal.
-        const { error: insErr } = await supabase.from('invoice_items').insert(payload);
-        if (insErr) {
-          showToast(`Gagal simpan item "${item.product_name}": ${insErr.message}`, 'error');
-          setLoading(btn, false);
-          return;
-        }
-      }
-    }
-
-    // Update total faktur
+    // Satu transaksi di database (supabase_migration50): baris item ditulis (update yang
+    // punya id, insert yang baru, hapus yang tidak disebut) dan stok cuma digeser sebesar
+    // SELISIH qty per produk, dicatat 'invoice_edit' + nomor faktur di Kartu Stok.
+    // Dulu stok ditimpa angka absolut hasil baca beberapa saat sebelumnya (penjualan lain
+    // yang menyelip ikut hilang) dan dicatat 'adjustment' tanpa nomor faktur.
     const editPaymentTerm = document.getElementById('edit-inv-payment-term').value;
     const editNotes = document.getElementById('edit-inv-notes').value.trim() || null;
-    const update = { total, subtotal: total, payment_term: editPaymentTerm, notes: editNotes };
+    const header = { total, subtotal: total, payment_term: editPaymentTerm, notes: editNotes };
     const editSalesSel = document.getElementById('edit-inv-sales');
     // '__keep__' = sales lama tidak dikenali di daftar → biarkan sales_name/created_by_id apa adanya
     if (editSalesSel.value !== '__keep__') {
       const opt = editSalesSel.options[editSalesSel.selectedIndex];
-      update.sales_name    = editSalesSel.value ? (opt?.dataset.name || null) : null;
-      update.created_by_id = editSalesSel.value || null;
+      header.sales_name    = editSalesSel.value ? (opt?.dataset.name || null) : null;
+      header.created_by_id = editSalesSel.value || null;
     }
-    const { error: updErr } = await supabase.from('invoices').update(update).eq('id', editInvoiceId);
-    if (updErr) { showToast('Item tersimpan, tapi gagal update faktur: ' + updErr.message, 'error'); return; }
+    const { error: rpcErr } = await supabase.rpc('edit_invoice', {
+      p_invoice_id: editInvoiceId,
+      p_items: newItems.map(it => ({
+        id:             it.itemId || null,
+        product_id:     it.product_id,
+        product_name:   it.product_name,
+        quantity:       it.quantity,
+        price:          it.price,
+        item_discount:  it.item_discount,
+        item_discount2: it.item_discount2,
+        discount_type:  it.discount_type,
+        subtotal:       it.subtotal,
+        cost_price:     it.cost_price,
+      })),
+      p_header: header,
+    });
+    if (rpcErr) { showToast('Gagal simpan perubahan: ' + rpcErr.message, 'error'); return; }
 
     showToast('Faktur berhasil diperbarui!', 'success');
     closeModal('modal-edit-invoice');

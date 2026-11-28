@@ -512,8 +512,18 @@ create table if not exists return_items (
     customerTomSelect = new TomSelect(sel, {
       placeholder: '— Ketik nama customer —',
       maxOptions: 200,
+      // Dropdown ditaruh di <body>: kalau di dalam .modal-body (overflow-y:auto),
+      // daftar toko terpotong jadi cuma 1 baris kelihatan saat modal masih pendek.
+      dropdownParent: 'body',
       onChange: (val) => val ? onReturCustomerSelect(val) : resetInvoiceList(),
     });
+    // Dropdown di <body> tidak ikut bergeser saat isi modal di-scroll → posisikan ulang
+    if (!sel.dataset.scrollBound) {
+      sel.dataset.scrollBound = '1';
+      const reposition = () => { if (customerTomSelect?.isOpen) customerTomSelect.positionDropdown(); };
+      document.querySelectorAll('#modal-create .modal, #modal-create .modal-body')
+        .forEach(el => el.addEventListener('scroll', reposition, { passive: true }));
+    }
   }
 
   async function onReturCustomerSelect(customerId) {

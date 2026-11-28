@@ -666,7 +666,7 @@
 
   // ── TANDA HARGA MODAL NAIK / TURUN ──────────────────────────
   // Dibandingkan dengan harga modal produk sekarang (products.cost — rata-rata
-  // tertimbang semua pembelian, diisi trigger migration50). Baris lama di Edit PO dibandingkan
+  // tertimbang semua pembelian, diisi trigger migration51). Baris lama di Edit PO dibandingkan
   // dengan harga yang tersimpan di PO itu. Kolom ini cuma tampil untuk super_admin.
   function setCostBase(rowId, prod) {
     const tr = document.getElementById(rowId);
@@ -1393,7 +1393,7 @@
       }
 
       // Semua tervalidasi aman — batalkan PO dulu lewat trigger database
-      // (restore_stock_on_purchase_cancel, migration50): stok dikurangi atomik
+      // (restore_stock_on_purchase_cancel, migration51): stok dikurangi atomik
       // DAN harga modal rata-rata dikembalikan ke sebelum PO ini. Mengurangi stok
       // langsung dari browser seperti dulu membuat modal tetap memuat harga PO
       // yang dihapus. Kalau hapus di bawah gagal, PO tertinggal berstatus Batal.

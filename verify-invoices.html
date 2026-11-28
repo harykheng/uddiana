@@ -261,6 +261,7 @@
 <script src="js/auth.js"></script>
 <script>
   let allInvoices = [];
+  let tokoBaruIds = new Set(), tokoBaruSeq = 0;   // faktur toko baru (🆕), lihat fetchTokoBaruInvoiceIds()
   let allClaims   = [];
   let currentInvoiceId = null;
   let currentClaimId   = null;
@@ -441,7 +442,7 @@
     const status = document.getElementById('filter-status').value;
     let query = supabase
       .from('invoices')
-      .select('id,invoice_number,invoice_date,store_name,sales_name,total,status,verification_status,reject_reason,notes,payment_term,price_mode,created_by_id,invoice_items(id,product_id,quantity,price,subtotal,cost_price,item_discount,item_discount2,discount_type,products(name,sku))')
+      .select('id,invoice_number,invoice_date,created_at,customer_id,store_name,sales_name,total,status,verification_status,reject_reason,notes,payment_term,price_mode,created_by_id,invoice_items(id,product_id,quantity,price,subtotal,cost_price,item_discount,item_discount2,discount_type,products(name,sku))')
       .order('created_at', { ascending: false });
 
     if (status) query = query.eq('verification_status', status);
@@ -455,6 +456,14 @@
     allInvoices = data || [];
     document.getElementById('count-verify').textContent = pendingCount ?? 0;
     renderTable();
+    // Tanda 🆕 Toko baru menyusul — tabel tidak ditahan query riwayat toko
+    const seq = ++tokoBaruSeq;
+    try {
+      const ids = await fetchTokoBaruInvoiceIds(allInvoices);
+      if (seq !== tokoBaruSeq) return;
+      tokoBaruIds = ids;
+      renderTable();
+    } catch (e) { console.warn('Gagal cek toko baru:', e); }
   }
 
   function renderTable() {
@@ -496,7 +505,7 @@
         <td><strong>${escapeHtml(inv.invoice_number || '—')}</strong></td>
         <td class="text-muted">${formatDate(inv.invoice_date)}</td>
         <td><span style="display:inline-flex;align-items:center;gap:5px;background:#ede9fe;color:#6d28d9;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700">👤 ${escapeHtml(inv.sales_name || '—')}</span></td>
-        <td>${escapeHtml(inv.store_name || '—')}</td>
+        <td>${escapeHtml(inv.store_name || '—')}${tokoBaruIds.has(inv.id) ? `<div style="margin-top:3px">${badgeTokoBaru(inv)}</div>` : ''}</td>
         <td><strong>${formatCurrency(inv.total)}</strong></td>
         <td>${vbadge}</td>
         <td>${actions}</td>
@@ -533,7 +542,7 @@
           <span class="vi-card-num">${escapeHtml(inv.invoice_number || '—')}</span>
           ${badge}
         </div>
-        <div class="vi-card-customer">${escapeHtml(inv.store_name || '—')}</div>
+        <div class="vi-card-customer">${escapeHtml(inv.store_name || '—')}${tokoBaruIds.has(inv.id) ? ` ${badgeTokoBaru(inv)}` : ''}</div>
         <div class="vi-card-meta">👤 ${escapeHtml(inv.sales_name || '—')} · ${formatDate(inv.invoice_date)} · ${termMap[inv.payment_term] || inv.payment_term || '—'}</div>
         <div class="vi-card-total">${formatCurrency(inv.total)}</div>
         <div class="vi-card-actions">${actions}</div>
@@ -553,7 +562,7 @@
     document.getElementById('modal-detail-body').innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;font-size:13px">
         <div><span class="text-muted">Sales:</span> <strong>${escapeHtml(inv.sales_name || '—')}</strong></div>
-        <div><span class="text-muted">Customer:</span> <strong>${escapeHtml(inv.store_name || '—')}</strong></div>
+        <div><span class="text-muted">Customer:</span> <strong>${escapeHtml(inv.store_name || '—')}</strong>${tokoBaruIds.has(inv.id) ? ` ${badgeTokoBaru(inv)}` : ''}</div>
         <div><span class="text-muted">Tanggal:</span> ${formatDate(inv.invoice_date)}</div>
         <div><span class="text-muted">Termin:</span> ${{cod:'COD','14_days':'14 Hari','30_days':'30 Hari'}[inv.payment_term] || inv.payment_term || '—'}</div>
         <div><span class="text-muted">Mode Harga:</span> ${inv.price_mode || '—'}</div>
@@ -670,28 +679,11 @@
       return;
     }
 
-    // Kembalikan stok tiap item (tanpa RPC) — aman dilakukan sesudah klaim berhasil
-    showFullLoading('Mengembalikan stok...');
-    for (const item of (inv.invoice_items || [])) {
-      const { data: prod } = await supabase
-        .from('products')
-        .select('name,stock_quantity')
-        .eq('id', item.product_id)
-        .single();
-      if (prod) {
-        const newStock = prod.stock_quantity + item.quantity;
-        await supabase.from('products')
-          .update({ stock_quantity: newStock })
-          .eq('id', item.product_id);
-        const { error: movErr } = await supabase.from('stock_movements').insert({
-          product_id: item.product_id, product_name: prod.name || item.product_name, type: 'in',
-          quantity: item.quantity, quantity_before: prod.stock_quantity, quantity_after: newStock,
-          reference_type: 'invoice_reject', reference_id: currentInvoiceId,
-          notes: `Faktur ditolak: ${reason}`,
-        });
-        if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
-      }
-    }
+    // Stok TIDAK dikembalikan di sini: status = 'cancelled' di atas sudah memicu trigger
+    // restore_stock_on_cancel yang mengembalikan stok tiap item secara atomik (tercatat
+    // 'invoice_cancel'). Dulu browser menambah stok LAGI per item ('invoice_reject'),
+    // jadi faktur yang ditolak mengembalikan stok dua kali — query audit di
+    // supabase_migration50.sql.
 
     closeModal('modal-reject');
     showFullLoading('Memuat ulang daftar faktur...');
@@ -866,72 +858,38 @@
       parsedRows.push({ itemId, originalQty, originalProductId, productId, qty, price, sub, cost, productName, discType, disc, disc2 });
     }
 
-    // Hitung delta stok BERSIH per produk (gabungan semua baris — kalau produk yang sama
-    // muncul lewat "dilepas dari baris A" dan "dibutuhkan baris B", dua-duanya diakumulasi dulu).
-    const delta = {};
-    for (const r of parsedRows) {
-      if (r.productId !== r.originalProductId) {
-        delta[r.originalProductId] = (delta[r.originalProductId] || 0) + r.originalQty; // dilepas
-        delta[r.productId] = (delta[r.productId] || 0) - r.qty; // dibutuhkan
-      } else {
-        delta[r.productId] = (delta[r.productId] || 0) - (r.qty - r.originalQty);
-      }
-    }
-
-    const productIds = Object.keys(delta);
-    const { data: liveProducts, error: liveErr } = await supabase
-      .from('products').select('id,name,stock_quantity').in('id', productIds);
-    if (liveErr) { showToast('Gagal cek stok terbaru: ' + liveErr.message, 'error'); setLoading(btn, false); return; }
-
-    const finalStock = {};
-    const liveStockById = {};
-    const productNameById = {};
-    for (const p of (liveProducts || [])) {
-      const newStock = p.stock_quantity + (delta[p.id] || 0);
-      if (newStock < 0) {
-        showToast(`Stok "${p.name}" tidak cukup (tersedia: ${p.stock_quantity})`, 'error');
-        setLoading(btn, false); return;
-      }
-      finalStock[p.id] = newStock;
-      liveStockById[p.id] = p.stock_quantity;
-      productNameById[p.id] = p.name;
-    }
-
-    // ── PASS 2: semua baris sudah tervalidasi aman, sekarang baru mulai tulis ke DB.
+    // ── PASS 2: satu transaksi di database (supabase_migration50) — baris item ditulis,
+    // stok digeser sebesar SELISIH qty per produk (dicatat 'invoice_edit' + nomor faktur),
+    // dan faktur disetujui sekaligus. Dulu stok ditimpa angka absolut hasil baca beberapa
+    // saat sebelumnya (penjualan lain yang menyelip ikut hilang), dicatat 'adjustment'
+    // tanpa nomor faktur, dan gagal di tengah = setengah tersimpan.
     let total = 0;
-    for (const productId of Object.keys(finalStock)) {
-      if (delta[productId]) {
-        await supabase.from('products').update({ stock_quantity: finalStock[productId] }).eq('id', productId);
-        const { error: movErr } = await supabase.from('stock_movements').insert({
-          product_id: productId, product_name: productNameById[productId], type: 'adjustment',
-          quantity: Math.abs(delta[productId]), quantity_before: liveStockById[productId], quantity_after: finalStock[productId],
-          notes: `Edit & verifikasi faktur`,
-        });
-        if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
-      }
-    }
-    for (const r of parsedRows) {
-      const itemPayload = { product_id: r.productId, product_name: r.productName, quantity: r.qty, price: r.price, subtotal: r.sub,
-                            item_discount: r.disc, item_discount2: r.disc2, discount_type: r.discType };
-      if (r.cost !== null) itemPayload.cost_price = r.cost;
-      await supabase.from('invoice_items').update(itemPayload).eq('id', r.itemId);
-      total += r.sub;
+    parsedRows.forEach(r => { total += r.sub; });
+    const { error } = await supabase.rpc('edit_invoice', {
+      p_invoice_id: currentInvoiceId,
+      p_items: parsedRows.map(r => ({
+        id:             r.itemId || null,
+        product_id:     r.productId,
+        product_name:   r.productName,
+        quantity:       r.qty,
+        price:          r.price,
+        item_discount:  r.disc,
+        item_discount2: r.disc2,
+        discount_type:  r.discType,
+        subtotal:       r.sub,
+        cost_price:     r.cost,   // null = bukan super_admin → cost_price lama dipertahankan
+      })),
+      p_header: { total, approve: true },
+    });
+    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
 
-      // Selalu update harga jual produk sesuai harga di faktur
+    // Harga jual produk ikut harga di faktur (bukan bagian stok, jadi di luar transaksi)
+    for (const r of parsedRows) {
       const productUpdate = { price: r.price, price_verified_at: new Date().toISOString() };
       if (r.cost !== null && r.cost > 0) productUpdate.cost = r.cost;
       await supabase.from('products').update(productUpdate).eq('id', r.productId);
     }
 
-    const { data: { session } } = await supabase.auth.getSession();
-    const { error } = await supabase.from('invoices').update({
-      total: total,
-      verification_status: 'approved',
-      verified_by_id: session.user.id,
-      verified_at: new Date().toISOString()
-    }).eq('id', currentInvoiceId);
-
-    if (error) { showToast('Gagal: ' + error.message, 'error'); return; }
     closeModal('modal-edit');
     showFullLoading('Memuat ulang daftar faktur...');
     await loadInvoices();

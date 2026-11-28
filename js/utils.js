@@ -485,3 +485,47 @@ function labelSetaraDiskon(price, discType, disc, disc2) {
 function formatPersen(n) {
   return Number(n || 0).toLocaleString('id-ID', { maximumFractionDigits: 4 });
 }
+
+// ── TANDA TOKO BARU ───────────────────────────────────────────
+// Faktur "toko baru" = tidak ada faktur SAH lain dari customer yang sama yang dibuat
+// lebih dulu. Sah = bukan 'cancelled' dan verification_status NULL/'approved' — aturan
+// yang sama dengan isTokoBaru() di sales.html (toko baru wajib COD). Faktur pertama
+// yang masih menunggu verifikasi belum membuat toko jadi "lama".
+// invoices: baris faktur dengan id, customer_id, created_at. Return: Set id faktur.
+async function fetchTokoBaruInvoiceIds(invoices) {
+  const list = (invoices || []).filter(i => i.customer_id && i.created_at);
+  const custIds = [...new Set(list.map(i => i.customer_id))];
+  const firstSah = new Map();   // customer_id → { created_at, id } faktur sah paling awal
+  const CHUNK = 150;            // jaga panjang URL query .in()
+  const chunks = [];
+  for (let i = 0; i < custIds.length; i += CHUNK) chunks.push(custIds.slice(i, i + CHUNK));
+  const results = await Promise.all(chunks.map(ids => fetchAll(() => supabase.from('invoices')
+    .select('id,customer_id,created_at')
+    .in('customer_id', ids)
+    .neq('status', 'cancelled')
+    .or('verification_status.is.null,verification_status.eq.approved')
+    .order('created_at').order('id'))));
+  for (const r of results) {
+    if (r.error) throw r.error;
+    r.data.forEach(row => {
+      const cur = firstSah.get(row.customer_id);
+      if (!cur || row.created_at < cur.created_at) firstSah.set(row.customer_id, row);
+    });
+  }
+  const out = new Set();
+  list.forEach(inv => {
+    const first = firstSah.get(inv.customer_id);
+    // Tidak ada faktur sah sama sekali, atau faktur sah paling awal = faktur ini sendiri
+    // / dibuat sesudahnya → faktur ini termasuk faktur toko baru
+    if (!first || first.id === inv.id || first.created_at > inv.created_at) out.add(inv.id);
+  });
+  return out;
+}
+
+// Badge kecil untuk faktur toko baru. Termin bukan COD = merah (melanggar aturan COD).
+function badgeTokoBaru(inv) {
+  const notCod = inv.payment_term && inv.payment_term !== 'cod';
+  return notCod
+    ? `<span title="Faktur pertama toko ini, tapi termin bukan COD" style="font-size:11px;font-weight:700;color:#b91c1c;background:#fee2e2;border:1px solid #fca5a5;border-radius:4px;padding:1px 6px;white-space:nowrap">🆕 Toko baru · bukan COD</span>`
+    : `<span title="Faktur pertama toko ini — wajib COD" style="font-size:11px;font-weight:700;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;border-radius:4px;padding:1px 6px;white-space:nowrap">🆕 Toko baru</span>`;
+}
