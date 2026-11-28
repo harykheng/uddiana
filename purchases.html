@@ -665,13 +665,13 @@
   }
 
   // ── TANDA HARGA MODAL NAIK / TURUN ──────────────────────────
-  // Dibandingkan dengan harga modal terakhir produk (products.cost — diisi trigger
-  // dari pembelian terbaru, lihat migration34). Baris lama di Edit PO dibandingkan
+  // Dibandingkan dengan harga modal produk sekarang (products.cost — rata-rata
+  // tertimbang semua pembelian, diisi trigger migration51). Baris lama di Edit PO dibandingkan
   // dengan harga yang tersimpan di PO itu. Kolom ini cuma tampil untuk super_admin.
   function setCostBase(rowId, prod) {
     const tr = document.getElementById(rowId);
     if (!tr) return;
-    if (prod) { tr.dataset.baseCost = Number(prod.cost || 0); tr.dataset.baseLabel = 'terakhir'; }
+    if (prod) { tr.dataset.baseCost = Number(prod.cost || 0); tr.dataset.baseLabel = 'sekarang'; }
     else { delete tr.dataset.baseCost; delete tr.dataset.baseLabel; }
   }
 
@@ -757,7 +757,7 @@
     if (!el || !tr) return;
     const hasProduct = !!tr.querySelector('select')?.value;
     const c = hasProduct && tr.dataset.baseCost !== undefined
-      ? costChange(cost, Number(tr.dataset.baseCost), tr.dataset.baseLabel || 'terakhir')
+      ? costChange(cost, Number(tr.dataset.baseCost), tr.dataset.baseLabel || 'sekarang')
       : null;
     el.className = 'cost-chg' + (c ? ' ' + c.cls : '');
     el.textContent = c ? c.text : '';
@@ -1392,19 +1392,13 @@
         }
       }
 
-      // Semua tervalidasi aman — baru kurangi stok per produk
-      for (const pid of productIds) {
-        const p = stockById[pid];
-        const newStock = p.stock_quantity - needByProduct[pid];
-        await supabase.from('products').update({ stock_quantity: newStock }).eq('id', pid);
-        const { error: movErr } = await supabase.from('stock_movements').insert({
-          product_id: pid, product_name: p.name, type: 'out',
-          quantity: needByProduct[pid], quantity_before: p.stock_quantity, quantity_after: newStock,
-          reference_type: 'purchase_delete', reference_id: id,
-          notes: `Hapus PO ${po.purchase_number || id}`,
-        });
-        if (movErr) showToast('Stok tersimpan, tapi riwayat pergerakan gagal dicatat: ' + movErr.message, 'error');
-      }
+      // Semua tervalidasi aman — batalkan PO dulu lewat trigger database
+      // (restore_stock_on_purchase_cancel, migration51): stok dikurangi atomik
+      // DAN harga modal rata-rata dikembalikan ke sebelum PO ini. Mengurangi stok
+      // langsung dari browser seperti dulu membuat modal tetap memuat harga PO
+      // yang dihapus. Kalau hapus di bawah gagal, PO tertinggal berstatus Batal.
+      const { error: cancelErr } = await supabase.from('purchases').update({ status: 'cancelled' }).eq('id', id);
+      if (cancelErr) { hideFullLoading(); showToast('Gagal mengembalikan stok: ' + cancelErr.message, 'error'); return; }
     }
 
     // 2. Hapus purchase_items lalu purchase
